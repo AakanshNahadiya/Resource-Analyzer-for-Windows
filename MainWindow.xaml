@@ -560,11 +560,22 @@
 
                         <!-- Section 9: Application Updates -->
                         <TextBlock Text="Application Updates &amp; Version" FontWeight="Bold" FontSize="15" Foreground="{DynamicResource AccentBrush}" Margin="0,0,0,4"/>
-                        <TextBlock x:Name="txtCurrentVersion" Text="Current Version: v1.0.0" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,8"/>
+                        <TextBlock x:Name="txtCurrentVersion" Text="Current Version: v1.0.1 (Beta)" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,8"/>
+
+                        <TextBlock Text="Update Channel:" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,2,0,4"/>
+                        <ComboBox x:Name="cmbUpdateChannel" Width="460" Height="30" HorizontalAlignment="Left" Margin="0,0,0,10"
+                                  SelectedIndex="0"
+                                  SelectionChanged="CmbUpdateChannel_SelectionChanged"
+                                  Background="{DynamicResource InputBackgroundBrush}" Foreground="{DynamicResource InputForegroundBrush}" BorderBrush="{DynamicResource InputBorderBrush}"
+                                  AutomationProperties.Name="Update Channel. Select Beta for preview versions or Stable for official releases.">
+                            <ComboBoxItem Content="Beta Channel (v1.0.x experimental and preview updates)"/>
+                            <ComboBoxItem Content="Stable Channel (v1.1.x official stable releases only)"/>
+                        </ComboBox>
+
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                             <Button x:Name="btnCheckForUpdates" Content="Check for Updates" Width="180" Height="30" Margin="0,0,10,0"
                                     Click="BtnCheckForUpdates_Click" Background="{DynamicResource SurfaceBackgroundBrush}" Foreground="{DynamicResource TextPrimaryBrush}" BorderBrush="{DynamicResource BorderBrush}"
-                                    AutomationProperties.Name="Check GitHub for newer releases"/>
+                                    AutomationProperties.Name="Check GitHub for newer releases in the selected channel"/>
                             <Button x:Name="btnDownloadUpdate" Content="Download Update" Width="200" Height="30" Visibility="Collapsed"
                                     Click="BtnDownloadUpdate_Click" Background="{DynamicResource AccentBrush}" Foreground="{DynamicResource SelectionForegroundBrush}" BorderBrush="{DynamicResource AccentBrush}" FontWeight="SemiBold"
                                     AutomationProperties.Name="Open latest release download link"/>

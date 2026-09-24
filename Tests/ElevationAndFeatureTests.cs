@@ -63,16 +63,33 @@ namespace AccessibleTaskManager.Tests
         public async Task UpdateService_CheckForUpdatesAsync_ConnectsToGitHub()
         {
             var service = new UpdateService();
-            var info = await service.CheckForUpdatesAsync();
+            var infoBeta = await service.CheckForUpdatesAsync("Beta");
 
-            _output.WriteLine($"GitHub Update Check Success: {info.IsSuccess}");
-            _output.WriteLine($"Message: {info.Message}");
-            _output.WriteLine($"Latest Version: {info.LatestVersion}");
-            _output.WriteLine($"Has Update: {info.HasUpdate}");
+            _output.WriteLine($"GitHub Beta Check Success: {infoBeta.IsSuccess}");
+            _output.WriteLine($"Message: {infoBeta.Message}");
+            _output.WriteLine($"Latest Version: {infoBeta.LatestVersion}");
+            _output.WriteLine($"Has Update: {infoBeta.HasUpdate}");
 
-            // Should successfully parse release from our live repo
-            Assert.True(info.IsSuccess);
-            Assert.False(string.IsNullOrWhiteSpace(info.LatestVersion));
+            Assert.True(infoBeta.IsSuccess);
+            Assert.False(string.IsNullOrWhiteSpace(infoBeta.LatestVersion));
+
+            var infoStable = await service.CheckForUpdatesAsync("Stable");
+            Assert.True(infoStable.IsSuccess);
+        }
+
+        [Fact]
+        public void UpdatePolicy_VersionComparison_OrdersBetaAndStableCorrectly()
+        {
+            var v1_0_0 = Version.Parse("1.0.0");
+            var v1_0_1 = Version.Parse("1.0.1");
+            var v1_0_2 = Version.Parse("1.0.2");
+            var v1_1_1 = Version.Parse("1.1.1");
+            var v1_1_2 = Version.Parse("1.1.2");
+
+            Assert.True(v1_0_1 > v1_0_0, "Beta 1.0.1 is newer than initial 1.0.0");
+            Assert.True(v1_0_2 > v1_0_1, "Beta 1.0.2 is newer than Beta 1.0.1");
+            Assert.True(v1_1_1 > v1_0_2, "Stable 1.1.1 is newer than Beta 1.0.2");
+            Assert.True(v1_1_2 > v1_1_1, "Stable 1.1.2 is newer than Stable 1.1.1");
         }
 
         [Fact]

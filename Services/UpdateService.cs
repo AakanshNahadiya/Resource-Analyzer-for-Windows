@@ -14,6 +14,8 @@ namespace AccessibleTaskManager.Services
         public bool HasUpdate { get; set; }
         public string CurrentVersion { get; set; } = "1.0.0";
         public string LatestVersion { get; set; } = "1.0.0";
+        public string Channel { get; set; } = "Beta";
+        public bool IsBeta { get; set; } = false;
         public string ReleaseName { get; set; } = "";
         public string ReleaseNotes { get; set; } = "";
         public string HtmlUrl { get; set; } = "";
@@ -23,7 +25,7 @@ namespace AccessibleTaskManager.Services
 
     public interface IUpdateService
     {
-        Task<UpdateInfo> CheckForUpdatesAsync();
+        Task<UpdateInfo> CheckForUpdatesAsync(string channel = "Beta");
         string GetCurrentVersion();
         void OpenUrl(string url);
     }
@@ -32,7 +34,7 @@ namespace AccessibleTaskManager.Services
     {
         private const string RepoOwner = "AakanshNahadiya";
         private const string RepoName = "Resource-Analyzer-for-Windows";
-        private const string ApiUrl = $"https://api.github.com/repos/{RepoOwner}/{RepoName}/releases/latest";
+        private const string ApiUrl = $"https://api.github.com/repos/{RepoOwner}/{RepoName}/releases";
 
         private readonly HttpClient _httpClient;
 
@@ -55,13 +57,14 @@ namespace AccessibleTaskManager.Services
             return version != null ? $"{version.Major}.{version.Minor}.{version.Build}" : "1.0.0";
         }
 
-        public async Task<UpdateInfo> CheckForUpdatesAsync()
+        public async Task<UpdateInfo> CheckForUpdatesAsync(string channel = "Beta")
         {
             string currentVerStr = GetCurrentVersion();
             var result = new UpdateInfo
             {
                 CurrentVersion = currentVerStr,
-                LatestVersion = currentVerStr
+                LatestVersion = currentVerStr,
+                Channel = channel
             };
 
             try
@@ -70,36 +73,96 @@ namespace AccessibleTaskManager.Services
                 if (!response.IsSuccessStatusCode)
                 {
                     result.IsSuccess = false;
-                    result.Message = $"Could not retrieve update information (HTTP {response.StatusCode}).";
+                    result.Message = $"Could not retrieve update information from GitHub (HTTP {response.StatusCode}).";
                     return result;
                 }
 
                 string json = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
                 using var doc = JsonDocument.Parse(json);
-                var root = doc.RootElement;
+                if (doc.RootElement.ValueKind != JsonValueKind.Array)
+                {
+                    result.IsSuccess = false;
+                    result.Message = "Unexpected response from GitHub release API.";
+                    return result;
+                }
 
-                string tagName = root.TryGetProperty("tag_name", out var tagElem) ? tagElem.GetString() ?? "" : "";
-                string releaseName = root.TryGetProperty("name", out var nameElem) ? nameElem.GetString() ?? "" : "";
-                string body = root.TryGetProperty("body", out var bodyElem) ? bodyElem.GetString() ?? "" : "";
-                string htmlUrl = root.TryGetProperty("html_url", out var urlElem) ? urlElem.GetString() ?? "" : "";
+                // Parse current version
+                Version.TryParse(currentVerStr, out var currentVer);
 
-                string cleanLatest = tagName.TrimStart('v', 'V').Trim();
-                result.LatestVersion = cleanLatest;
-                result.ReleaseName = releaseName;
-                result.ReleaseNotes = body;
-                result.HtmlUrl = string.IsNullOrWhiteSpace(htmlUrl)
+                JsonElement? bestRelease = null;
+                Version? bestVersion = null;
+                string bestTag = "";
+                bool bestIsBeta = false;
+
+                bool targetStableOnly = channel.Equals("Stable", StringComparison.OrdinalIgnoreCase);
+
+                foreach (var release in doc.RootElement.EnumerateArray())
+                {
+                    if (release.TryGetProperty("draft", out var draftElem) && draftElem.GetBoolean())
+                        continue;
+
+                    string tagName = release.TryGetProperty("tag_name", out var tagElem) ? tagElem.GetString() ?? "" : "";
+                    if (string.IsNullOrWhiteSpace(tagName)) continue;
+
+                    bool isPrerelease = release.TryGetProperty("prerelease", out var preElem) && preElem.GetBoolean();
+                    string cleanTag = tagName.TrimStart('v', 'V').Trim();
+                    string verNumPart = cleanTag.Split('-')[0];
+
+                    if (!Version.TryParse(verNumPart, out var parsedVer))
+                        continue;
+
+                    // Version policy:
+                    // Beta: v1.0.1, v1.0.2... (or tagged as prerelease)
+                    // Stable: v1.1.0, v1.1.1, v1.1.2...
+                    bool isBeta = isPrerelease || cleanTag.StartsWith("1.0.") || cleanTag.Contains("beta", StringComparison.OrdinalIgnoreCase) || cleanTag.Contains("preview", StringComparison.OrdinalIgnoreCase);
+
+                    if (targetStableOnly && isBeta)
+                    {
+                        // User wants only Stable releases, ignore Beta releases
+                        continue;
+                    }
+
+                    if (bestVersion == null || parsedVer > bestVersion)
+                    {
+                        bestVersion = parsedVer;
+                        bestRelease = release;
+                        bestTag = tagName;
+                        bestIsBeta = isBeta;
+                    }
+                }
+
+                if (bestRelease == null || bestVersion == null)
+                {
+                    result.IsSuccess = true;
+                    result.HasUpdate = false;
+                    result.Message = targetStableOnly
+                        ? $"Resource Analyzer for Windows is up to date on the Stable channel (Version v{currentVerStr}). No newer stable releases found."
+                        : $"Resource Analyzer for Windows is up to date (Version v{currentVerStr}, {channel} channel).";
+                    return result;
+                }
+
+                var selected = bestRelease.Value;
+                string relName = selected.TryGetProperty("name", out var nElem) ? nElem.GetString() ?? "" : "";
+                string relBody = selected.TryGetProperty("body", out var bElem) ? bElem.GetString() ?? "" : "";
+                string relHtml = selected.TryGetProperty("html_url", out var hElem) ? hElem.GetString() ?? "" : "";
+
+                result.LatestVersion = bestTag.TrimStart('v', 'V').Trim();
+                result.ReleaseName = relName;
+                result.ReleaseNotes = relBody;
+                result.HtmlUrl = string.IsNullOrWhiteSpace(relHtml)
                     ? $"https://github.com/{RepoOwner}/{RepoName}/releases"
-                    : htmlUrl;
+                    : relHtml;
+                result.IsBeta = bestIsBeta;
 
-                // Look for setup executable in assets
-                if (root.TryGetProperty("assets", out var assetsElem) && assetsElem.ValueKind == JsonValueKind.Array)
+                // Check assets for installer .exe
+                if (selected.TryGetProperty("assets", out var assetsElem) && assetsElem.ValueKind == JsonValueKind.Array)
                 {
                     foreach (var asset in assetsElem.EnumerateArray())
                     {
-                        if (asset.TryGetProperty("name", out var assetNameElem) &&
+                        if (asset.TryGetProperty("name", out var aNameElem) &&
                             asset.TryGetProperty("browser_download_url", out var dlElem))
                         {
-                            string assetName = assetNameElem.GetString() ?? "";
+                            string assetName = aNameElem.GetString() ?? "";
                             if (assetName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
                             {
                                 result.DownloadUrl = dlElem.GetString();
@@ -109,21 +172,19 @@ namespace AccessibleTaskManager.Services
                     }
                 }
 
-                // Version comparison
-                if (Version.TryParse(cleanLatest, out var latestVer) &&
-                    Version.TryParse(currentVerStr, out var currentVer))
+                bool hasUpdate = currentVer != null ? bestVersion > currentVer : string.Compare(result.LatestVersion, currentVerStr, StringComparison.OrdinalIgnoreCase) > 0;
+                result.HasUpdate = hasUpdate;
+                result.IsSuccess = true;
+
+                if (hasUpdate)
                 {
-                    result.HasUpdate = latestVer > currentVer;
+                    string channelLabel = bestIsBeta ? "Beta" : "Stable";
+                    result.Message = $"A new {channelLabel} version ({bestTag}) is available! You are currently on v{currentVerStr}.";
                 }
                 else
                 {
-                    result.HasUpdate = string.Compare(cleanLatest, currentVerStr, StringComparison.OrdinalIgnoreCase) > 0;
+                    result.Message = $"Resource Analyzer for Windows is up to date (Version v{currentVerStr}, {channel} channel).";
                 }
-
-                result.IsSuccess = true;
-                result.Message = result.HasUpdate
-                    ? $"A new version ({cleanLatest}) is available! You are currently on {currentVerStr}."
-                    : $"Resource Analyzer for Windows is up to date (Version {currentVerStr}).";
 
                 return result;
             }

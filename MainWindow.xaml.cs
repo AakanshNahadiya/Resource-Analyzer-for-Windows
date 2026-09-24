@@ -117,7 +117,9 @@ namespace AccessibleTaskManager
                 btnSettingsRestartAdmin.Content = "Restart as Administrator (Ctrl+Shift+A)";
             }
 
-            txtCurrentVersion.Text = $"Current Version: v{_updateService.GetCurrentVersion()}";
+            string curVer = _updateService.GetCurrentVersion();
+            string verTag = curVer.StartsWith("1.0.") ? "Beta" : "Stable";
+            txtCurrentVersion.Text = $"Current Version: v{curVer} ({verTag})";
 
             if (initialTabIndex >= 0 && initialTabIndex < tabMain.Items.Count)
             {
@@ -1552,6 +1554,12 @@ namespace AccessibleTaskManager
                 // Preferences Memory combo
                 cmbRememberPrefs.SelectedIndex = s.RememberSortFilter ? 1 : 0;
 
+                // Update Channel combo
+                if (cmbUpdateChannel != null)
+                {
+                    cmbUpdateChannel.SelectedIndex = s.UpdateChannel.Equals("Stable", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+                }
+
                 // Data usage filters
                 cmbDataNetwork.SelectedIndex = s.DataUsageNetworkFilter.Equals("All", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
                 cmbDataTimeRange.SelectedIndex = s.DataUsageTimeFilter switch
@@ -2391,13 +2399,29 @@ namespace AccessibleTaskManager
 
         #region Application Updates
 
+        private void CmbUpdateChannel_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_isUpdatingUI || cmbUpdateChannel == null || cmbUpdateChannel.SelectedIndex < 0) return;
+
+            string selectedChannel = cmbUpdateChannel.SelectedIndex == 1 ? "Stable" : "Beta";
+            _settingsService.CurrentSettings.UpdateChannel = selectedChannel;
+            _settingsService.Save();
+
+            string desc = selectedChannel == "Stable"
+                ? "Update channel set to Stable (v1.1.x official stable releases only)."
+                : "Update channel set to Beta (v1.0.x experimental and preview releases).";
+            _speechService.Speak(desc, interrupt: true);
+            txtAnnouncement.Text = desc;
+        }
+
         private async void BtnCheckForUpdates_Click(object sender, RoutedEventArgs e)
         {
             btnCheckForUpdates.IsEnabled = false;
-            txtUpdateStatus.Text = "Checking for updates from GitHub...";
-            _speechService.Speak("Checking for updates.", interrupt: true);
+            string channel = cmbUpdateChannel?.SelectedIndex == 1 ? "Stable" : "Beta";
+            txtUpdateStatus.Text = $"Checking for {channel} updates from GitHub...";
+            _speechService.Speak($"Checking for {channel} updates.", interrupt: true);
 
-            var info = await _updateService.CheckForUpdatesAsync();
+            var info = await _updateService.CheckForUpdatesAsync(channel);
             btnCheckForUpdates.IsEnabled = true;
 
             txtUpdateStatus.Text = info.Message;

@@ -49,6 +49,9 @@ namespace AccessibleTaskManager.Models
 
         // Theme setting
         public string Theme { get; set; } = "System Default"; // "System Default", "Dark", "Light", "High Contrast Black"
+
+        // Update channel
+        public string UpdateChannel { get; set; } = "Beta"; // "Beta" or "Stable"
     }
 
     #endregion
