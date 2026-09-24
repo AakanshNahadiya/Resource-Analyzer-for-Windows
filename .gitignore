@@ -1,0 +1,30 @@
+## Visual Studio & .NET Build Artifacts
+[Bb]in/
+[Oo]bj/
+[Tt]est[Rr]esults/
+publish/
+Installer/Output/
+nvda_client/
+
+## User-specific and Visual Studio files
+.vs/
+*.user
+*.userosscache
+*.suo
+*.userprefs
+*.dbmdl
+*.jfm
+*.pidb
+*.ide/
+*.swp
+*~
+
+## Crash & Diagnostic logs
+*.log
+ResourceAnalyzer_crash.log
+
+## OS generated files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+desktop.ini
