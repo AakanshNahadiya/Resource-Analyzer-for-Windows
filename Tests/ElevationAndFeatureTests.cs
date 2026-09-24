@@ -113,6 +113,21 @@ namespace AccessibleTaskManager.Tests
             }
         }
 
+        [Theory]
+        [InlineData(0x00, true)]
+        [InlineData(0x02, true)]
+        [InlineData(0x06, true)]
+        [InlineData(0x01, false)]
+        [InlineData(0x03, false)]
+        [InlineData(0x05, false)]
+        [InlineData(0x07, false)]
+        public void StartupApproved_DisabledBitMask_EvaluatesCorrectly(byte firstByte, bool expectedEnabled)
+        {
+            byte[] data = new byte[] { firstByte, 0x00, 0x00, 0x00 };
+            bool isEnabled = (data[0] & 1) == 0;
+            Assert.Equal(expectedEnabled, isEnabled);
+        }
+
         [Fact]
         public void WindowsServiceManager_GetServices_ReturnsWindowsServices()
         {

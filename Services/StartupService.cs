@@ -62,8 +62,9 @@ namespace AccessibleTaskManager.Services
                         var approvedData = approvedKey.GetValue(valName) as byte[];
                         if (approvedData != null && approvedData.Length > 0)
                         {
-                            // If first byte is 0x03 or bit 0 is set, it is disabled
-                            isEnabled = (approvedData[0] == 0x02 || approvedData[0] == 0x00 || approvedData[0] == 0x01);
+                            // In Windows StartupApproved registry binary data:
+                            // Bit 0 of byte 0 is the disabled flag. Even values (0x00, 0x02) = Enabled; Odd values (0x01, 0x03, 0x05) = Disabled.
+                            isEnabled = (approvedData[0] & 1) == 0;
                         }
                     }
 
@@ -106,7 +107,7 @@ namespace AccessibleTaskManager.Services
                         var approvedData = approvedKey.GetValue(fileName) as byte[];
                         if (approvedData != null && approvedData.Length > 0)
                         {
-                            isEnabled = (approvedData[0] == 0x02 || approvedData[0] == 0x00 || approvedData[0] == 0x01);
+                            isEnabled = (approvedData[0] & 1) == 0;
                         }
                     }
 

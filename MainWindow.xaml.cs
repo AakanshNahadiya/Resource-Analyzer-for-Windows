@@ -82,7 +82,7 @@ namespace AccessibleTaskManager
 
         private bool _isInitialized = false;
 
-        public async void InitializeApp(bool startMinimized)
+        public async void InitializeApp(bool startMinimized, int initialTabIndex = -1)
         {
             if (_isInitialized) return;
             _isInitialized = true;
@@ -124,6 +124,11 @@ namespace AccessibleTaskManager
 
             txtCurrentVersion.Text = $"Current Version: v{_updateService.GetCurrentVersion()}";
 
+            if (initialTabIndex >= 0 && initialTabIndex < tabMain.Items.Count)
+            {
+                tabMain.SelectedIndex = initialTabIndex;
+            }
+
             if (startMinimized)
             {
                 WindowState = WindowState.Minimized;
@@ -139,7 +144,11 @@ namespace AccessibleTaskManager
             {
                 if (isAdmin)
                 {
-                    _speechService.Speak("Resource Analyzer for Windows, running with Administrator privileges. Ready.", interrupt: false);
+                    string tabName = tabMain.SelectedItem is TabItem ti ? (ti.Header?.ToString() ?? "") : "";
+                    string msg = initialTabIndex > 0
+                        ? $"Resource Analyzer for Windows, running with Administrator privileges. {tabName}. Ready."
+                        : "Resource Analyzer for Windows, running with Administrator privileges. Ready.";
+                    _speechService.Speak(msg, interrupt: false);
                     txtAnnouncement.Text = "Running with Administrator privileges. Ready.";
                 }
                 else
@@ -159,7 +168,17 @@ namespace AccessibleTaskManager
             {
                 string[] args = Environment.GetCommandLineArgs();
                 bool startMinimized = args.Any(a => a.Equals("--minimized", StringComparison.OrdinalIgnoreCase));
-                InitializeApp(startMinimized);
+
+                int targetTabIndex = -1;
+                for (int i = 0; i < args.Length; i++)
+                {
+                    if (args[i].Equals("--tab", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length && int.TryParse(args[i + 1], out int idx))
+                    {
+                        targetTabIndex = idx;
+                    }
+                }
+
+                InitializeApp(startMinimized, targetTabIndex);
             }
         }
 
@@ -2124,7 +2143,7 @@ namespace AccessibleTaskManager
 
             if (result == MessageBoxResult.Yes)
             {
-                bool success = ElevationHelper.RestartAsAdmin();
+                bool success = ElevationHelper.RestartAsAdmin($"--tab {tabMain.SelectedIndex}");
                 if (!success)
                 {
                     _speechService.Speak("Administrator elevation was canceled.", interrupt: true);
@@ -2251,7 +2270,7 @@ namespace AccessibleTaskManager
 
                 if (askElevate == MessageBoxResult.Yes)
                 {
-                    ElevationHelper.RestartAsAdmin();
+                    ElevationHelper.RestartAsAdmin($"--tab {tabMain.SelectedIndex}");
                 }
             }
             else
@@ -2541,7 +2560,7 @@ namespace AccessibleTaskManager
 
             if (res == MessageBoxResult.Yes)
             {
-                ElevationHelper.RestartAsAdmin();
+                ElevationHelper.RestartAsAdmin($"--tab {tabMain.SelectedIndex}");
             }
         }
 
