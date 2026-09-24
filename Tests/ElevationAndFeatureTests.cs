@@ -26,28 +26,7 @@ namespace AccessibleTaskManager.Tests
             Assert.True(isAdmin || !isAdmin);
         }
 
-        [Fact]
-        public void StartupAppItem_DisplayText_UpdatesProperly()
-        {
-            var item = new StartupAppItem
-            {
-                Name = "TestApp",
-                Command = "C:\\TestApp\\test.exe",
-                Location = "User (HKCU)",
-                IsEnabled = true
-            };
-            item.UpdateDisplayText();
 
-            Assert.Contains("TestApp", item.DisplayText);
-            Assert.Contains("Enabled", item.DisplayText);
-            Assert.Contains("User (HKCU)", item.DisplayText);
-            Assert.Contains("C:\\TestApp\\test.exe", item.DisplayText);
-
-            // Toggle
-            item.IsEnabled = false;
-            Assert.Contains("Disabled", item.DisplayText);
-            Assert.Equal("Disabled", item.StatusText);
-        }
 
         [Fact]
         public void ServiceItem_DisplayText_UpdatesProperly()
@@ -97,35 +76,11 @@ namespace AccessibleTaskManager.Tests
         }
 
         [Fact]
-        public void StartupService_GetStartupApps_ReturnsItemsSafely()
+        public void StartupSettings_UriFormat_IsValid()
         {
-            var service = new StartupService();
-            var apps = service.GetStartupApps();
-            _output.WriteLine($"Discovered {apps.Count} startup apps.");
-
-            Assert.NotNull(apps);
-            // On a standard Windows system, there are almost always startup items
-            Assert.NotEmpty(apps);
-            foreach (var app in apps)
-            {
-                Assert.False(string.IsNullOrWhiteSpace(app.Name));
-                Assert.False(string.IsNullOrWhiteSpace(app.DisplayText));
-            }
-        }
-
-        [Theory]
-        [InlineData(0x00, true)]
-        [InlineData(0x02, true)]
-        [InlineData(0x06, true)]
-        [InlineData(0x01, false)]
-        [InlineData(0x03, false)]
-        [InlineData(0x05, false)]
-        [InlineData(0x07, false)]
-        public void StartupApproved_DisabledBitMask_EvaluatesCorrectly(byte firstByte, bool expectedEnabled)
-        {
-            byte[] data = new byte[] { firstByte, 0x00, 0x00, 0x00 };
-            bool isEnabled = (data[0] & 1) == 0;
-            Assert.Equal(expectedEnabled, isEnabled);
+            const string uri = "ms-settings:startupapps";
+            Assert.True(Uri.TryCreate(uri, UriKind.Absolute, out var result));
+            Assert.Equal("ms-settings", result.Scheme);
         }
 
         [Fact]

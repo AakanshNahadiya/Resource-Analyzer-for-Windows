@@ -113,7 +113,7 @@
                         AutomationProperties.Name="Restart in Administrator Mode (Ctrl+Shift+A)"/>
                 <TextBlock x:Name="txtStatus" VerticalAlignment="Center"
                            Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12"
-                           Text="F1: Shortcuts | Ctrl+1..6: Tabs | F5: Refresh"/>
+                           Text="F1: Shortcuts | Ctrl+1..5: Tabs | F5: Refresh"/>
             </StackPanel>
         </DockPanel>
 
@@ -124,7 +124,7 @@
 
             <!-- TAB 1: System Resources -->
             <TabItem x:Name="tabResources" Header="1. Resources"
-                     AutomationProperties.Name="System Resources Tab (1 of 6)">
+                     AutomationProperties.Name="System Resources Tab (1 of 5)">
                 <Grid Margin="10">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -159,7 +159,7 @@
 
             <!-- TAB 2: Process Manager -->
             <TabItem x:Name="tabProcesses" Header="2. Processes"
-                     AutomationProperties.Name="Process Manager Tab (2 of 6)">
+                     AutomationProperties.Name="Process Manager Tab (2 of 5)">
                 <Grid Margin="10">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -230,76 +230,9 @@
                 </Grid>
             </TabItem>
 
-            <!-- TAB 3: Startup Applications -->
-            <TabItem x:Name="tabStartup" Header="3. Startup"
-                     AutomationProperties.Name="Startup Applications Tab (3 of 6)">
-                <Grid Margin="10">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                    </Grid.RowDefinitions>
-
-                    <!-- Search Filter & Actions Header -->
-                    <Grid Grid.Row="0" Margin="0,0,0,8">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-
-                        <TextBlock Text="Filter (Ctrl+F): " VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,8,0"/>
-                        <TextBox x:Name="txtStartupSearch" Grid.Column="1" Height="28" Padding="6,2"
-                                 Background="{DynamicResource InputBackgroundBrush}" Foreground="{DynamicResource InputForegroundBrush}" BorderBrush="{DynamicResource InputBorderBrush}"
-                                 TextChanged="TxtStartupSearch_TextChanged"
-                                 KeyDown="TxtStartupSearch_KeyDown"
-                                 AutomationProperties.Name="Search Startup Apps. Type to filter, Press Down Arrow to enter list, Escape to clear."/>
-
-                        <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="8,0,0,0">
-                            <Button x:Name="btnToggleStartup" Content="Toggle (Space/Enter)" Height="28" Padding="10,2" Margin="0,0,4,0"
-                                    Background="{DynamicResource SurfaceBackgroundBrush}" Foreground="{DynamicResource TextPrimaryBrush}" BorderBrush="{DynamicResource BorderBrush}"
-                                    Click="BtnToggleStartup_Click"
-                                    AutomationProperties.Name="Enable or Disable Selected Startup Application"/>
-                            <Button x:Name="btnRefreshStartup" Content="Refresh (F5)" Height="28" Padding="10,2"
-                                    Background="{DynamicResource SurfaceBackgroundBrush}" Foreground="{DynamicResource TextPrimaryBrush}" BorderBrush="{DynamicResource BorderBrush}"
-                                    Click="BtnRefreshStartup_Click"
-                                    AutomationProperties.Name="Refresh Startup Applications List"/>
-                        </StackPanel>
-                    </Grid>
-
-                    <TextBlock x:Name="txtStartupCount" Grid.Row="1" Margin="0,0,0,6" Foreground="{DynamicResource AccentBrush}" FontSize="12"
-                               Text="Loading startup apps... Press Space or Enter to enable/disable."
-                               AutomationProperties.Name="{Binding Text, RelativeSource={RelativeSource Self}}"/>
-
-                    <ListBox x:Name="lstStartupApps" Grid.Row="2"
-                             Background="{DynamicResource WindowBackgroundBrush}" BorderThickness="0"
-                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                             ScrollViewer.VerticalScrollBarVisibility="Auto"
-                             VirtualizingStackPanel.IsVirtualizing="True"
-                             VirtualizingStackPanel.VirtualizationMode="Recycling"
-                             KeyDown="LstStartupApps_KeyDown"
-                             AutomationProperties.Name="Startup Applications">
-                        <ListBox.ContextMenu>
-                            <ContextMenu x:Name="ctxStartupMenu">
-                                <MenuItem Header="Toggle Status (Space / Enter)" Click="CtxStartupToggle_Click" AutomationProperties.Name="Toggle Enable or Disable"/>
-                                <MenuItem Header="Open File Location" Click="CtxStartupOpenFileLocation_Click" AutomationProperties.Name="Open File Location in Explorer"/>
-                                <Separator Background="{DynamicResource BorderBrush}"/>
-                                <MenuItem Header="Copy Details" Click="CtxStartupCopyDetails_Click" AutomationProperties.Name="Copy Details to Clipboard"/>
-                            </ContextMenu>
-                        </ListBox.ContextMenu>
-                        <ListBox.ItemTemplate>
-                            <DataTemplate>
-                                <TextBlock Text="{Binding DisplayText}" TextWrapping="Wrap"
-                                           AutomationProperties.Name="{Binding DisplayText}"/>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
-                </Grid>
-            </TabItem>
-
-            <!-- TAB 4: Windows Services -->
-            <TabItem x:Name="tabServices" Header="4. Services"
-                     AutomationProperties.Name="Windows Services Tab (4 of 6)">
+            <!-- TAB 3: Windows Services -->
+            <TabItem x:Name="tabServices" Header="3. Services"
+                     AutomationProperties.Name="Windows Services Tab (3 of 5)">
                 <Grid Margin="10">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -380,9 +313,9 @@
                 </Grid>
             </TabItem>
 
-            <!-- TAB 5: Data Usage -->
-            <TabItem x:Name="tabDataUsage" Header="5. Data Usage"
-                     AutomationProperties.Name="Data Usage Tab (5 of 6)">
+            <!-- TAB 4: Data Usage -->
+            <TabItem x:Name="tabDataUsage" Header="4. Data Usage"
+                     AutomationProperties.Name="Data Usage Tab (4 of 5)">
                 <Grid Margin="10">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -445,9 +378,9 @@
                 </Grid>
             </TabItem>
 
-            <!-- TAB 6: Settings -->
-            <TabItem x:Name="tabSettings" Header="6. Settings"
-                     AutomationProperties.Name="Settings Tab (6 of 6)">
+            <!-- TAB 5: Settings -->
+            <TabItem x:Name="tabSettings" Header="5. Settings"
+                     AutomationProperties.Name="Settings Tab (5 of 5)">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel Margin="16" MaxWidth="620" HorizontalAlignment="Left">
                         <!-- Section 1: Process Filtering & Safety -->
@@ -596,6 +529,11 @@
                             <ComboBoxItem Content="Exit completely on close (Do not start with Windows)"/>
                         </ComboBox>
 
+                        <TextBlock Text="Windows Startup Applications:" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,14,0,8"/>
+                        <Button x:Name="btnOpenStartupSettings" Content="Go to Windows Startup Apps Settings (Ctrl+Shift+S)" Width="380" Height="30" HorizontalAlignment="Left"
+                                Click="BtnOpenStartupSettings_Click" Background="{DynamicResource SurfaceBackgroundBrush}" Foreground="{DynamicResource TextPrimaryBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                                AutomationProperties.Name="Go to Windows Startup Apps Settings. Opens native Windows Settings (Shortcut: Ctrl+Shift+S)"/>
+
                         <Separator Background="{DynamicResource BorderBrush}" Margin="0,16"/>
 
                         <!-- Section 7: Preferences Memory -->
@@ -645,7 +583,7 @@
 
         <!-- Bottom status line -->
         <DockPanel Grid.Row="2" Margin="0,8,0,0">
-            <TextBlock DockPanel.Dock="Right" Text="F1: Shortcuts | Ctrl+1..6: Tabs | F5: Refresh"
+            <TextBlock DockPanel.Dock="Right" Text="F1: Shortcuts | Ctrl+1..5: Tabs | F5: Refresh"
                        Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12" HorizontalAlignment="Right"
                        AutomationProperties.Name="Keyboard Shortcuts Hint"/>
             <TextBlock x:Name="txtAnnouncement" Foreground="{DynamicResource StatusAnnouncementBrush}" FontSize="13"
