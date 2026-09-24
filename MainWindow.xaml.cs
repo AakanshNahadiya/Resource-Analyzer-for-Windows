@@ -28,6 +28,9 @@ namespace AccessibleTaskManager
         private readonly IDataUsageService _dataUsageService;
         private readonly IThemeService _themeService;
         private readonly IHardwareDetailService _hardwareDetailService;
+        private readonly IStartupService _startupService;
+        private readonly IWindowsServiceManager _serviceManager;
+        private readonly IUpdateService _updateService;
         private HotkeyService? _hotkeyService;
 
         private readonly DispatcherTimer _refreshTimer;
@@ -36,7 +39,13 @@ namespace AccessibleTaskManager
 
         private readonly ObservableCollection<ResourceItem> _resourceItems = new();
         private readonly ObservableCollection<ProcessItem> _processItems = new();
+        private readonly ObservableCollection<StartupAppItem> _startupItems = new();
+        private readonly ObservableCollection<ServiceItem> _serviceItems = new();
         private readonly ObservableCollection<AppDataUsageItem> _dataUsageItems = new();
+        private List<StartupAppItem> _allStartupApps = new();
+        private List<ServiceItem> _allServices = new();
+        private string? _latestUpdateUrl;
+
         private readonly Dictionary<string, ResourceItem> _resourceMap = new();
         private readonly Dictionary<string, DateTime> _lastAlertTimes = new(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> _expandedGroups = new(StringComparer.OrdinalIgnoreCase);
@@ -57,12 +66,17 @@ namespace AccessibleTaskManager
             _dataUsageService = new DataUsageService();
             _themeService = new ThemeService();
             _hardwareDetailService = new HardwareDetailService();
+            _startupService = new StartupService();
+            _serviceManager = new WindowsServiceManager();
+            _updateService = new UpdateService();
 
             _refreshTimer = new DispatcherTimer();
             _refreshTimer.Tick += async (s, e) => await OnTimerTickAsync();
 
             lstResources.ItemsSource = _resourceItems;
             lstProcesses.ItemsSource = _processItems;
+            lstStartupApps.ItemsSource = _startupItems;
+            lstServices.ItemsSource = _serviceItems;
             lstDataUsage.ItemsSource = _dataUsageItems;
         }
 
@@ -87,6 +101,29 @@ namespace AccessibleTaskManager
             // Build initial resource items
             BuildResourceItemList();
 
+            // Admin privileges status detection
+            bool isAdmin = ElevationHelper.IsRunningAsAdmin();
+            if (isAdmin)
+            {
+                Title = "Resource Analyzer for Windows (Administrator)";
+                badgeAdmin.Visibility = Visibility.Visible;
+                btnHeaderAdmin.Visibility = Visibility.Collapsed;
+                txtAdminPrivilegeInfo.Text = "Current status: Full Administrator privileges active.";
+                btnSettingsRestartAdmin.IsEnabled = false;
+                btnSettingsRestartAdmin.Content = "Administrator Mode Active";
+            }
+            else
+            {
+                Title = "Resource Analyzer for Windows";
+                badgeAdmin.Visibility = Visibility.Collapsed;
+                btnHeaderAdmin.Visibility = Visibility.Visible;
+                txtAdminPrivilegeInfo.Text = "Current status: Standard User privileges.";
+                btnSettingsRestartAdmin.IsEnabled = true;
+                btnSettingsRestartAdmin.Content = "Restart as Administrator (Ctrl+Shift+A)";
+            }
+
+            txtCurrentVersion.Text = $"Current Version: v{_updateService.GetCurrentVersion()}";
+
             if (startMinimized)
             {
                 WindowState = WindowState.Minimized;
@@ -96,6 +133,20 @@ namespace AccessibleTaskManager
             {
                 Show();
                 FocusCurrentTabContent();
+            }
+
+            if (_settingsService.CurrentSettings.AnnounceOnStartup && !startMinimized)
+            {
+                if (isAdmin)
+                {
+                    _speechService.Speak("Resource Analyzer for Windows, running with Administrator privileges. Ready.", interrupt: false);
+                    txtAnnouncement.Text = "Running with Administrator privileges. Ready.";
+                }
+                else
+                {
+                    _speechService.Speak("Resource Analyzer for Windows. Ready.", interrupt: false);
+                    txtAnnouncement.Text = "Ready.";
+                }
             }
 
             await RefreshAllAsync(announce: false);
@@ -234,6 +285,30 @@ namespace AccessibleTaskManager
                     else
                     {
                         FocusListBoxItem(lstProcesses);
+                    }
+                }
+                else if (tabStartup.IsSelected)
+                {
+                    if (!string.IsNullOrEmpty(txtStartupSearch.Text))
+                    {
+                        txtStartupSearch.Focus();
+                        txtStartupSearch.SelectAll();
+                    }
+                    else
+                    {
+                        FocusListBoxItem(lstStartupApps);
+                    }
+                }
+                else if (tabServices.IsSelected)
+                {
+                    if (!string.IsNullOrEmpty(txtServiceSearch.Text))
+                    {
+                        txtServiceSearch.Focus();
+                        txtServiceSearch.SelectAll();
+                    }
+                    else
+                    {
+                        FocusListBoxItem(lstServices);
                     }
                 }
                 else if (tabDataUsage.IsSelected)
@@ -838,6 +913,14 @@ namespace AccessibleTaskManager
                 {
                     await RefreshProcessesAsync(isFullReset: true);
                 }
+                else if (tabStartup.IsSelected)
+                {
+                    await RefreshStartupAppsAsync(announce: false);
+                }
+                else if (tabServices.IsSelected)
+                {
+                    await RefreshServicesAsync(announce: false);
+                }
                 else if (tabDataUsage.IsSelected)
                 {
                     await RefreshDataUsageAsync(announce: false);
@@ -1101,6 +1184,14 @@ namespace AccessibleTaskManager
                 return;
             }
 
+            // Admin elevation hotkey: Ctrl + Shift + A
+            if ((Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Shift)) == (ModifierKeys.Control | ModifierKeys.Shift) && e.Key == Key.A)
+            {
+                e.Handled = true;
+                RestartAsAdministratorWithConfirmation();
+                return;
+            }
+
             // Global in-app hotkeys
             if (Keyboard.Modifiers == ModifierKeys.Control)
             {
@@ -1123,23 +1214,51 @@ namespace AccessibleTaskManager
                 else if (e.Key == Key.D3 || e.Key == Key.NumPad3)
                 {
                     e.Handled = true;
-                    tabDataUsage.IsSelected = true;
-                    _speechService.Speak("Tab 3: Data Usage", interrupt: true);
+                    tabStartup.IsSelected = true;
+                    _speechService.Speak("Tab 3: Startup Applications", interrupt: true);
                     FocusCurrentTabContent();
                     return;
                 }
                 else if (e.Key == Key.D4 || e.Key == Key.NumPad4)
                 {
                     e.Handled = true;
+                    tabServices.IsSelected = true;
+                    _speechService.Speak("Tab 4: Windows Services", interrupt: true);
+                    FocusCurrentTabContent();
+                    return;
+                }
+                else if (e.Key == Key.D5 || e.Key == Key.NumPad5)
+                {
+                    e.Handled = true;
+                    tabDataUsage.IsSelected = true;
+                    _speechService.Speak("Tab 5: Data Usage", interrupt: true);
+                    FocusCurrentTabContent();
+                    return;
+                }
+                else if (e.Key == Key.D6 || e.Key == Key.NumPad6)
+                {
+                    e.Handled = true;
                     tabSettings.IsSelected = true;
-                    _speechService.Speak("Tab 4: Settings", interrupt: true);
+                    _speechService.Speak("Tab 6: Settings", interrupt: true);
                     cmbProcessManager?.Focus();
                     return;
                 }
                 else if (e.Key == Key.F)
                 {
                     e.Handled = true;
-                    if (tabDataUsage.IsSelected)
+                    if (tabStartup.IsSelected)
+                    {
+                        txtStartupSearch.Focus();
+                        txtStartupSearch.SelectAll();
+                        _speechService.Speak("Search startup applications.", interrupt: true);
+                    }
+                    else if (tabServices.IsSelected)
+                    {
+                        txtServiceSearch.Focus();
+                        txtServiceSearch.SelectAll();
+                        _speechService.Speak("Search Windows services.", interrupt: true);
+                    }
+                    else if (tabDataUsage.IsSelected)
                     {
                         txtDataSearch.Focus();
                         txtDataSearch.SelectAll();
@@ -1243,6 +1362,22 @@ namespace AccessibleTaskManager
                 if (string.IsNullOrEmpty(txtSearch.Text))
                 {
                     lstProcesses.Focus();
+                }
+            }
+            else if (tabStartup.IsSelected)
+            {
+                await RefreshStartupAppsAsync();
+                if (string.IsNullOrEmpty(txtStartupSearch.Text))
+                {
+                    lstStartupApps.Focus();
+                }
+            }
+            else if (tabServices.IsSelected)
+            {
+                await RefreshServicesAsync();
+                if (string.IsNullOrEmpty(txtServiceSearch.Text))
+                {
+                    lstServices.Focus();
                 }
             }
             else if (tabDataUsage.IsSelected)
@@ -1960,6 +2095,501 @@ namespace AccessibleTaskManager
             {
                 _speechService.Speak("Settings saved.", interrupt: true);
                 txtAnnouncement.Text = "Settings saved.";
+            }
+        }
+
+        #endregion
+
+        #region Administrator Elevation
+
+        private void BtnRestartAdmin_Click(object sender, RoutedEventArgs e)
+        {
+            RestartAsAdministratorWithConfirmation();
+        }
+
+        private void RestartAsAdministratorWithConfirmation()
+        {
+            if (ElevationHelper.IsRunningAsAdmin())
+            {
+                _speechService.Speak("Resource Analyzer is already running with Administrator privileges.", interrupt: true);
+                txtAnnouncement.Text = "Already running as Administrator.";
+                return;
+            }
+
+            var result = MessageBox.Show(
+                "Restart Resource Analyzer for Windows with Administrator privileges?\n\nThis will allow you to control Windows Services, modify system startup apps, and end protected processes.",
+                "Restart as Administrator",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+
+            if (result == MessageBoxResult.Yes)
+            {
+                bool success = ElevationHelper.RestartAsAdmin();
+                if (!success)
+                {
+                    _speechService.Speak("Administrator elevation was canceled.", interrupt: true);
+                    txtAnnouncement.Text = "Administrator elevation canceled.";
+                }
+            }
+        }
+
+        #endregion
+
+        #region TAB 3: Startup Applications
+
+        private async Task RefreshStartupAppsAsync(bool announce = false)
+        {
+            try
+            {
+                var apps = await Task.Run(() => _startupService.GetStartupApps());
+                _allStartupApps = apps;
+                ApplyStartupFilter();
+
+                if (announce)
+                {
+                    string msg = $"Startup applications refreshed. {_startupItems.Count} items displayed.";
+                    _speechService.Speak(msg, interrupt: true);
+                    txtAnnouncement.Text = msg;
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error loading startup apps: {ex.Message}");
+                txtStartupCount.Text = "Failed to load startup applications.";
+            }
+        }
+
+        private void ApplyStartupFilter()
+        {
+            string filter = txtStartupSearch?.Text?.Trim() ?? string.Empty;
+            _startupItems.Clear();
+
+            var filtered = string.IsNullOrEmpty(filter)
+                ? _allStartupApps
+                : _allStartupApps.Where(a =>
+                    a.Name.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+                    a.Command.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+                    a.Location.Contains(filter, StringComparison.OrdinalIgnoreCase));
+
+            foreach (var item in filtered)
+            {
+                _startupItems.Add(item);
+            }
+
+            int enabledCount = _startupItems.Count(a => a.IsEnabled);
+            int disabledCount = _startupItems.Count - enabledCount;
+            txtStartupCount.Text = $"{_startupItems.Count} startup apps ({enabledCount} enabled, {disabledCount} disabled). Press Space or Enter to toggle.";
+        }
+
+        private void TxtStartupSearch_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (tabStartup.IsSelected)
+            {
+                ApplyStartupFilter();
+            }
+        }
+
+        private void TxtStartupSearch_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Down)
+            {
+                e.Handled = true;
+                lstStartupApps.Focus();
+                if (_startupItems.Count > 0 && lstStartupApps.SelectedIndex < 0)
+                {
+                    lstStartupApps.SelectedIndex = 0;
+                }
+            }
+            else if (e.Key == Key.Escape)
+            {
+                e.Handled = true;
+                txtStartupSearch.Text = string.Empty;
+                lstStartupApps.Focus();
+            }
+        }
+
+        private void LstStartupApps_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Space || e.Key == Key.Enter)
+            {
+                e.Handled = true;
+                ToggleSelectedStartupApp();
+            }
+            else if (e.Key == Key.F5)
+            {
+                e.Handled = true;
+                _ = RefreshStartupAppsAsync(announce: true);
+            }
+        }
+
+        private void BtnToggleStartup_Click(object sender, RoutedEventArgs e) => ToggleSelectedStartupApp();
+
+        private async void BtnRefreshStartup_Click(object sender, RoutedEventArgs e)
+        {
+            await RefreshStartupAppsAsync(announce: true);
+        }
+
+        private void ToggleSelectedStartupApp()
+        {
+            if (lstStartupApps.SelectedItem is not StartupAppItem selected)
+            {
+                _speechService.Speak("No startup application selected.", interrupt: true);
+                return;
+            }
+
+            var (success, message) = _startupService.ToggleStartupApp(selected);
+            _speechService.Speak(message, interrupt: true);
+            txtAnnouncement.Text = message;
+
+            if (!success && selected.IsMachineWide && !ElevationHelper.IsRunningAsAdmin())
+            {
+                var askElevate = MessageBox.Show(
+                    $"{message}\n\nWould you like to restart Resource Analyzer in Administrator Mode to change machine-wide startup apps?",
+                    "Administrator Privileges Required",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Information);
+
+                if (askElevate == MessageBoxResult.Yes)
+                {
+                    ElevationHelper.RestartAsAdmin();
+                }
+            }
+            else
+            {
+                ApplyStartupFilter();
+            }
+        }
+
+        private void CtxStartupToggle_Click(object sender, RoutedEventArgs e) => ToggleSelectedStartupApp();
+
+        private void CtxStartupOpenFileLocation_Click(object sender, RoutedEventArgs e)
+        {
+            if (lstStartupApps.SelectedItem is not StartupAppItem item || string.IsNullOrWhiteSpace(item.Command)) return;
+            try
+            {
+                string raw = item.Command.Trim();
+                if (raw.StartsWith("\""))
+                {
+                    int endQuote = raw.IndexOf('\"', 1);
+                    if (endQuote > 1) raw = raw.Substring(1, endQuote - 1);
+                }
+                else
+                {
+                    int spaceIdx = raw.IndexOf(' ');
+                    if (spaceIdx > 0 && !File.Exists(raw)) raw = raw.Substring(0, spaceIdx);
+                }
+
+                if (File.Exists(raw))
+                {
+                    Process.Start("explorer.exe", $"/select,\"{raw}\"");
+                    _speechService.Speak($"Opening folder for {item.Name}.", interrupt: true);
+                }
+                else if (Directory.Exists(raw))
+                {
+                    Process.Start("explorer.exe", $"\"{raw}\"");
+                    _speechService.Speak($"Opening folder for {item.Name}.", interrupt: true);
+                }
+                else
+                {
+                    _speechService.Speak("Target executable file not found on disk.", interrupt: true);
+                }
+            }
+            catch (Exception ex)
+            {
+                _speechService.Speak($"Could not open location: {ex.Message}", interrupt: true);
+            }
+        }
+
+        private void CtxStartupCopyDetails_Click(object sender, RoutedEventArgs e)
+        {
+            if (lstStartupApps.SelectedItem is StartupAppItem item)
+            {
+                Clipboard.SetText(item.DisplayText);
+                _speechService.Speak($"Copied {item.Name} details to clipboard.", interrupt: true);
+                txtAnnouncement.Text = $"Copied {item.Name} details to clipboard.";
+            }
+        }
+
+        #endregion
+
+        #region TAB 4: Windows Services
+
+        private async Task RefreshServicesAsync(bool announce = false)
+        {
+            try
+            {
+                var services = await Task.Run(() => _serviceManager.GetServices());
+                _allServices = services;
+                ApplyServiceFilter();
+
+                if (announce)
+                {
+                    string msg = $"Windows services refreshed. {_serviceItems.Count} services displayed.";
+                    _speechService.Speak(msg, interrupt: true);
+                    txtAnnouncement.Text = msg;
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error loading services: {ex.Message}");
+                txtServiceCount.Text = "Failed to load Windows services.";
+            }
+        }
+
+        private void ApplyServiceFilter()
+        {
+            string filter = txtServiceSearch?.Text?.Trim() ?? string.Empty;
+            string statusFilter = cmbServiceFilter?.SelectedIndex switch
+            {
+                1 => "Running",
+                2 => "Stopped",
+                _ => "All"
+            };
+
+            _serviceItems.Clear();
+
+            var filtered = _allServices.AsEnumerable();
+
+            if (statusFilter == "Running")
+            {
+                filtered = filtered.Where(s => s.Status.Equals("Running", StringComparison.OrdinalIgnoreCase));
+            }
+            else if (statusFilter == "Stopped")
+            {
+                filtered = filtered.Where(s => s.Status.Equals("Stopped", StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (!string.IsNullOrEmpty(filter))
+            {
+                filtered = filtered.Where(s =>
+                    s.ServiceName.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+                    s.DisplayName.Contains(filter, StringComparison.OrdinalIgnoreCase));
+            }
+
+            foreach (var item in filtered)
+            {
+                _serviceItems.Add(item);
+            }
+
+            int runningCount = _allServices.Count(s => s.Status.Equals("Running", StringComparison.OrdinalIgnoreCase));
+            int stoppedCount = _allServices.Count(s => s.Status.Equals("Stopped", StringComparison.OrdinalIgnoreCase));
+            txtServiceCount.Text = $"{_serviceItems.Count} services listed ({runningCount} running, {stoppedCount} stopped). Enter: Start/Stop, Ctrl+R: Restart.";
+        }
+
+        private void TxtServiceSearch_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (tabServices.IsSelected)
+            {
+                ApplyServiceFilter();
+            }
+        }
+
+        private void TxtServiceSearch_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Down)
+            {
+                e.Handled = true;
+                lstServices.Focus();
+                if (_serviceItems.Count > 0 && lstServices.SelectedIndex < 0)
+                {
+                    lstServices.SelectedIndex = 0;
+                }
+            }
+            else if (e.Key == Key.Escape)
+            {
+                e.Handled = true;
+                txtServiceSearch.Text = string.Empty;
+                lstServices.Focus();
+            }
+        }
+
+        private void CmbServiceFilter_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (!_isUpdatingUI && tabServices.IsSelected)
+            {
+                ApplyServiceFilter();
+            }
+        }
+
+        private void LstServices_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter || e.Key == Key.Space)
+            {
+                e.Handled = true;
+                ToggleSelectedService();
+            }
+            else if (e.Key == Key.R && Keyboard.Modifiers == ModifierKeys.Control)
+            {
+                e.Handled = true;
+                RestartSelectedService();
+            }
+            else if (e.Key == Key.F5)
+            {
+                e.Handled = true;
+                _ = RefreshServicesAsync(announce: true);
+            }
+        }
+
+        private void BtnStartService_Click(object sender, RoutedEventArgs e) => StartSelectedService();
+        private void BtnStopService_Click(object sender, RoutedEventArgs e) => StopSelectedService();
+        private void BtnRestartService_Click(object sender, RoutedEventArgs e) => RestartSelectedService();
+
+        private void CtxServiceStart_Click(object sender, RoutedEventArgs e) => StartSelectedService();
+        private void CtxServiceStop_Click(object sender, RoutedEventArgs e) => StopSelectedService();
+        private void CtxServiceRestart_Click(object sender, RoutedEventArgs e) => RestartSelectedService();
+
+        private async void StartSelectedService()
+        {
+            if (lstServices.SelectedItem is not ServiceItem item)
+            {
+                _speechService.Speak("No service selected.", interrupt: true);
+                return;
+            }
+
+            txtAnnouncement.Text = $"Starting service {item.DisplayName}...";
+            _speechService.Speak($"Starting {item.DisplayName}.", interrupt: true);
+
+            var (success, msg) = await _serviceManager.StartServiceAsync(item.ServiceName);
+            _speechService.Speak(msg, interrupt: true);
+            txtAnnouncement.Text = msg;
+
+            if (!success && !ElevationHelper.IsRunningAsAdmin())
+            {
+                PromptElevationForService(msg);
+            }
+            else
+            {
+                await RefreshServicesAsync(announce: false);
+            }
+        }
+
+        private async void StopSelectedService()
+        {
+            if (lstServices.SelectedItem is not ServiceItem item)
+            {
+                _speechService.Speak("No service selected.", interrupt: true);
+                return;
+            }
+
+            txtAnnouncement.Text = $"Stopping service {item.DisplayName}...";
+            _speechService.Speak($"Stopping {item.DisplayName}.", interrupt: true);
+
+            var (success, msg) = await _serviceManager.StopServiceAsync(item.ServiceName);
+            _speechService.Speak(msg, interrupt: true);
+            txtAnnouncement.Text = msg;
+
+            if (!success && !ElevationHelper.IsRunningAsAdmin())
+            {
+                PromptElevationForService(msg);
+            }
+            else
+            {
+                await RefreshServicesAsync(announce: false);
+            }
+        }
+
+        private async void RestartSelectedService()
+        {
+            if (lstServices.SelectedItem is not ServiceItem item)
+            {
+                _speechService.Speak("No service selected.", interrupt: true);
+                return;
+            }
+
+            txtAnnouncement.Text = $"Restarting service {item.DisplayName}...";
+            _speechService.Speak($"Restarting {item.DisplayName}.", interrupt: true);
+
+            var (success, msg) = await _serviceManager.RestartServiceAsync(item.ServiceName);
+            _speechService.Speak(msg, interrupt: true);
+            txtAnnouncement.Text = msg;
+
+            if (!success && !ElevationHelper.IsRunningAsAdmin())
+            {
+                PromptElevationForService(msg);
+            }
+            else
+            {
+                await RefreshServicesAsync(announce: false);
+            }
+        }
+
+        private void ToggleSelectedService()
+        {
+            if (lstServices.SelectedItem is not ServiceItem item)
+            {
+                _speechService.Speak("No service selected.", interrupt: true);
+                return;
+            }
+
+            if (item.Status.Equals("Running", StringComparison.OrdinalIgnoreCase))
+            {
+                StopSelectedService();
+            }
+            else
+            {
+                StartSelectedService();
+            }
+        }
+
+        private void PromptElevationForService(string message)
+        {
+            var res = MessageBox.Show(
+                $"{message}\n\nWould you like to restart Resource Analyzer in Administrator Mode to manage Windows Services?",
+                "Administrator Privileges Required",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Information);
+
+            if (res == MessageBoxResult.Yes)
+            {
+                ElevationHelper.RestartAsAdmin();
+            }
+        }
+
+        private void CtxServiceCopyDetails_Click(object sender, RoutedEventArgs e)
+        {
+            if (lstServices.SelectedItem is ServiceItem item)
+            {
+                Clipboard.SetText(item.DisplayText);
+                _speechService.Speak($"Copied {item.DisplayName} details to clipboard.", interrupt: true);
+                txtAnnouncement.Text = $"Copied {item.DisplayName} details to clipboard.";
+            }
+        }
+
+        #endregion
+
+        #region Application Updates
+
+        private async void BtnCheckForUpdates_Click(object sender, RoutedEventArgs e)
+        {
+            btnCheckForUpdates.IsEnabled = false;
+            txtUpdateStatus.Text = "Checking for updates from GitHub...";
+            _speechService.Speak("Checking for updates.", interrupt: true);
+
+            var info = await _updateService.CheckForUpdatesAsync();
+            btnCheckForUpdates.IsEnabled = true;
+
+            txtUpdateStatus.Text = info.Message;
+            _speechService.Speak(info.Message, interrupt: true);
+
+            if (info.HasUpdate)
+            {
+                _latestUpdateUrl = !string.IsNullOrEmpty(info.DownloadUrl) ? info.DownloadUrl : info.HtmlUrl;
+                btnDownloadUpdate.Visibility = Visibility.Visible;
+                btnDownloadUpdate.Content = $"Download Update ({info.LatestVersion})";
+                btnDownloadUpdate.Focus();
+            }
+            else
+            {
+                btnDownloadUpdate.Visibility = Visibility.Collapsed;
+            }
+        }
+
+        private void BtnDownloadUpdate_Click(object sender, RoutedEventArgs e)
+        {
+            if (!string.IsNullOrEmpty(_latestUpdateUrl))
+            {
+                _updateService.OpenUrl(_latestUpdateUrl);
+                _speechService.Speak("Opening update download link in your browser.", interrupt: true);
             }
         }
 

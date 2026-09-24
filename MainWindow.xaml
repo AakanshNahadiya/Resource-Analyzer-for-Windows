@@ -96,12 +96,25 @@
 
         <!-- Header / Instructions -->
         <DockPanel Grid.Row="0" Margin="0,0,0,10">
-            <TextBlock Text="Resource Analyzer for Windows" FontWeight="Bold" FontSize="18" Foreground="{DynamicResource AccentBrush}"
-                       VerticalAlignment="Center"
-                       AutomationProperties.Name="Resource Analyzer for Windows"/>
-            <TextBlock x:Name="txtStatus" HorizontalAlignment="Right" VerticalAlignment="Center"
-                       Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12"
-                       Text="F1 or Shift+/: Shortcuts | Ctrl+1..4: Tabs | F5: Refresh"/>
+            <StackPanel Orientation="Horizontal" DockPanel.Dock="Left" VerticalAlignment="Center">
+                <TextBlock Text="Resource Analyzer for Windows" FontWeight="Bold" FontSize="18" Foreground="{DynamicResource AccentBrush}"
+                           VerticalAlignment="Center"
+                           AutomationProperties.Name="Resource Analyzer for Windows"/>
+                <Border x:Name="badgeAdmin" Margin="10,0,0,0" Padding="6,2" Background="{DynamicResource AccentBrush}" CornerRadius="3" VerticalAlignment="Center" Visibility="Collapsed">
+                    <TextBlock Text="ADMIN" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource SelectionForegroundBrush}"
+                               AutomationProperties.Name="Running with Administrator Privileges"/>
+                </Border>
+            </StackPanel>
+
+            <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" HorizontalAlignment="Right" VerticalAlignment="Center">
+                <Button x:Name="btnHeaderAdmin" Content="Run as Admin (Ctrl+Shift+A)" Height="26" Padding="8,2" Margin="0,0,12,0"
+                        Background="{DynamicResource SurfaceBackgroundBrush}" Foreground="{DynamicResource TextPrimaryBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                        FontSize="12" FontWeight="SemiBold" Click="BtnRestartAdmin_Click"
+                        AutomationProperties.Name="Restart in Administrator Mode (Ctrl+Shift+A)"/>
+                <TextBlock x:Name="txtStatus" VerticalAlignment="Center"
+                           Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12"
+                           Text="F1: Shortcuts | Ctrl+1..6: Tabs | F5: Refresh"/>
+            </StackPanel>
         </DockPanel>
 
         <!-- Main Tab Control -->
@@ -111,7 +124,7 @@
 
             <!-- TAB 1: System Resources -->
             <TabItem x:Name="tabResources" Header="1. Resources"
-                     AutomationProperties.Name="System Resources Tab (1 of 4)">
+                     AutomationProperties.Name="System Resources Tab (1 of 6)">
                 <Grid Margin="10">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -134,9 +147,9 @@
                                     <TextBlock Text="{Binding DisplayText}" TextWrapping="Wrap"
                                                AutomationProperties.Name="{Binding DisplayText}"/>
                                     <local:SilentProgressBar Minimum="0" Maximum="100" Value="{Binding Percent}" Height="5" Margin="0,4,0,2"
-                                                              Visibility="{Binding HasPercent, Converter={StaticResource BoolToVisConverter}}"
-                                                              Foreground="{DynamicResource AccentBrush}" Background="{DynamicResource ProgressBarBackgroundBrush}"
-                                                              BorderThickness="0" Focusable="False" IsHitTestVisible="False"/>
+                                                             Visibility="{Binding HasPercent, Converter={StaticResource BoolToVisConverter}}"
+                                                             Foreground="{DynamicResource AccentBrush}" Background="{DynamicResource ProgressBarBackgroundBrush}"
+                                                             BorderThickness="0" Focusable="False" IsHitTestVisible="False"/>
                                 </StackPanel>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
@@ -146,7 +159,7 @@
 
             <!-- TAB 2: Process Manager -->
             <TabItem x:Name="tabProcesses" Header="2. Processes"
-                     AutomationProperties.Name="Process Manager Tab (2 of 4)">
+                     AutomationProperties.Name="Process Manager Tab (2 of 6)">
                 <Grid Margin="10">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -217,9 +230,159 @@
                 </Grid>
             </TabItem>
 
-            <!-- TAB 3: Data Usage -->
-            <TabItem x:Name="tabDataUsage" Header="3. Data Usage"
-                     AutomationProperties.Name="Data Usage Tab (3 of 4)">
+            <!-- TAB 3: Startup Applications -->
+            <TabItem x:Name="tabStartup" Header="3. Startup"
+                     AutomationProperties.Name="Startup Applications Tab (3 of 6)">
+                <Grid Margin="10">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Search Filter & Actions Header -->
+                    <Grid Grid.Row="0" Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock Text="Filter (Ctrl+F): " VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,8,0"/>
+                        <TextBox x:Name="txtStartupSearch" Grid.Column="1" Height="28" Padding="6,2"
+                                 Background="{DynamicResource InputBackgroundBrush}" Foreground="{DynamicResource InputForegroundBrush}" BorderBrush="{DynamicResource InputBorderBrush}"
+                                 TextChanged="TxtStartupSearch_TextChanged"
+                                 KeyDown="TxtStartupSearch_KeyDown"
+                                 AutomationProperties.Name="Search Startup Apps. Type to filter, Press Down Arrow to enter list, Escape to clear."/>
+
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="8,0,0,0">
+                            <Button x:Name="btnToggleStartup" Content="Toggle (Space/Enter)" Height="28" Padding="10,2" Margin="0,0,4,0"
+                                    Background="{DynamicResource SurfaceBackgroundBrush}" Foreground="{DynamicResource TextPrimaryBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                                    Click="BtnToggleStartup_Click"
+                                    AutomationProperties.Name="Enable or Disable Selected Startup Application"/>
+                            <Button x:Name="btnRefreshStartup" Content="Refresh (F5)" Height="28" Padding="10,2"
+                                    Background="{DynamicResource SurfaceBackgroundBrush}" Foreground="{DynamicResource TextPrimaryBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                                    Click="BtnRefreshStartup_Click"
+                                    AutomationProperties.Name="Refresh Startup Applications List"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <TextBlock x:Name="txtStartupCount" Grid.Row="1" Margin="0,0,0,6" Foreground="{DynamicResource AccentBrush}" FontSize="12"
+                               Text="Loading startup apps... Press Space or Enter to enable/disable."
+                               AutomationProperties.Name="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+
+                    <ListBox x:Name="lstStartupApps" Grid.Row="2"
+                             Background="{DynamicResource WindowBackgroundBrush}" BorderThickness="0"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto"
+                             VirtualizingStackPanel.IsVirtualizing="True"
+                             VirtualizingStackPanel.VirtualizationMode="Recycling"
+                             KeyDown="LstStartupApps_KeyDown"
+                             AutomationProperties.Name="Startup Applications">
+                        <ListBox.ContextMenu>
+                            <ContextMenu x:Name="ctxStartupMenu">
+                                <MenuItem Header="Toggle Status (Space / Enter)" Click="CtxStartupToggle_Click" AutomationProperties.Name="Toggle Enable or Disable"/>
+                                <MenuItem Header="Open File Location" Click="CtxStartupOpenFileLocation_Click" AutomationProperties.Name="Open File Location in Explorer"/>
+                                <Separator Background="{DynamicResource BorderBrush}"/>
+                                <MenuItem Header="Copy Details" Click="CtxStartupCopyDetails_Click" AutomationProperties.Name="Copy Details to Clipboard"/>
+                            </ContextMenu>
+                        </ListBox.ContextMenu>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding DisplayText}" TextWrapping="Wrap"
+                                           AutomationProperties.Name="{Binding DisplayText}"/>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Grid>
+            </TabItem>
+
+            <!-- TAB 4: Windows Services -->
+            <TabItem x:Name="tabServices" Header="4. Services"
+                     AutomationProperties.Name="Windows Services Tab (4 of 6)">
+                <Grid Margin="10">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Filter Controls & Service Actions -->
+                    <Grid Grid.Row="0" Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock Text="Filter (Ctrl+F): " VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,8,0"/>
+                        <TextBox x:Name="txtServiceSearch" Grid.Column="1" Height="28" Padding="6,2"
+                                 Background="{DynamicResource InputBackgroundBrush}" Foreground="{DynamicResource InputForegroundBrush}" BorderBrush="{DynamicResource InputBorderBrush}"
+                                 TextChanged="TxtServiceSearch_TextChanged"
+                                 KeyDown="TxtServiceSearch_KeyDown"
+                                 AutomationProperties.Name="Search Services. Type to filter, Press Down Arrow to enter list, Escape to clear."/>
+
+                        <ComboBox x:Name="cmbServiceFilter" Grid.Column="2" Width="130" Height="28" Margin="8,0,0,0"
+                                  SelectedIndex="0"
+                                  SelectionChanged="CmbServiceFilter_SelectionChanged"
+                                  Background="{DynamicResource InputBackgroundBrush}" Foreground="{DynamicResource InputForegroundBrush}" BorderBrush="{DynamicResource InputBorderBrush}"
+                                  AutomationProperties.Name="Filter Services by Status">
+                            <ComboBoxItem Content="All Services"/>
+                            <ComboBoxItem Content="Running Only"/>
+                            <ComboBoxItem Content="Stopped Only"/>
+                        </ComboBox>
+
+                        <StackPanel Grid.Column="3" Orientation="Horizontal" Margin="8,0,0,0">
+                            <Button x:Name="btnStartService" Content="Start" Height="28" Padding="8,2" Margin="0,0,4,0"
+                                    Background="{DynamicResource SurfaceBackgroundBrush}" Foreground="{DynamicResource TextPrimaryBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                                    Click="BtnStartService_Click"
+                                    AutomationProperties.Name="Start Selected Service"/>
+                            <Button x:Name="btnStopService" Content="Stop" Height="28" Padding="8,2" Margin="0,0,4,0"
+                                    Background="{DynamicResource SurfaceBackgroundBrush}" Foreground="{DynamicResource TextPrimaryBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                                    Click="BtnStopService_Click"
+                                    AutomationProperties.Name="Stop Selected Service"/>
+                            <Button x:Name="btnRestartService" Content="Restart (Ctrl+R)" Height="28" Padding="8,2"
+                                    Background="{DynamicResource SurfaceBackgroundBrush}" Foreground="{DynamicResource TextPrimaryBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                                    Click="BtnRestartService_Click"
+                                    AutomationProperties.Name="Restart Selected Service (Ctrl+R)"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <TextBlock x:Name="txtServiceCount" Grid.Row="1" Margin="0,0,0,6" Foreground="{DynamicResource AccentBrush}" FontSize="12"
+                               Text="Loading services... Press Enter to toggle Start/Stop, Ctrl+R to restart."
+                               AutomationProperties.Name="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+
+                    <ListBox x:Name="lstServices" Grid.Row="2"
+                             Background="{DynamicResource WindowBackgroundBrush}" BorderThickness="0"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto"
+                             VirtualizingStackPanel.IsVirtualizing="True"
+                             VirtualizingStackPanel.VirtualizationMode="Recycling"
+                             KeyDown="LstServices_KeyDown"
+                             AutomationProperties.Name="Windows Services">
+                        <ListBox.ContextMenu>
+                            <ContextMenu x:Name="ctxServiceMenu">
+                                <MenuItem Header="Start Service" Click="CtxServiceStart_Click" AutomationProperties.Name="Start Service"/>
+                                <MenuItem Header="Stop Service" Click="CtxServiceStop_Click" AutomationProperties.Name="Stop Service"/>
+                                <MenuItem Header="Restart Service (Ctrl+R)" Click="CtxServiceRestart_Click" AutomationProperties.Name="Restart Service"/>
+                                <Separator Background="{DynamicResource BorderBrush}"/>
+                                <MenuItem Header="Copy Service Details" Click="CtxServiceCopyDetails_Click" AutomationProperties.Name="Copy Details to Clipboard"/>
+                            </ContextMenu>
+                        </ListBox.ContextMenu>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding DisplayText}" TextWrapping="Wrap"
+                                           AutomationProperties.Name="{Binding DisplayText}"/>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Grid>
+            </TabItem>
+
+            <!-- TAB 5: Data Usage -->
+            <TabItem x:Name="tabDataUsage" Header="5. Data Usage"
+                     AutomationProperties.Name="Data Usage Tab (5 of 6)">
                 <Grid Margin="10">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -282,9 +445,9 @@
                 </Grid>
             </TabItem>
 
-            <!-- TAB 4: Settings -->
-            <TabItem x:Name="tabSettings" Header="4. Settings"
-                     AutomationProperties.Name="Settings Tab (4 of 4)">
+            <!-- TAB 6: Settings -->
+            <TabItem x:Name="tabSettings" Header="6. Settings"
+                     AutomationProperties.Name="Settings Tab (6 of 6)">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel Margin="16" MaxWidth="620" HorizontalAlignment="Left">
                         <!-- Section 1: Process Filtering & Safety -->
@@ -446,7 +609,33 @@
                             <ComboBoxItem Content="Remember process sort and filter preferences across restarts"/>
                         </ComboBox>
 
-                        <Button x:Name="btnResetDefaults" Content="Reset All Settings to Defaults" Width="240" Height="32" Margin="0,20,0,0" HorizontalAlignment="Left"
+                        <Separator Background="{DynamicResource BorderBrush}" Margin="0,16"/>
+
+                        <!-- Section 8: Administrator Privileges -->
+                        <TextBlock Text="Administrator Privileges" FontWeight="Bold" FontSize="15" Foreground="{DynamicResource AccentBrush}" Margin="0,0,0,4"/>
+                        <TextBlock x:Name="txtAdminPrivilegeInfo" Text="Current status: Standard User privileges" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,8"/>
+                        <Button x:Name="btnSettingsRestartAdmin" Content="Restart as Administrator (Ctrl+Shift+A)" Width="280" Height="30" HorizontalAlignment="Left"
+                                Click="BtnRestartAdmin_Click" Background="{DynamicResource SurfaceBackgroundBrush}" Foreground="{DynamicResource TextPrimaryBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                                AutomationProperties.Name="Restart Resource Analyzer in Administrator Mode"/>
+
+                        <Separator Background="{DynamicResource BorderBrush}" Margin="0,16"/>
+
+                        <!-- Section 9: Application Updates -->
+                        <TextBlock Text="Application Updates &amp; Version" FontWeight="Bold" FontSize="15" Foreground="{DynamicResource AccentBrush}" Margin="0,0,0,4"/>
+                        <TextBlock x:Name="txtCurrentVersion" Text="Current Version: v1.0.0" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,8"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                            <Button x:Name="btnCheckForUpdates" Content="Check for Updates" Width="180" Height="30" Margin="0,0,10,0"
+                                    Click="BtnCheckForUpdates_Click" Background="{DynamicResource SurfaceBackgroundBrush}" Foreground="{DynamicResource TextPrimaryBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                                    AutomationProperties.Name="Check GitHub for newer releases"/>
+                            <Button x:Name="btnDownloadUpdate" Content="Download Update" Width="200" Height="30" Visibility="Collapsed"
+                                    Click="BtnDownloadUpdate_Click" Background="{DynamicResource AccentBrush}" Foreground="{DynamicResource SelectionForegroundBrush}" BorderBrush="{DynamicResource AccentBrush}" FontWeight="SemiBold"
+                                    AutomationProperties.Name="Open latest release download link"/>
+                        </StackPanel>
+                        <TextBlock x:Name="txtUpdateStatus" Text="Press 'Check for Updates' to verify whether a newer version is available." Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,2,0,8" TextWrapping="Wrap"/>
+
+                        <Separator Background="{DynamicResource BorderBrush}" Margin="0,16"/>
+
+                        <Button x:Name="btnResetDefaults" Content="Reset All Settings to Defaults" Width="240" Height="32" Margin="0,8,0,0" HorizontalAlignment="Left"
                                 Click="BtnResetDefaults_Click" Background="{DynamicResource SurfaceBackgroundBrush}" Foreground="{DynamicResource TextPrimaryBrush}" BorderBrush="{DynamicResource BorderBrush}" FontWeight="SemiBold"
                                 AutomationProperties.Name="Reset All Settings to Defaults"/>
                     </StackPanel>
@@ -456,7 +645,7 @@
 
         <!-- Bottom status line -->
         <DockPanel Grid.Row="2" Margin="0,8,0,0">
-            <TextBlock DockPanel.Dock="Right" Text="F1 or Shift+/: Shortcuts | Ctrl+1..4: Tabs | F5: Refresh"
+            <TextBlock DockPanel.Dock="Right" Text="F1: Shortcuts | Ctrl+1..6: Tabs | F5: Refresh"
                        Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12" HorizontalAlignment="Right"
                        AutomationProperties.Name="Keyboard Shortcuts Hint"/>
             <TextBlock x:Name="txtAnnouncement" Foreground="{DynamicResource StatusAnnouncementBrush}" FontSize="13"

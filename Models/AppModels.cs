@@ -392,4 +392,134 @@ namespace AccessibleTaskManager.Models
     }
 
     #endregion
+
+    #region Startup App Item
+
+    public class StartupAppItem : INotifyPropertyChanged
+    {
+        private bool _isEnabled = true;
+        private string _displayText = string.Empty;
+
+        public string Name { get; set; } = string.Empty;
+        public string Command { get; set; } = string.Empty;
+        public string Location { get; set; } = string.Empty; // "User (HKCU)", "All Users (HKLM)", "Startup Folder"
+        public string RegistryPath { get; set; } = string.Empty;
+        public bool IsMachineWide { get; set; } = false;
+
+        public bool IsEnabled
+        {
+            get => _isEnabled;
+            set
+            {
+                if (_isEnabled != value)
+                {
+                    _isEnabled = value;
+                    UpdateDisplayText();
+                    OnPropertyChanged();
+                    OnPropertyChanged(nameof(StatusText));
+                }
+            }
+        }
+
+        public string StatusText => IsEnabled ? "Enabled" : "Disabled";
+
+        public string DisplayText
+        {
+            get => _displayText;
+            private set
+            {
+                if (_displayText != value)
+                {
+                    _displayText = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        public void UpdateDisplayText()
+        {
+            string loc = string.IsNullOrWhiteSpace(Location) ? "" : $" [{Location}]";
+            DisplayText = $"{Name} - {StatusText}{loc} - Command: {Command}";
+        }
+
+        public override string ToString() => DisplayText;
+
+        public event PropertyChangedEventHandler? PropertyChanged;
+        protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    #endregion
+
+    #region Service Item
+
+    public class ServiceItem : INotifyPropertyChanged
+    {
+        private string _status = "Unknown";
+        private string _startupType = "Unknown";
+        private string _displayText = string.Empty;
+
+        public string ServiceName { get; set; } = string.Empty;
+        public string DisplayName { get; set; } = string.Empty;
+
+        public string Status
+        {
+            get => _status;
+            set
+            {
+                if (_status != value)
+                {
+                    _status = value;
+                    UpdateDisplayText();
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        public string StartupType
+        {
+            get => _startupType;
+            set
+            {
+                if (_startupType != value)
+                {
+                    _startupType = value;
+                    UpdateDisplayText();
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        public string DisplayText
+        {
+            get => _displayText;
+            private set
+            {
+                if (_displayText != value)
+                {
+                    _displayText = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        public void UpdateDisplayText()
+        {
+            string disp = string.IsNullOrWhiteSpace(DisplayName) ? ServiceName : DisplayName;
+            DisplayText = $"{disp} ({ServiceName}) - Status: {Status}, Startup: {StartupType}";
+        }
+
+        public override string ToString() => DisplayText;
+
+        public event PropertyChangedEventHandler? PropertyChanged;
+        protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    #endregion
 }
+
