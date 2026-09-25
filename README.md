@@ -43,7 +43,7 @@ Now it's time to set up Resource Analyzer step-by-step.
 
 ## Step 1: Download and Install Resource Analyzer
 
-1. Locate the setup file: `ResourceAnalyzer_Setup_v1.0.1.exe`.
+1. Locate the setup file: `ResourceAnalyzer_Setup_v1.0.2.exe`.
 2. Press <kbd>Enter</kbd> on the setup file to open the installation wizard.
 3. Press <kbd>Enter</kbd> on the **Next** button.
 4. Use the <kbd>Tab</kbd> key to review installation options:

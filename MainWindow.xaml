@@ -641,16 +641,6 @@
                             <ComboBoxItem Content="Hide .exe extension, Include PID (Classic)"/>
                         </ComboBox>
 
-                        <TextBlock Text="Process Grouping:" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,12,0,8"/>
-                        <ComboBox x:Name="cmbProcessGrouping" Width="460" Height="30" HorizontalAlignment="Left"
-                                  SelectedIndex="0"
-                                  SelectionChanged="CmbProcessGrouping_SelectionChanged"
-                                  Background="{DynamicResource InputBackgroundBrush}" Foreground="{DynamicResource InputForegroundBrush}" BorderBrush="{DynamicResource InputBorderBrush}"
-                                  AutomationProperties.Name="Process Grouping Mode">
-                            <ComboBoxItem Content="Group multi-instance processes into collapsible applications (Recommended)"/>
-                            <ComboBoxItem Content="Show all instances separately as a flat list"/>
-                        </ComboBox>
-
                         <Separator Background="{DynamicResource BorderBrush}" Margin="0,16"/>
 
                         <!-- Section 2: Resource Overuse Alerts -->
@@ -812,7 +802,7 @@
 
                         <!-- Section 8: Application Updates -->
                         <TextBlock Text="Application Updates &amp; Version" FontWeight="Bold" FontSize="15" Foreground="{DynamicResource AccentBrush}" Margin="0,0,0,4"/>
-                        <TextBlock x:Name="txtCurrentVersion" Text="Current Version: v1.0.1" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,10"/>
+                        <TextBlock x:Name="txtCurrentVersion" Text="Current Version: v1.0.2" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,10"/>
 
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                             <Button x:Name="btnCheckForUpdates" Content="Check for Updates" Width="180" Height="30" Margin="0,0,10,0"
