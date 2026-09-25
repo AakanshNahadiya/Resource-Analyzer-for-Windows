@@ -2513,10 +2513,6 @@ namespace AccessibleTaskManager
             _settingsService.Save();
 
             UpdateGroupToggleButtonText();
-            if (cmbProcessGrouping != null)
-            {
-                cmbProcessGrouping.SelectedIndex = s.GroupProcesses ? 0 : 1;
-            }
 
             string status = s.GroupProcesses ? "Process grouping enabled." : "Process grouping disabled.";
             _speechService.Speak(status, interrupt: true);
@@ -2531,22 +2527,6 @@ namespace AccessibleTaskManager
             {
                 bool grouped = _settingsService.CurrentSettings.GroupProcesses;
                 btnToggleGroup.Content = grouped ? "Group: On (Ctrl+G)" : "Group: Off (Ctrl+G)";
-            }
-        }
-
-        private void CmbProcessGrouping_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        {
-            if (_isUpdatingUI) return;
-            if (cmbProcessGrouping.SelectedIndex < 0) return;
-
-            var s = _settingsService.CurrentSettings;
-            s.GroupProcesses = cmbProcessGrouping.SelectedIndex == 0;
-            _settingsService.Save();
-
-            UpdateGroupToggleButtonText();
-            if (tabProcesses.IsSelected)
-            {
-                _ = RefreshProcessesAsync(isFullReset: true);
             }
         }
 
@@ -2592,11 +2572,6 @@ namespace AccessibleTaskManager
                     }
                 }
 
-                // Process Grouping Combo
-                if (cmbProcessGrouping != null)
-                {
-                    cmbProcessGrouping.SelectedIndex = s.GroupProcesses ? 0 : 1;
-                }
                 UpdateGroupToggleButtonText();
 
                 // Alerts Combo
@@ -3078,11 +3053,6 @@ namespace AccessibleTaskManager
                 }
             }
 
-            // Process Grouping
-            if (cmbProcessGrouping != null && cmbProcessGrouping.SelectedIndex >= 0)
-            {
-                s.GroupProcesses = cmbProcessGrouping.SelectedIndex == 0;
-            }
             UpdateGroupToggleButtonText();
 
             // Visible resources
