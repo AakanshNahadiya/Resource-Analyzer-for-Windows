@@ -20,6 +20,16 @@
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisConverter"/>
 
+        <Style x:Key="BannerTextFocusVisual">
+            <Setter Property="Control.Template">
+                <Setter.Value>
+                    <ControlTemplate>
+                        <Rectangle Stroke="{DynamicResource AccentBrush}" StrokeThickness="1.5" StrokeDashArray="2 2" Margin="-3"/>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style TargetType="TabItem">
             <Setter Property="FontSize" Value="14"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
@@ -96,12 +106,25 @@
 
         <!-- Header / Instructions -->
         <DockPanel Grid.Row="0" Margin="0,0,0,10">
-            <TextBlock Text="Resource Analyzer for Windows" FontWeight="Bold" FontSize="18" Foreground="{DynamicResource AccentBrush}"
-                       VerticalAlignment="Center"
-                       AutomationProperties.Name="Resource Analyzer for Windows"/>
-            <TextBlock x:Name="txtStatus" HorizontalAlignment="Right" VerticalAlignment="Center"
-                       Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12"
-                       Text="F1 or Shift+/: Shortcuts | Ctrl+1..4: Tabs | F5: Refresh"/>
+            <StackPanel Orientation="Horizontal" DockPanel.Dock="Left" VerticalAlignment="Center">
+                <TextBlock Text="Resource Analyzer for Windows" FontWeight="Bold" FontSize="18" Foreground="{DynamicResource AccentBrush}"
+                           VerticalAlignment="Center"
+                           AutomationProperties.Name="Resource Analyzer for Windows"/>
+                <Border x:Name="badgeAdmin" Margin="10,0,0,0" Padding="6,2" Background="{DynamicResource AccentBrush}" CornerRadius="3" VerticalAlignment="Center" Visibility="Collapsed">
+                    <TextBlock Text="ADMIN" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource SelectionForegroundBrush}"
+                               AutomationProperties.Name="Running with Administrator Privileges"/>
+                </Border>
+            </StackPanel>
+
+            <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" HorizontalAlignment="Right" VerticalAlignment="Center">
+                <Button x:Name="btnHeaderAdmin" Content="Run as Admin (Ctrl+Shift+A)" Height="26" Padding="8,2" Margin="0,0,12,0"
+                        Background="{DynamicResource SurfaceBackgroundBrush}" Foreground="{DynamicResource TextPrimaryBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                        FontSize="12" FontWeight="SemiBold" Click="BtnRestartAdmin_Click"
+                        AutomationProperties.Name="Restart in Administrator Mode (Ctrl+Shift+A)"/>
+                <TextBlock x:Name="txtStatus" VerticalAlignment="Center"
+                           Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12"
+                           Text="F1: Shortcuts | Ctrl+1..6: Tabs | F5: Refresh"/>
+            </StackPanel>
         </DockPanel>
 
         <!-- Main Tab Control -->
@@ -111,7 +134,7 @@
 
             <!-- TAB 1: System Resources -->
             <TabItem x:Name="tabResources" Header="1. Resources"
-                     AutomationProperties.Name="System Resources Tab (1 of 4)">
+                     AutomationProperties.Name="System Resources Tab (1 of 6)">
                 <Grid Margin="10">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -134,9 +157,9 @@
                                     <TextBlock Text="{Binding DisplayText}" TextWrapping="Wrap"
                                                AutomationProperties.Name="{Binding DisplayText}"/>
                                     <local:SilentProgressBar Minimum="0" Maximum="100" Value="{Binding Percent}" Height="5" Margin="0,4,0,2"
-                                                              Visibility="{Binding HasPercent, Converter={StaticResource BoolToVisConverter}}"
-                                                              Foreground="{DynamicResource AccentBrush}" Background="{DynamicResource ProgressBarBackgroundBrush}"
-                                                              BorderThickness="0" Focusable="False" IsHitTestVisible="False"/>
+                                                             Visibility="{Binding HasPercent, Converter={StaticResource BoolToVisConverter}}"
+                                                             Foreground="{DynamicResource AccentBrush}" Background="{DynamicResource ProgressBarBackgroundBrush}"
+                                                             BorderThickness="0" Focusable="False" IsHitTestVisible="False"/>
                                 </StackPanel>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
@@ -146,9 +169,10 @@
 
             <!-- TAB 2: Process Manager -->
             <TabItem x:Name="tabProcesses" Header="2. Processes"
-                     AutomationProperties.Name="Process Manager Tab (2 of 4)">
+                     AutomationProperties.Name="Process Manager Tab (2 of 6)">
                 <Grid Margin="10">
                     <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
@@ -173,7 +197,7 @@
                             <Button x:Name="btnSortMem" Content="Sort RAM (Ctrl+M)" Height="28" Padding="8,2" Margin="0,0,4,0"
                                     Background="{DynamicResource SurfaceBackgroundBrush}" Foreground="{DynamicResource TextPrimaryBrush}" BorderBrush="{DynamicResource BorderBrush}" Click="BtnSortMem_Click"
                                     AutomationProperties.Name="Sort by Memory Usage"/>
-                            <Button x:Name="btnSortCpu" Content="Sort CPU (Ctrl+C)" Height="28" Padding="8,2" Margin="0,0,4,0"
+                            <Button x:Name="btnSortCpu" Content="Sort CPU (Ctrl+P)" Height="28" Padding="8,2" Margin="0,0,4,0"
                                     Background="{DynamicResource SurfaceBackgroundBrush}" Foreground="{DynamicResource TextPrimaryBrush}" BorderBrush="{DynamicResource BorderBrush}" Click="BtnSortCpu_Click"
                                     AutomationProperties.Name="Sort by CPU Usage"/>
                             <Button x:Name="btnSortName" Content="Sort Name (Ctrl+N)" Height="28" Padding="8,2" Margin="0,0,4,0"
@@ -189,7 +213,37 @@
                                Text="Loading processes... Press Delete to end selected task."
                                AutomationProperties.Name="{Binding Text, RelativeSource={RelativeSource Self}}"/>
 
-                    <ListBox x:Name="lstProcesses" Grid.Row="2"
+                    <!-- Dynamic Frozen Applications Panel (Hidden when 0 apps are hung) -->
+                    <Border x:Name="pnlFrozenApps" Grid.Row="2" Visibility="Collapsed"
+                            Margin="0,0,0,8" Padding="8,6" CornerRadius="4"
+                            Background="{DynamicResource SurfaceBackgroundBrush}"
+                            BorderBrush="#FFE53935" BorderThickness="1.5">
+                        <StackPanel>
+                            <TextBlock Text="⚠️ Frozen Applications (Not Responding) - Press Delete or Enter to Force Close"
+                                       FontWeight="Bold" Foreground="#FFE53935" Margin="0,0,0,4"
+                                       AutomationProperties.Name="Warning: Frozen Applications detected. Press Delete or Enter to Force Close"/>
+                            <ListBox x:Name="lstFrozenApps" MaxHeight="100"
+                                     Background="Transparent" BorderThickness="0"
+                                     ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                     KeyDown="LstFrozenApps_KeyDown"
+                                     MouseDoubleClick="LstFrozenApps_MouseDoubleClick"
+                                     AutomationProperties.Name="Frozen Applications List">
+                                <ListBox.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="Force Close Application (Delete)" Click="CtxKillFrozen_Click" InputGestureText="Del" AutomationProperties.Name="Force Close Frozen Application"/>
+                                    </ContextMenu>
+                                </ListBox.ContextMenu>
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding DisplayText}" FontWeight="SemiBold" Foreground="#FFE53935"
+                                                   AutomationProperties.Name="{Binding DisplayText}"/>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </StackPanel>
+                    </Border>
+
+                    <ListBox x:Name="lstProcesses" Grid.Row="3"
                              Background="{DynamicResource WindowBackgroundBrush}" BorderThickness="0"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                              ScrollViewer.VerticalScrollBarVisibility="Auto"
@@ -201,16 +255,23 @@
                         <ListBox.ContextMenu>
                             <ContextMenu x:Name="ctxProcessMenu">
                                 <MenuItem Header="End Task (Delete)" Click="CtxEndTask_Click" InputGestureText="Del" AutomationProperties.Name="End Selected Task"/>
+                                <MenuItem Header="End Process Tree (Shift+Delete)" Click="CtxEndProcessTree_Click" InputGestureText="Shift+Del" AutomationProperties.Name="End Entire Process Tree"/>
                                 <MenuItem Header="Open File Location" Click="CtxOpenFileLocation_Click" AutomationProperties.Name="Open File Location in Explorer"/>
                                 <MenuItem Header="Search on Web" Click="CtxSearchWeb_Click" AutomationProperties.Name="Search Process Online"/>
                                 <Separator Background="{DynamicResource BorderBrush}"/>
-                                <MenuItem Header="Copy Process Details" Click="CtxCopyDetails_Click" AutomationProperties.Name="Copy Process Details to Clipboard"/>
+                                <MenuItem Header="Copy Process Details (Ctrl+C)" Click="CtxCopyDetails_Click" InputGestureText="Ctrl+C" AutomationProperties.Name="Copy Process Details to Clipboard"/>
                             </ContextMenu>
                         </ListBox.ContextMenu>
                         <ListBox.ItemTemplate>
                             <DataTemplate>
-                                <TextBlock Text="{Binding DisplayText}" TextWrapping="Wrap"
-                                           AutomationProperties.Name="{Binding DisplayText}"/>
+                                <StackPanel Margin="0,2">
+                                    <TextBlock Text="{Binding DisplayText}" TextWrapping="Wrap"
+                                               AutomationProperties.Name="{Binding DisplayText}"/>
+                                    <local:SilentProgressBar Minimum="0" Maximum="100" Value="{Binding CpuPercent}" Height="5" Margin="0,4,0,2"
+                                                             Visibility="{Binding HasCpuPercent, Converter={StaticResource BoolToVisConverter}}"
+                                                             Foreground="{DynamicResource AccentBrush}" Background="{DynamicResource ProgressBarBackgroundBrush}"
+                                                             BorderThickness="0" Focusable="False" IsHitTestVisible="False"/>
+                                </StackPanel>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
                     </ListBox>
@@ -219,7 +280,7 @@
 
             <!-- TAB 3: Data Usage -->
             <TabItem x:Name="tabDataUsage" Header="3. Data Usage"
-                     AutomationProperties.Name="Data Usage Tab (3 of 4)">
+                     AutomationProperties.Name="Data Usage Tab (3 of 6)">
                 <Grid Margin="10">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -229,8 +290,9 @@
 
                     <!-- Filter Controls -->
                     <WrapPanel Grid.Row="0" Margin="0,0,0,8" VerticalAlignment="Center">
+                        <!-- Network adapter filter -->
                         <TextBlock Text="Network: " VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,4,0"/>
-                        <ComboBox x:Name="cmbDataNetwork" Width="220" Height="28" Margin="0,0,12,0"
+                        <ComboBox x:Name="cmbDataNetwork" Width="200" Height="28" Margin="0,0,12,0"
                                   SelectionChanged="CmbDataFilter_SelectionChanged"
                                   Background="{DynamicResource InputBackgroundBrush}" Foreground="{DynamicResource InputForegroundBrush}" BorderBrush="{DynamicResource InputBorderBrush}"
                                   AutomationProperties.Name="Filter by Network Connection">
@@ -238,6 +300,7 @@
                             <ComboBoxItem Content="All Networks"/>
                         </ComboBox>
 
+                        <!-- Time Period filter -->
                         <TextBlock Text="Period: " VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,4,0"/>
                         <ComboBox x:Name="cmbDataTimeRange" Width="160" Height="28" Margin="0,0,12,0"
                                   SelectionChanged="CmbDataFilter_SelectionChanged"
@@ -250,6 +313,7 @@
                             <ComboBoxItem Content="Today"/>
                         </ComboBox>
 
+                        <!-- App Search Filter -->
                         <TextBlock Text="Filter: " VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,4,0"/>
                         <TextBox x:Name="txtDataSearch" Width="140" Height="28" Padding="6,2"
                                  Background="{DynamicResource InputBackgroundBrush}" Foreground="{DynamicResource InputForegroundBrush}" BorderBrush="{DynamicResource InputBorderBrush}"
@@ -274,6 +338,270 @@
                              AutomationProperties.Name="Application Data Usage">
                         <ListBox.ItemTemplate>
                             <DataTemplate>
+                                <StackPanel Margin="0,2">
+                                    <TextBlock Text="{Binding DisplayText}" TextWrapping="Wrap"
+                                               AutomationProperties.Name="{Binding DisplayText}"/>
+                                    <local:SilentProgressBar Minimum="0" Maximum="100" Value="{Binding UsagePercent}" Height="5" Margin="0,4,0,2"
+                                                             Visibility="{Binding HasPercent, Converter={StaticResource BoolToVisConverter}}"
+                                                             Foreground="{DynamicResource AccentBrush}" Background="{DynamicResource ProgressBarBackgroundBrush}"
+                                                             BorderThickness="0" Focusable="False" IsHitTestVisible="False"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Grid>
+            </TabItem>
+
+            <!-- TAB 4: Battery Usage -->
+            <TabItem x:Name="tabBatteryUsage" Header="4. Battery Usage"
+                     AutomationProperties.Name="Battery Usage Tab (4 of 6)">
+                <Grid Margin="10">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Filter Controls -->
+                    <WrapPanel Grid.Row="0" Margin="0,0,0,8" VerticalAlignment="Center">
+                        <TextBlock Text="Period: " VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,4,0"/>
+                        <ComboBox x:Name="cmbBatteryTimeRange" Width="180" Height="28" Margin="0,0,12,0"
+                                  SelectedIndex="0" TabIndex="1"
+                                  SelectionChanged="CmbBatteryTimeRange_SelectionChanged"
+                                  Background="{DynamicResource InputBackgroundBrush}" Foreground="{DynamicResource InputForegroundBrush}" BorderBrush="{DynamicResource InputBorderBrush}"
+                                  AutomationProperties.Name="Filter Battery Usage by Time Period">
+                            <ComboBoxItem Content="Full (All Recorded)"/>
+                            <ComboBoxItem Content="Last Month (30 Days)"/>
+                            <ComboBoxItem Content="Last Week (7 Days)"/>
+                            <ComboBoxItem Content="Last 24 Hours"/>
+                            <ComboBoxItem Content="Today"/>
+                        </ComboBox>
+
+                        <CheckBox x:Name="chkSinceLastCharge" Content="Since Last Charge" Margin="0,0,16,0" VerticalAlignment="Center"
+                                  TabIndex="2"
+                                  Checked="ChkSinceLastCharge_Checked" Unchecked="ChkSinceLastCharge_Unchecked"
+                                  AutomationProperties.Name="Filter Battery Usage Since Last Disconnected from Charger"/>
+
+                        <Button x:Name="btnRefreshBattery" Content="Refresh (F5)" Height="28" Padding="8,2"
+                                TabIndex="3"
+                                Background="{DynamicResource SurfaceBackgroundBrush}" Foreground="{DynamicResource TextPrimaryBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                                Click="BtnRefreshBattery_Click"
+                                AutomationProperties.Name="Refresh Battery Sessions and Live Telemetry"/>
+                    </WrapPanel>
+
+                    <!-- Summary line -->
+                    <TextBlock x:Name="txtBatterySummary" Grid.Row="1" Margin="0,0,0,8" Foreground="{DynamicResource AccentBrush}" FontWeight="SemiBold"
+                               Text="Loading battery energy usage..."
+                               AutomationProperties.Name="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+
+                    <!-- Disclaimer Banner -->
+                    <Border x:Name="pnlBatteryDisclaimer" Grid.Row="2"
+                            Margin="0,0,0,8" Padding="10,8" CornerRadius="4"
+                            Background="{DynamicResource SurfaceBackgroundBrush}"
+                            BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
+                        <DockPanel LastChildFill="True">
+                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,0,0">
+                                <CheckBox x:Name="chkDoNotShowBatteryDisclaimer" Content="Don't show again" VerticalAlignment="Center" Margin="0,0,8,0"
+                                          TabIndex="5"
+                                          Foreground="{DynamicResource TextSecondaryBrush}"
+                                          AutomationProperties.Name="Do not show battery accuracy disclaimer again"
+                                          AutomationProperties.HelpText="Check to hide this disclaimer on future launches"/>
+                                <Button x:Name="btnDismissBatteryDisclaimer" Content="Dismiss" Height="26" Padding="10,2"
+                                        TabIndex="6"
+                                        Background="{DynamicResource SurfaceBackgroundBrush}" Foreground="{DynamicResource TextPrimaryBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                                        Click="BtnDismissBatteryDisclaimer_Click"
+                                        AutomationProperties.Name="Dismiss battery accuracy disclaimer"
+                                        AutomationProperties.HelpText="Dismisses this disclaimer banner"/>
+                            </StackPanel>
+                            <TextBlock x:Name="txtBatteryDisclaimer"
+                                       Focusable="True"
+                                       KeyboardNavigation.IsTabStop="True"
+                                       KeyboardNavigation.TabIndex="4"
+                                       FocusVisualStyle="{StaticResource BannerTextFocusVisual}"
+                                       TextWrapping="Wrap" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12"
+                                       AutomationProperties.Name="Note on Accuracy: Per-app battery usage is an estimate based on processor and screen activity. Because apps share system resources and hardware components, measurements may not be 100% exact.">
+                                <Run FontWeight="SemiBold" Foreground="{DynamicResource AccentBrush}">Note on Accuracy:</Run>
+                                <Run>Per-app battery usage is an estimate based on processor and screen activity. Because apps share system resources and hardware components, measurements may not be 100% exact.</Run>
+                            </TextBlock>
+                        </DockPanel>
+                    </Border>
+
+                    <!-- Side-by-Side Dual Lists: List 1 = Sessions (Left), List 2 = Per-App Live Usage (Right) -->
+                    <Grid Grid.Row="3">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" MinWidth="250"/>
+                            <ColumnDefinition Width="10"/>
+                            <ColumnDefinition Width="*" MinWidth="250"/>
+                        </Grid.ColumnDefinitions>
+
+                        <!-- List 1: Battery Usage Sessions (Left) -->
+                        <DockPanel Grid.Column="0">
+                            <TextBlock DockPanel.Dock="Top" Text="1. Battery Usage Sessions (Discharge &amp; Charging Log):"
+                                       FontWeight="SemiBold" Foreground="{DynamicResource AccentBrush}" Margin="0,0,0,4"
+                                       AutomationProperties.Name="Battery Usage Sessions Header (Left)"/>
+                            <ListBox x:Name="lstBatteryUsage"
+                                     TabIndex="7"
+                                     KeyboardNavigation.TabNavigation="Once"
+                                     Background="{DynamicResource WindowBackgroundBrush}" BorderThickness="1" BorderBrush="{DynamicResource BorderBrush}"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                     ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                     VirtualizingStackPanel.IsVirtualizing="True"
+                                     VirtualizingStackPanel.VirtualizationMode="Recycling"
+                                     KeyDown="LstBatteryUsage_KeyDown"
+                                     AutomationProperties.Name="Battery Sessions (List 1)">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Margin="0,2">
+                                            <TextBlock Text="{Binding DisplayText}" TextWrapping="Wrap"
+                                                       AutomationProperties.Name="{Binding DisplayText}"/>
+                                            <local:SilentProgressBar Minimum="0" Maximum="100" Value="{Binding DrainPercent}" Height="5" Margin="0,4,0,2"
+                                                                     Visibility="{Binding HasPercent, Converter={StaticResource BoolToVisConverter}}"
+                                                                     Foreground="{DynamicResource AccentBrush}" Background="{DynamicResource ProgressBarBackgroundBrush}"
+                                                                     BorderThickness="0" Focusable="False" IsHitTestVisible="False"/>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </DockPanel>
+
+                        <!-- Splitter / Separator -->
+                        <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Center" Background="{DynamicResource BorderBrush}" Focusable="False"/>
+
+                        <!-- List 2: Application Battery Usage (Right, Real-Time Live Telemetry) -->
+                        <DockPanel Grid.Column="2">
+                            <DockPanel DockPanel.Dock="Top" Margin="0,0,0,4">
+                                <TextBlock DockPanel.Dock="Left" Text="2. Application Battery Usage (Live Telemetry):"
+                                           FontWeight="SemiBold" Foreground="{DynamicResource AccentBrush}"
+                                           AutomationProperties.Name="Application Battery Usage Header (Right)"/>
+                                <TextBlock DockPanel.Dock="Right" Text="Live Scan" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="11" VerticalAlignment="Center"/>
+                            </DockPanel>
+                            <ListBox x:Name="lstAppBatteryUsage"
+                                     TabIndex="8"
+                                     KeyboardNavigation.TabNavigation="Once"
+                                     Background="{DynamicResource WindowBackgroundBrush}" BorderThickness="1" BorderBrush="{DynamicResource BorderBrush}"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                     ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                     VirtualizingStackPanel.IsVirtualizing="True"
+                                     VirtualizingStackPanel.VirtualizationMode="Recycling"
+                                     KeyDown="LstAppBatteryUsage_KeyDown"
+                                     AutomationProperties.Name="App Battery Usage (List 2)">
+                                <ListBox.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="End Task (Delete)" Click="CtxAppBatteryEndTask_Click" InputGestureText="Del" AutomationProperties.Name="End Selected Application Task"/>
+                                        <Separator Background="{DynamicResource BorderBrush}"/>
+                                        <MenuItem Header="Copy Details (Ctrl+C)" Click="CtxAppBatteryCopy_Click" InputGestureText="Ctrl+C" AutomationProperties.Name="Copy App Battery Usage Details"/>
+                                    </ContextMenu>
+                                </ListBox.ContextMenu>
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Margin="0,2">
+                                            <TextBlock Text="{Binding DisplayText}" TextWrapping="Wrap"
+                                                       AutomationProperties.Name="{Binding DisplayText}"/>
+                                            <local:SilentProgressBar Minimum="0" Maximum="100" Value="{Binding BatteryPercent}" Height="5" Margin="0,4,0,2"
+                                                                     Visibility="{Binding HasPercent, Converter={StaticResource BoolToVisConverter}}"
+                                                                     Foreground="{DynamicResource AccentBrush}" Background="{DynamicResource ProgressBarBackgroundBrush}"
+                                                                     BorderThickness="0" Focusable="False" IsHitTestVisible="False"/>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </DockPanel>
+                    </Grid>
+                </Grid>
+            </TabItem>
+
+            <!-- TAB 5: Network Ports -->
+            <TabItem x:Name="tabNetworkPorts" Header="5. Network Ports"
+                     AutomationProperties.Name="Network Ports Tab (5 of 6)">
+                <Grid Margin="10">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Filter Controls -->
+                    <Grid Grid.Row="0" Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <!-- View Filter ComboBox -->
+                        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="View: " VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,4,0"/>
+                            <ComboBox x:Name="cmbPortFilter" Width="220" Height="28" Margin="0,0,12,0"
+                                      SelectedIndex="0"
+                                      SelectionChanged="CmbPortFilter_SelectionChanged"
+                                      Background="{DynamicResource InputBackgroundBrush}" Foreground="{DynamicResource InputForegroundBrush}" BorderBrush="{DynamicResource InputBorderBrush}"
+                                      AutomationProperties.Name="Filter Ports and Connections">
+                                <ComboBoxItem Content="Listening Ports (TCP &amp; UDP)"/>
+                                <ComboBoxItem Content="All Ports &amp; Connections"/>
+                                <ComboBoxItem Content="Established Connections"/>
+                            </ComboBox>
+                        </StackPanel>
+
+                        <!-- Search Filter -->
+                        <DockPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,8,0">
+                            <TextBlock Text="Filter (Ctrl+F): " VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,8,0"/>
+                            <TextBox x:Name="txtPortSearch" Height="28" Padding="6,2"
+                                     Background="{DynamicResource InputBackgroundBrush}" Foreground="{DynamicResource InputForegroundBrush}" BorderBrush="{DynamicResource InputBorderBrush}"
+                                     TextChanged="TxtPortSearch_TextChanged"
+                                     KeyDown="TxtPortSearch_KeyDown"
+                                     AutomationProperties.Name="Search and Filter Network Ports. Type port number, process name, or IP to filter. Press Down Arrow to enter list, Escape to clear."/>
+                        </DockPanel>
+
+                        <!-- Sort Buttons -->
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                            <Button x:Name="btnSortPort" Content="Sort Port (Ctrl+O)" Height="28" Padding="8,2" Margin="0,0,4,0"
+                                    Background="{DynamicResource SurfaceBackgroundBrush}" Foreground="{DynamicResource TextPrimaryBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                                    Click="BtnSortPort_Click"
+                                    AutomationProperties.Name="Sort by Port Number"/>
+                            <Button x:Name="btnSortPortApp" Content="Sort App (Ctrl+N)" Height="28" Padding="8,2" Margin="0,0,4,0"
+                                    Background="{DynamicResource SurfaceBackgroundBrush}" Foreground="{DynamicResource TextPrimaryBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                                    Click="BtnSortPortApp_Click"
+                                    AutomationProperties.Name="Sort by Application Name Alphabetically"/>
+                            <Button x:Name="btnSortPortState" Content="Sort State (Ctrl+S)" Height="28" Padding="8,2" Margin="0,0,4,0"
+                                    Background="{DynamicResource SurfaceBackgroundBrush}" Foreground="{DynamicResource TextPrimaryBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                                    Click="BtnSortPortState_Click"
+                                    AutomationProperties.Name="Sort by Connection State"/>
+                            <Button x:Name="btnRefreshPorts" Content="Refresh (F5)" Height="28" Padding="8,2"
+                                    Background="{DynamicResource SurfaceBackgroundBrush}" Foreground="{DynamicResource TextPrimaryBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                                    Click="BtnRefreshPorts_Click"
+                                    AutomationProperties.Name="Refresh Network Ports List"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- Summary & Status line -->
+                    <TextBlock x:Name="txtPortCount" Grid.Row="1" Margin="0,0,0,6" Foreground="{DynamicResource AccentBrush}" FontSize="12"
+                               Text="Loading network ports and connections... Press Delete to end selected task, Enter for details."
+                               AutomationProperties.Name="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+
+                    <!-- ListBox -->
+                    <ListBox x:Name="lstNetworkPorts" Grid.Row="2"
+                             Background="{DynamicResource WindowBackgroundBrush}" BorderThickness="0"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto"
+                             VirtualizingStackPanel.IsVirtualizing="True"
+                             VirtualizingStackPanel.VirtualizationMode="Recycling"
+                             KeyDown="LstNetworkPorts_KeyDown"
+                             MouseDoubleClick="LstNetworkPorts_MouseDoubleClick"
+                             AutomationProperties.Name="Network Ports and Connections">
+                        <ListBox.ContextMenu>
+                            <ContextMenu x:Name="ctxPortMenu">
+                                <MenuItem Header="End Task (Delete)" Click="CtxPortEndTask_Click" InputGestureText="Del" AutomationProperties.Name="End Task for Process Owning Port"/>
+                                <MenuItem Header="End Process Tree (Shift+Delete)" Click="CtxPortEndProcessTree_Click" InputGestureText="Shift+Del" AutomationProperties.Name="End Entire Process Tree"/>
+                                <MenuItem Header="Open File Location" Click="CtxPortOpenFileLocation_Click" AutomationProperties.Name="Open File Location in Explorer"/>
+                                <Separator Background="{DynamicResource BorderBrush}"/>
+                                <MenuItem Header="View Connection Details (Enter)" Click="CtxPortDetails_Click" InputGestureText="Enter" AutomationProperties.Name="View Technical Connection Details"/>
+                                <MenuItem Header="Copy Port Details (Ctrl+C)" Click="CtxPortCopyDetails_Click" InputGestureText="Ctrl+C" AutomationProperties.Name="Copy Port Details to Clipboard"/>
+                            </ContextMenu>
+                        </ListBox.ContextMenu>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
                                 <TextBlock Text="{Binding DisplayText}" TextWrapping="Wrap"
                                            AutomationProperties.Name="{Binding DisplayText}"/>
                             </DataTemplate>
@@ -282,9 +610,9 @@
                 </Grid>
             </TabItem>
 
-            <!-- TAB 4: Settings -->
-            <TabItem x:Name="tabSettings" Header="4. Settings"
-                     AutomationProperties.Name="Settings Tab (4 of 4)">
+            <!-- TAB 6: Settings -->
+            <TabItem x:Name="tabSettings" Header="6. Settings"
+                     AutomationProperties.Name="Settings Tab (6 of 6)">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel Margin="16" MaxWidth="620" HorizontalAlignment="Left">
                         <!-- Section 1: Process Filtering & Safety -->
@@ -404,6 +732,21 @@
 
                         <Separator Background="{DynamicResource BorderBrush}" Margin="0,16"/>
 
+                        <!-- Section: Battery App Usage Display Format -->
+                        <TextBlock Text="Battery App Usage Display Mode" FontWeight="Bold" FontSize="15" Foreground="{DynamicResource AccentBrush}" Margin="0,0,0,4"/>
+                        <TextBlock Text="Choose how application battery consumption is displayed in Tab 4:" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,8"/>
+                        <ComboBox x:Name="cmbBatteryAppDisplayMode" Width="460" Height="30" HorizontalAlignment="Left"
+                                  SelectedIndex="0"
+                                  SelectionChanged="CmbBatteryAppDisplayMode_SelectionChanged"
+                                  Background="{DynamicResource InputBackgroundBrush}" Foreground="{DynamicResource InputForegroundBrush}" BorderBrush="{DynamicResource InputBorderBrush}"
+                                  AutomationProperties.Name="Battery App Usage Display Mode">
+                            <ComboBoxItem Content="Combined: Battery % used and live drain rate (Recommended)"/>
+                            <ComboBoxItem Content="Percentage Only (e.g. 41.2% of battery used)"/>
+                            <ComboBoxItem Content="Live Drain Rate Only (e.g. 1,820 mW - High Power Impact)"/>
+                        </ComboBox>
+
+                        <Separator Background="{DynamicResource BorderBrush}" Margin="0,16"/>
+
                         <!-- Section 5: Appearance and Color Theme -->
                         <TextBlock Text="Appearance and Color Theme" FontWeight="Bold" FontSize="15" Foreground="{DynamicResource AccentBrush}" Margin="0,0,0,4"/>
                         <TextBlock Text="Choose visual theme (supports automatic matching with Windows):" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,8"/>
@@ -433,6 +776,16 @@
                             <ComboBoxItem Content="Exit completely on close (Do not start with Windows)"/>
                         </ComboBox>
 
+                        <TextBlock Text="Windows Startup Applications:" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,14,0,8"/>
+                        <Button x:Name="btnOpenStartupSettings" Content="Go to Windows Startup Apps Settings (Ctrl+Shift+S)" Width="380" Height="30" HorizontalAlignment="Left"
+                                Click="BtnOpenStartupSettings_Click" Background="{DynamicResource SurfaceBackgroundBrush}" Foreground="{DynamicResource TextPrimaryBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                                AutomationProperties.Name="Go to Windows Startup Apps Settings. Opens native Windows Settings (Shortcut: Ctrl+Shift+S)"/>
+
+                        <TextBlock Text="Windows Services Manager:" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,14,0,8"/>
+                        <Button x:Name="btnOpenServicesManager" Content="Open Windows Services Manager (services.msc)" Width="380" Height="30" HorizontalAlignment="Left"
+                                Click="BtnOpenServicesManager_Click" Background="{DynamicResource SurfaceBackgroundBrush}" Foreground="{DynamicResource TextPrimaryBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                                AutomationProperties.Name="Open Windows Services Manager. Opens native services.msc tool."/>
+
                         <Separator Background="{DynamicResource BorderBrush}" Margin="0,16"/>
 
                         <!-- Section 7: Preferences Memory -->
@@ -446,7 +799,34 @@
                             <ComboBoxItem Content="Remember process sort and filter preferences across restarts"/>
                         </ComboBox>
 
-                        <Button x:Name="btnResetDefaults" Content="Reset All Settings to Defaults" Width="240" Height="32" Margin="0,20,0,0" HorizontalAlignment="Left"
+                        <Separator Background="{DynamicResource BorderBrush}" Margin="0,16"/>
+
+                        <!-- System Diagnostic Snapshot -->
+                        <TextBlock Text="System Diagnostic Snapshot" FontWeight="Bold" FontSize="15" Foreground="{DynamicResource AccentBrush}" Margin="0,0,0,4"/>
+                        <TextBlock Text="Generate and copy a clean technical support summary of your hardware, OS, and status to the clipboard:" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,8" TextWrapping="Wrap"/>
+                        <Button x:Name="btnCopySystemSnapshot" Content="Copy Diagnostic Snapshot (Ctrl+Shift+C)" Width="280" Height="30" HorizontalAlignment="Left"
+                                Click="BtnCopySystemSnapshot_Click" Background="{DynamicResource SurfaceBackgroundBrush}" Foreground="{DynamicResource TextPrimaryBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                                AutomationProperties.Name="Copy Full System Diagnostic Snapshot to Clipboard"/>
+
+                        <Separator Background="{DynamicResource BorderBrush}" Margin="0,16"/>
+
+                        <!-- Section 8: Application Updates -->
+                        <TextBlock Text="Application Updates &amp; Version" FontWeight="Bold" FontSize="15" Foreground="{DynamicResource AccentBrush}" Margin="0,0,0,4"/>
+                        <TextBlock x:Name="txtCurrentVersion" Text="Current Version: v1.0.1" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,10"/>
+
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                            <Button x:Name="btnCheckForUpdates" Content="Check for Updates" Width="180" Height="30" Margin="0,0,10,0"
+                                    Click="BtnCheckForUpdates_Click" Background="{DynamicResource SurfaceBackgroundBrush}" Foreground="{DynamicResource TextPrimaryBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                                    AutomationProperties.Name="Check GitHub for newer official releases"/>
+                            <Button x:Name="btnDownloadUpdate" Content="Download Update" Width="200" Height="30" Visibility="Collapsed"
+                                    Click="BtnDownloadUpdate_Click" Background="{DynamicResource AccentBrush}" Foreground="{DynamicResource SelectionForegroundBrush}" BorderBrush="{DynamicResource AccentBrush}" FontWeight="SemiBold"
+                                    AutomationProperties.Name="Open latest release download link"/>
+                        </StackPanel>
+                        <TextBlock x:Name="txtUpdateStatus" Text="Press 'Check for Updates' to verify whether a newer version is available." Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,2,0,8" TextWrapping="Wrap"/>
+
+                        <Separator Background="{DynamicResource BorderBrush}" Margin="0,16"/>
+
+                        <Button x:Name="btnResetDefaults" Content="Reset All Settings to Defaults" Width="240" Height="32" Margin="0,8,0,0" HorizontalAlignment="Left"
                                 Click="BtnResetDefaults_Click" Background="{DynamicResource SurfaceBackgroundBrush}" Foreground="{DynamicResource TextPrimaryBrush}" BorderBrush="{DynamicResource BorderBrush}" FontWeight="SemiBold"
                                 AutomationProperties.Name="Reset All Settings to Defaults"/>
                     </StackPanel>
@@ -456,7 +836,7 @@
 
         <!-- Bottom status line -->
         <DockPanel Grid.Row="2" Margin="0,8,0,0">
-            <TextBlock DockPanel.Dock="Right" Text="F1 or Shift+/: Shortcuts | Ctrl+1..4: Tabs | F5: Refresh"
+            <TextBlock DockPanel.Dock="Right" Text="F1: Shortcuts | Ctrl+1..6: Tabs | F5: Refresh"
                        Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12" HorizontalAlignment="Right"
                        AutomationProperties.Name="Keyboard Shortcuts Hint"/>
             <TextBlock x:Name="txtAnnouncement" Foreground="{DynamicResource StatusAnnouncementBrush}" FontSize="13"

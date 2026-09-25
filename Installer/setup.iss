@@ -1,6 +1,6 @@
 ; Script generated for Resource Analyzer for Windows
 #define MyAppName "Resource Analyzer for Windows"
-#define MyAppVersion "1.0.0"
+#define MyAppVersion "1.0.1"
 #define MyAppPublisher "Accessible Tools"
 #define MyAppExeName "ResourceAnalyzer.exe"
 
@@ -16,11 +16,14 @@ DirExistsWarning=no
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 OutputDir=Output
-OutputBaseFilename=ResourceAnalyzer_Setup_v1.0.0
+OutputBaseFilename=ResourceAnalyzer_Setup_v1.0.1
 SetupIconFile=..\Resources\app.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 SetupMutex=ResourceAnalyzerSetup_Mutex
-Compression=lzma2/fast
+AppMutex=ResourceAnalyzer_SingleInstance_Mutex
+CloseApplications=yes
+RestartApplications=no
+Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
 ArchitecturesInstallIn64BitMode=x64compatible
@@ -69,6 +72,21 @@ function InitializeSetup(): Boolean;
 begin
   // Terminate any running instance before installing or updating
   KillRunningApp();
+
+  // If the app was running elevated, lowest-privilege taskkill cannot terminate it.
+  // Prompt the user to close it so file-lock errors (Code 5) never occur.
+  while CheckForMutexes('ResourceAnalyzer_SingleInstance_Mutex') do
+  begin
+    if MsgBox('Resource Analyzer for Windows is currently running.' + #13#10 + #13#10 +
+              'Please close Resource Analyzer from the system tray or Task Manager before continuing setup.',
+              mbConfirmation, MB_OKCANCEL) = IDCANCEL then
+    begin
+      Result := False;
+      Exit;
+    end;
+    KillRunningApp();
+  end;
+
   Result := True;
 end;
 

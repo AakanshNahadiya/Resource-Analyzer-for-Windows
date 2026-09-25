@@ -274,5 +274,120 @@ namespace AccessibleTaskManager.Tests
         {
             MainWindow.TrimProcessMemory();
         }
+
+        [Fact]
+        public void ProcessItem_Frozen_DisplaysFrozenPrefix()
+        {
+            var item = new ProcessItem
+            {
+                Name = "notepad",
+                Pid = 5555,
+                MemoryBytes = 10485760,
+                CpuPercent = 0.0,
+                IsFrozen = true
+            };
+            item.UpdateDisplayText();
+
+            Assert.Contains("[FROZEN - Not Responding]", item.DisplayText);
+        }
+
+        [Fact]
+        public void ProcessItem_ActiveApp_DisplaysActiveAppPrefix()
+        {
+            var item = new ProcessItem
+            {
+                Name = "chrome",
+                Pid = 8888,
+                MemoryBytes = 104857600,
+                CpuPercent = 2.5,
+                IsActiveApp = true
+            };
+            item.UpdateDisplayText();
+
+            Assert.Contains("[Active App]", item.DisplayText);
+        }
+
+        [Fact]
+        public void ProcessItem_Description_IncludesFriendlyName()
+        {
+            ProcessItem.ShowExtension = true;
+            var item = new ProcessItem
+            {
+                Name = "msedge",
+                Description = "Microsoft Edge",
+                Pid = 1234
+            };
+
+            Assert.Equal("Microsoft Edge (msedge.exe)", item.DisplayName);
+
+            // If description equals Name, omit redundant display
+            var itemSame = new ProcessItem
+            {
+                Name = "notepad",
+                Description = "notepad",
+                Pid = 2345
+            };
+            Assert.Equal("notepad.exe", itemSame.DisplayName);
+        }
+
+        [Theory]
+        [InlineData(0, "Idle")]
+        [InlineData(4, "System")]
+        [InlineData(100, "dwm")]
+        [InlineData(200, "csrss")]
+        public async Task KillProcessTreeAsync_ProtectsCriticalKernelProcesses(int pid, string name)
+        {
+            var service = new ProcessService();
+            var (success, msg) = await service.KillProcessTreeAsync(pid, name);
+
+            Assert.False(success);
+            Assert.Contains("critical Windows system process", msg);
+        }
+
+        [Fact]
+        public void ProcessService_GetHungPids_RunsWithoutException()
+        {
+            var pids = ProcessService.GetHungPids();
+            Assert.NotNull(pids);
+        }
+
+        [Fact]
+        public void ProcessService_GetActiveForegroundPid_RunsWithoutException()
+        {
+            int pid = ProcessService.GetActiveForegroundPid();
+            Assert.True(pid >= 0);
+        }
+
+        [Fact]
+        public void ProcessService_GetProcessDescription_ReturnsKnownFriendlyNames()
+        {
+            string explorerDesc = ProcessService.GetProcessDescription(1, "explorer");
+            Assert.Equal("Windows Explorer", explorerDesc);
+
+            string chromeDesc = ProcessService.GetProcessDescription(2, "chrome");
+            Assert.Equal("Google Chrome", chromeDesc);
+
+            string notepadDesc = ProcessService.GetProcessDescription(3, "notepad");
+            Assert.Equal("Notepad", notepadDesc);
+        }
+
+        [Fact]
+        public void BuildDisplayList_PropagatesFrozenAndActiveStateToGroupHeader()
+        {
+            var rawList = new System.Collections.Generic.List<ProcessItem>
+            {
+                new() { Name = "chrome", Pid = 101, MemoryBytes = 100 * 1024 * 1024, CpuPercent = 1.0, IsFrozen = true },
+                new() { Name = "chrome", Pid = 102, MemoryBytes = 200 * 1024 * 1024, CpuPercent = 2.0, IsActiveApp = true }
+            };
+
+            var expandedGroups = new System.Collections.Generic.HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+            var display = MainWindow.BuildDisplayList(rawList, "Memory", groupProcesses: true, expandedGroups);
+
+            var header = display.FirstOrDefault(p => p.IsGroupHeader);
+            Assert.NotNull(header);
+            Assert.True(header.IsFrozen);
+            Assert.True(header.IsActiveApp);
+            Assert.Contains("[FROZEN - Not Responding]", header.DisplayText);
+        }
     }
 }

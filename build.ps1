@@ -44,8 +44,8 @@ if (Test-Path $isccPath) {
     if ($LASTEXITCODE -eq 0) {
         Write-Host "`n==========================================" -ForegroundColor Green
         Write-Host " Build & Installer Successful!" -ForegroundColor Green
-        Write-Host " Standalone EXE: ./publish/ResourceAnalyzer.exe" -ForegroundColor Green
-        Write-Host " Setup Installer: ./Installer/Output/ResourceAnalyzer_Setup_v1.0.0.exe" -ForegroundColor Green
+        $setupFile = (Get-ChildItem "./Installer/Output/*.exe" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1)
+        Write-Host " Setup Installer: ./Installer/Output/$($setupFile.Name)" -ForegroundColor Green
         Write-Host "==========================================" -ForegroundColor Green
     }
 } else {

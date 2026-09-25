@@ -13,9 +13,9 @@
     <Company>Accessible Tools</Company>
     <Product>Resource Analyzer for Windows</Product>
     <Description>Resource Analyzer for Windows</Description>
-    <Version>1.0.0</Version>
-    <FileVersion>1.0.0.0</FileVersion>
-    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <Version>1.0.1</Version>
+    <FileVersion>1.0.1.0</FileVersion>
+    <AssemblyVersion>1.0.1.0</AssemblyVersion>
     <PublishReadyToRun>false</PublishReadyToRun>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
@@ -25,8 +25,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Remove="nvda_client\**" />
-    <None Remove="nvda_client\**" />
     <Compile Remove="Tests\**" />
     <None Remove="Tests\**" />
   </ItemGroup>
@@ -43,6 +41,10 @@
     <None Update="Resources\app.ico">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="ResourceAnalyzer.Tests" />
   </ItemGroup>
 
 </Project>
