@@ -98,36 +98,26 @@ namespace AccessibleTaskManager.Services
 
                 foreach (var release in doc.RootElement.EnumerateArray())
                 {
+                    // Skip drafts and prereleases
                     if (release.TryGetProperty("draft", out var draftElem) && draftElem.GetBoolean())
+                        continue;
+                    if (release.TryGetProperty("prerelease", out var preElem) && preElem.GetBoolean())
                         continue;
 
                     string tagName = release.TryGetProperty("tag_name", out var tagElem) ? tagElem.GetString() ?? "" : "";
                     if (string.IsNullOrWhiteSpace(tagName)) continue;
 
-                    bool isPrerelease = release.TryGetProperty("prerelease", out var preElem) && preElem.GetBoolean();
                     string cleanTag = tagName.TrimStart('v', 'V').Trim();
                     string verNumPart = cleanTag.Split('-')[0];
 
                     if (!Version.TryParse(verNumPart, out var parsedVer))
                         continue;
 
-                    // Version policy:
-                    // Beta: v1.0.1, v1.0.2... (or tagged as prerelease)
-                    // Stable: v1.1.0, v1.1.1, v1.1.2...
-                    bool isBeta = isPrerelease || cleanTag.StartsWith("1.0.") || cleanTag.Contains("beta", StringComparison.OrdinalIgnoreCase) || cleanTag.Contains("preview", StringComparison.OrdinalIgnoreCase);
-
-                    if (targetStableOnly && isBeta)
-                    {
-                        // User wants only Stable releases, ignore Beta releases
-                        continue;
-                    }
-
                     if (bestVersion == null || parsedVer > bestVersion)
                     {
                         bestVersion = parsedVer;
                         bestRelease = release;
                         bestTag = tagName;
-                        bestIsBeta = isBeta;
                     }
                 }
 
@@ -135,9 +125,7 @@ namespace AccessibleTaskManager.Services
                 {
                     result.IsSuccess = true;
                     result.HasUpdate = false;
-                    result.Message = targetStableOnly
-                        ? $"Resource Analyzer for Windows is up to date on the Stable channel (Version v{currentVerStr}). No newer stable releases found."
-                        : $"Resource Analyzer for Windows is up to date (Version v{currentVerStr}, {channel} channel).";
+                    result.Message = $"Resource Analyzer for Windows is up to date (Version v{currentVerStr}).";
                     return result;
                 }
 
@@ -178,12 +166,11 @@ namespace AccessibleTaskManager.Services
 
                 if (hasUpdate)
                 {
-                    string channelLabel = bestIsBeta ? "Beta" : "Stable";
-                    result.Message = $"A new {channelLabel} version ({bestTag}) is available! You are currently on v{currentVerStr}.";
+                    result.Message = $"A newer version of Resource Analyzer ({bestTag}) is available! You are currently on v{currentVerStr}.";
                 }
                 else
                 {
-                    result.Message = $"Resource Analyzer for Windows is up to date (Version v{currentVerStr}, {channel} channel).";
+                    result.Message = $"Resource Analyzer for Windows is up to date (Version v{currentVerStr}).";
                 }
 
                 return result;

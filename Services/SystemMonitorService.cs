@@ -39,6 +39,10 @@ namespace AccessibleTaskManager.Services
         private double _lastDownloadSpeed;
         private double _lastUploadSpeed;
         private string _lastActiveAdapter = "Network";
+        private string? _cachedWifiInfo;
+        private DateTime _lastWifiQueryTime = DateTime.MinValue;
+        private bool _isWifiQueryInProgress = false;
+        private bool _lastIsWireless = false;
 
         private string _cpuName = string.Empty;
         private string _gpuName = string.Empty;
@@ -247,6 +251,9 @@ namespace AccessibleTaskManager.Services
                 if (primary != null)
                 {
                     activeAdapter = primary.Name;
+                    _lastIsWireless = primary.NetworkInterfaceType == NetworkInterfaceType.Wireless80211 ||
+                                      primary.Name.Contains("Wi-Fi", StringComparison.OrdinalIgnoreCase) ||
+                                      primary.Description.Contains("Wireless", StringComparison.OrdinalIgnoreCase);
                     try
                     {
                         var stats = primary.GetIPStatistics();
@@ -266,6 +273,7 @@ namespace AccessibleTaskManager.Services
                 }
                 else
                 {
+                    _lastIsWireless = false;
                     foreach (var ni in interfaces)
                     {
                         try
@@ -276,6 +284,45 @@ namespace AccessibleTaskManager.Services
                         }
                         catch { }
                     }
+                }
+
+                // Wi-Fi Telemetry Cache (SSID, Band, Signal Strength)
+                if (_lastIsWireless)
+                {
+                    if (_lastWifiQueryTime == DateTime.MinValue)
+                    {
+                        try
+                        {
+                            string raw = QueryWifiInterfacesRaw();
+                            var (ssid, band, signal) = ParseWifiInterfacesOutput(raw);
+                            _cachedWifiInfo = FormatWifiSummaryTag(ssid, band, signal);
+                        }
+                        catch { }
+                        _lastWifiQueryTime = DateTime.UtcNow;
+                    }
+                    else if ((DateTime.UtcNow - _lastWifiQueryTime).TotalSeconds >= 5 && !_isWifiQueryInProgress)
+                    {
+                        _isWifiQueryInProgress = true;
+                        Task.Run(() =>
+                        {
+                            try
+                            {
+                                string raw = QueryWifiInterfacesRaw();
+                                var (ssid, band, signal) = ParseWifiInterfacesOutput(raw);
+                                _cachedWifiInfo = FormatWifiSummaryTag(ssid, band, signal);
+                            }
+                            catch { }
+                            finally
+                            {
+                                _lastWifiQueryTime = DateTime.UtcNow;
+                                _isWifiQueryInProgress = false;
+                            }
+                        });
+                    }
+                }
+                else
+                {
+                    _cachedWifiInfo = null;
                 }
 
                 var now = DateTime.UtcNow;
@@ -303,11 +350,104 @@ namespace AccessibleTaskManager.Services
             string downStr = FormatHelper.FormatSpeed(_lastDownloadSpeed);
             string upStr = FormatHelper.FormatSpeed(_lastUploadSpeed);
 
-            string summary = $"Network ({_lastActiveAdapter}): Down {downStr}, Up {upStr}";
-            string details = $"Adapter: {_lastActiveAdapter}\nDownload Rate: {downStr}\nUpload Rate: {upStr}\n" +
+            string displayAdapter = _lastActiveAdapter;
+            if (_lastIsWireless && !string.IsNullOrEmpty(_cachedWifiInfo))
+            {
+                displayAdapter = $"Wi-Fi - {_cachedWifiInfo}";
+            }
+
+            string summary = $"Network ({displayAdapter}): Down {downStr}, Up {upStr}";
+            string details = $"Adapter: {_lastActiveAdapter}\n" +
+                             (_lastIsWireless && !string.IsNullOrEmpty(_cachedWifiInfo) ? $"Wi-Fi Connection: {_cachedWifiInfo}\n" : "") +
+                             $"Download Rate: {downStr}\nUpload Rate: {upStr}\n" +
                              $"Total Received: {FormatHelper.FormatBytes(currentBytesIn)}\nTotal Sent: {FormatHelper.FormatBytes(currentBytesOut)}";
 
             return (summary, details, -1.0);
+        }
+
+        public static string QueryWifiInterfacesRaw()
+        {
+            try
+            {
+                var psi = new ProcessStartInfo
+                {
+                    FileName = "netsh.exe",
+                    Arguments = "wlan show interfaces",
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true
+                };
+
+                using var proc = Process.Start(psi);
+                if (proc != null)
+                {
+                    string output = proc.StandardOutput.ReadToEnd();
+                    proc.WaitForExit(1000);
+                    return output;
+                }
+            }
+            catch { }
+            return string.Empty;
+        }
+
+        public static (string? Ssid, string? Band, string? Signal) ParseWifiInterfacesOutput(string output)
+        {
+            if (string.IsNullOrWhiteSpace(output))
+                return (null, null, null);
+
+            string? ssid = null;
+            string? band = null;
+            string? signal = null;
+            bool isConnected = false;
+
+            using var reader = new StringReader(output);
+            string? line;
+            while ((line = reader.ReadLine()) != null)
+            {
+                int colonIdx = line.IndexOf(':');
+                if (colonIdx > 0 && colonIdx < line.Length - 1)
+                {
+                    string key = line.Substring(0, colonIdx).Trim();
+                    string val = line.Substring(colonIdx + 1).Trim();
+
+                    if (key.Equals("State", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (val.Equals("connected", StringComparison.OrdinalIgnoreCase))
+                        {
+                            isConnected = true;
+                        }
+                    }
+                    else if (key.Equals("SSID", StringComparison.OrdinalIgnoreCase))
+                    {
+                        ssid = val;
+                    }
+                    else if (key.Equals("Band", StringComparison.OrdinalIgnoreCase))
+                    {
+                        band = val;
+                    }
+                    else if (key.Equals("Signal", StringComparison.OrdinalIgnoreCase))
+                    {
+                        signal = val;
+                    }
+                }
+            }
+
+            if (!isConnected && string.IsNullOrEmpty(ssid))
+            {
+                return (null, null, null);
+            }
+
+            return (ssid, band, signal);
+        }
+
+        public static string FormatWifiSummaryTag(string? ssid, string? band, string? signal)
+        {
+            var parts = new List<string>();
+            if (!string.IsNullOrWhiteSpace(ssid)) parts.Add(ssid);
+            if (!string.IsNullOrWhiteSpace(band)) parts.Add(band);
+            if (!string.IsNullOrWhiteSpace(signal)) parts.Add(signal.EndsWith("%") ? signal : $"{signal}%");
+
+            return parts.Count > 0 ? string.Join(", ", parts) : string.Empty;
         }
 
         public string GetQuickNetworkSpeedSummary()

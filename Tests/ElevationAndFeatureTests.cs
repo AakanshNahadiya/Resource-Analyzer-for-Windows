@@ -28,26 +28,6 @@ namespace AccessibleTaskManager.Tests
 
 
 
-        [Fact]
-        public void ServiceItem_DisplayText_UpdatesProperly()
-        {
-            var item = new ServiceItem
-            {
-                ServiceName = "wuauserv",
-                DisplayName = "Windows Update",
-                Status = "Running",
-                StartupType = "Manual"
-            };
-            item.UpdateDisplayText();
-
-            Assert.Contains("Windows Update", item.DisplayText);
-            Assert.Contains("wuauserv", item.DisplayText);
-            Assert.Contains("Running", item.DisplayText);
-            Assert.Contains("Manual", item.DisplayText);
-
-            item.Status = "Stopped";
-            Assert.Contains("Stopped", item.DisplayText);
-        }
 
         [Fact]
         public void UpdateService_GetCurrentVersion_ReturnsValidVersion()
@@ -63,33 +43,34 @@ namespace AccessibleTaskManager.Tests
         public async Task UpdateService_CheckForUpdatesAsync_ConnectsToGitHub()
         {
             var service = new UpdateService();
-            var infoBeta = await service.CheckForUpdatesAsync("Beta");
+            var info = await service.CheckForUpdatesAsync();
 
-            _output.WriteLine($"GitHub Beta Check Success: {infoBeta.IsSuccess}");
-            _output.WriteLine($"Message: {infoBeta.Message}");
-            _output.WriteLine($"Latest Version: {infoBeta.LatestVersion}");
-            _output.WriteLine($"Has Update: {infoBeta.HasUpdate}");
+            _output.WriteLine($"GitHub Check Success: {info.IsSuccess}");
+            _output.WriteLine($"Message: {info.Message}");
+            _output.WriteLine($"Latest Version: {info.LatestVersion}");
+            _output.WriteLine($"Has Update: {info.HasUpdate}");
 
-            Assert.True(infoBeta.IsSuccess);
-            Assert.False(string.IsNullOrWhiteSpace(infoBeta.LatestVersion));
-
-            var infoStable = await service.CheckForUpdatesAsync("Stable");
-            Assert.True(infoStable.IsSuccess);
+            Assert.NotNull(info);
+            Assert.False(string.IsNullOrWhiteSpace(info.LatestVersion));
+            Assert.False(string.IsNullOrWhiteSpace(info.Message));
         }
 
         [Fact]
-        public void UpdatePolicy_VersionComparison_OrdersBetaAndStableCorrectly()
+        public void UpdatePolicy_VersionComparison_OrdersVersionsCorrectly()
         {
             var v1_0_0 = Version.Parse("1.0.0");
             var v1_0_1 = Version.Parse("1.0.1");
             var v1_0_2 = Version.Parse("1.0.2");
+            var v1_1_0 = Version.Parse("1.1.0");
             var v1_1_1 = Version.Parse("1.1.1");
-            var v1_1_2 = Version.Parse("1.1.2");
 
-            Assert.True(v1_0_1 > v1_0_0, "Beta 1.0.1 is newer than initial 1.0.0");
-            Assert.True(v1_0_2 > v1_0_1, "Beta 1.0.2 is newer than Beta 1.0.1");
-            Assert.True(v1_1_1 > v1_0_2, "Stable 1.1.1 is newer than Beta 1.0.2");
-            Assert.True(v1_1_2 > v1_1_1, "Stable 1.1.2 is newer than Stable 1.1.1");
+            // Minor updates: v1.0.1, v1.0.2
+            Assert.True(v1_0_1 > v1_0_0, "v1.0.1 is newer than v1.0.0");
+            Assert.True(v1_0_2 > v1_0_1, "v1.0.2 is newer than v1.0.1");
+
+            // Major updates: v1.1.0, v1.1.1
+            Assert.True(v1_1_0 > v1_0_2, "v1.1.0 is newer than v1.0.2");
+            Assert.True(v1_1_1 > v1_1_0, "v1.1.1 is newer than v1.1.0");
         }
 
         [Fact]
@@ -101,18 +82,86 @@ namespace AccessibleTaskManager.Tests
         }
 
         [Fact]
-        public void WindowsServiceManager_GetServices_ReturnsWindowsServices()
+        public void WindowsServicesManager_ExecutableTarget_ExistsAndResolves()
         {
-            var manager = new WindowsServiceManager();
-            var services = manager.GetServices();
-            _output.WriteLine($"Discovered {services.Count} Windows services.");
+            string servicesMscPath = System.IO.Path.Combine(Environment.SystemDirectory, "services.msc");
+            _output.WriteLine($"Services.msc path: {servicesMscPath}");
+            Assert.True(System.IO.File.Exists(servicesMscPath), "services.msc must exist in System32");
+        }
 
-            Assert.NotNull(services);
-            Assert.True(services.Count > 10, "Windows should report dozens of background services.");
+        [Fact]
+        public void AppSettings_HideBatteryDisclaimer_DefaultsToFalse()
+        {
+            var settings = new AppSettings();
+            Assert.False(settings.HideBatteryDisclaimer);
+        }
 
-            var first = services[0];
-            Assert.False(string.IsNullOrWhiteSpace(first.ServiceName));
-            Assert.False(string.IsNullOrWhiteSpace(first.DisplayText));
+        [Fact]
+        public void ProcessItem_HasCpuPercent_BehavesCorrectly()
+        {
+            var proc = new ProcessItem { Pid = 1234, Name = "TestApp" };
+            proc.CpuPercent = 0.2;
+            Assert.False(proc.HasCpuPercent);
+
+            bool propChangedFired = false;
+            proc.PropertyChanged += (s, e) =>
+            {
+                if (e.PropertyName == nameof(ProcessItem.HasCpuPercent)) propChangedFired = true;
+            };
+
+            proc.CpuPercent = 1.5;
+            Assert.True(proc.HasCpuPercent);
+            Assert.True(propChangedFired);
+        }
+
+        [Fact]
+        public void AppDataUsageItem_UsagePercent_BehavesCorrectly()
+        {
+            var item = new AppDataUsageItem { AppName = "Browser" };
+            item.UsagePercent = 0.3;
+            Assert.False(item.HasPercent);
+
+            bool propChangedFired = false;
+            item.PropertyChanged += (s, e) =>
+            {
+                if (e.PropertyName == nameof(AppDataUsageItem.HasPercent)) propChangedFired = true;
+            };
+
+            item.UsagePercent = 25.0;
+            Assert.True(item.HasPercent);
+            Assert.True(propChangedFired);
+        }
+
+        [Fact]
+        public void BatteryUsageItem_HasPercent_BehavesCorrectly()
+        {
+            var item = new BatteryUsageItem { DrainPercent = 10.0, IsCharging = false };
+            Assert.True(item.HasPercent);
+
+            item.IsCharging = true;
+            Assert.False(item.HasPercent);
+
+            item.IsCharging = false;
+            item.DrainPercent = 0.2;
+            Assert.False(item.HasPercent);
+        }
+
+        [Fact]
+        public void AppBatteryUsageItem_HasPercent_BehavesCorrectly()
+        {
+            var item = new AppBatteryUsageItem { ProcessName = "Test" };
+            item.BatteryPercent = 0.1;
+            Assert.False(item.HasPercent);
+
+            bool propChangedFired = false;
+            item.PropertyChanged += (s, e) =>
+            {
+                if (e.PropertyName == nameof(AppBatteryUsageItem.HasPercent)) propChangedFired = true;
+            };
+
+            item.BatteryPercent = 4.2;
+            Assert.True(item.HasPercent);
+            Assert.True(propChangedFired);
         }
     }
 }

@@ -61,6 +61,29 @@ namespace AccessibleTaskManager.Helpers
             public int BatteryFullLifeTime;
         }
 
+        [StructLayout(LayoutKind.Sequential)]
+        public struct SYSTEM_BATTERY_STATE
+        {
+            [MarshalAs(UnmanagedType.I1)]
+            public bool AcOnLine;
+            [MarshalAs(UnmanagedType.I1)]
+            public bool BatteryPresent;
+            [MarshalAs(UnmanagedType.I1)]
+            public bool Charging;
+            [MarshalAs(UnmanagedType.I1)]
+            public bool Discharging;
+            public byte Spare1_0;
+            public byte Spare1_1;
+            public byte Spare1_2;
+            public byte Tag;
+            public uint MaxCapacity;
+            public uint RemainingCapacity;
+            public int Rate; // in mW. Negative = discharging, Positive = charging
+            public uint EstimatedTime;
+            public uint DefaultAlert1;
+            public uint DefaultAlert2;
+        }
+
         #endregion
 
         #region Kernel32
@@ -98,6 +121,26 @@ namespace AccessibleTaskManager.Helpers
 
         [DllImport("user32.dll", SetLastError = true)]
         public static extern bool UnregisterHotKey(IntPtr hWnd, int id);
+
+        [DllImport("user32.dll")]
+        public static extern IntPtr GetForegroundWindow();
+
+        [DllImport("user32.dll", SetLastError = true)]
+        public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out int lpdwProcessId);
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool IsHungAppWindow(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool IsWindowVisible(IntPtr hWnd);
+
+        public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
 
         [StructLayout(LayoutKind.Sequential)]
         public struct PERFORMANCE_INFORMATION
@@ -137,12 +180,65 @@ namespace AccessibleTaskManager.Helpers
 
         #region Ntdll
 
+        public const int SystemMemoryListInformation = 80;
+        public const int MemoryPurgeStandbyList = 4;
+        public const int MemoryEmptyWorkingSets = 2;
+
         [DllImport("ntdll.dll")]
         public static extern int NtQuerySystemInformation(
             int systemInformationClass,
             IntPtr systemInformation,
             int systemInformationLength,
             out int returnLength);
+
+        [DllImport("ntdll.dll")]
+        public static extern int NtSetSystemInformation(
+            int systemInformationClass,
+            IntPtr systemInformation,
+            int systemInformationLength);
+
+        #endregion
+
+        #region Powrprof
+
+        public const int SystemBatteryState = 5;
+
+        [DllImport("powrprof.dll", SetLastError = true)]
+        public static extern uint CallNtPowerInformation(
+            int informationLevel,
+            IntPtr lpInputBuffer,
+            uint nInputBufferSize,
+            out SYSTEM_BATTERY_STATE lpOutputBuffer,
+            uint nOutputBufferSize);
+
+        #endregion
+
+        #region Iphlpapi
+
+        public const int AF_INET = 2;
+        public const int AF_INET6 = 23;
+        public const int TCP_TABLE_OWNER_PID_ALL = 5;
+        public const int UDP_TABLE_OWNER_PID = 1;
+        public const uint ERROR_INSUFFICIENT_BUFFER = 122;
+        public const uint NO_ERROR = 0;
+
+        [DllImport("iphlpapi.dll", SetLastError = true)]
+        public static extern uint GetExtendedTcpTable(
+            IntPtr pTcpTable,
+            ref int pdwSize,
+            bool bOrder,
+            int ulAf,
+            int tableClass,
+            uint reserved = 0);
+
+        [DllImport("iphlpapi.dll", SetLastError = true)]
+        public static extern uint GetExtendedUdpTable(
+            IntPtr pUdpTable,
+            ref int pdwSize,
+            bool bOrder,
+            int ulAf,
+            int tableClass,
+            uint reserved = 0);
 
         #endregion
     }

@@ -95,12 +95,19 @@ namespace AccessibleTaskManager.Services
                     catch { }
                 }
 
-                var list = appMap.Select(kvp => new AppDataUsageItem
+                long grandTotal = grandTotalReceived + grandTotalSent;
+                var list = appMap.Select(kvp =>
                 {
-                    AppName = kvp.Key,
-                    RawIdentifier = kvp.Value.Raw,
-                    BytesReceived = kvp.Value.In,
-                    BytesSent = kvp.Value.Out
+                    long total = kvp.Value.In + kvp.Value.Out;
+                    double pct = grandTotal > 0 ? (double)total * 100.0 / grandTotal : 0;
+                    return new AppDataUsageItem
+                    {
+                        AppName = kvp.Key,
+                        RawIdentifier = kvp.Value.Raw,
+                        BytesReceived = kvp.Value.In,
+                        BytesSent = kvp.Value.Out,
+                        UsagePercent = pct
+                    };
                 }).ToList();
 
                 // Search filtering

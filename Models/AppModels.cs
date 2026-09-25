@@ -47,11 +47,12 @@ namespace AccessibleTaskManager.Models
         public string DataUsageNetworkFilter { get; set; } = "Current"; // "Current" or "All"
         public string DataUsageTimeFilter { get; set; } = "Full"; // "Full", "Last Month", "Last Week", "Last 24 Hours", "Today"
 
+        // Battery settings
+        public string BatteryAppDisplayMode { get; set; } = "Combined"; // "Combined", "Percentage", "DrainRate"
+        public bool HideBatteryDisclaimer { get; set; } = false;
+
         // Theme setting
         public string Theme { get; set; } = "System Default"; // "System Default", "Dark", "Light", "High Contrast Black"
-
-        // Update channel
-        public string UpdateChannel { get; set; } = "Beta"; // "Beta" or "Stable"
     }
 
     #endregion
@@ -131,6 +132,9 @@ namespace AccessibleTaskManager.Models
         private long _memoryBytes;
         private double _cpuPercent;
         private string _displayText = string.Empty;
+        private bool _isFrozen;
+        private bool _isActiveApp;
+        private string _description = string.Empty;
 
         public static bool ShowExtension { get; set; } = true;
         public static bool ShowPid { get; set; } = false;
@@ -138,9 +142,63 @@ namespace AccessibleTaskManager.Models
         public int Pid { get; set; }
         public string Name { get; set; } = string.Empty;
 
-        public string DisplayName => ShowExtension && !Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
-            ? $"{Name}.exe"
-            : Name;
+        public bool IsFrozen
+        {
+            get => _isFrozen;
+            set
+            {
+                if (_isFrozen != value)
+                {
+                    _isFrozen = value;
+                    OnPropertyChanged();
+                    UpdateDisplayText();
+                }
+            }
+        }
+
+        public bool IsActiveApp
+        {
+            get => _isActiveApp;
+            set
+            {
+                if (_isActiveApp != value)
+                {
+                    _isActiveApp = value;
+                    OnPropertyChanged();
+                    UpdateDisplayText();
+                }
+            }
+        }
+
+        public string Description
+        {
+            get => _description;
+            set
+            {
+                if (_description != value)
+                {
+                    _description = value;
+                    OnPropertyChanged();
+                    UpdateDisplayText();
+                }
+            }
+        }
+
+        public string DisplayName
+        {
+            get
+            {
+                string exeName = ShowExtension && !Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+                    ? $"{Name}.exe"
+                    : Name;
+
+                if (!string.IsNullOrWhiteSpace(_description) && !_description.Equals(Name, StringComparison.OrdinalIgnoreCase))
+                {
+                    return $"{_description} ({exeName})";
+                }
+                return exeName;
+            }
+        }
 
         public long MemoryBytes
         {
@@ -169,10 +227,13 @@ namespace AccessibleTaskManager.Models
                     _cpuPercent = value;
                     OnPropertyChanged();
                     OnPropertyChanged(nameof(CpuFormatted));
+                    OnPropertyChanged(nameof(HasCpuPercent));
                     UpdateDisplayText();
                 }
             }
         }
+
+        public bool HasCpuPercent => _cpuPercent >= 0.5;
 
         public bool IsGroupHeader { get; set; }
         public bool IsGroupChild { get; set; }
@@ -220,20 +281,34 @@ namespace AccessibleTaskManager.Models
             }
         }
 
-        public void UpdateMetrics(long memoryBytes, double cpuPercent, int instanceIndex = 1, int instanceTotal = 1, bool isExpanded = false)
+        public void UpdateMetrics(
+            long memoryBytes,
+            double cpuPercent,
+            int instanceIndex = 1,
+            int instanceTotal = 1,
+            bool isExpanded = false,
+            bool isFrozen = false,
+            bool isActiveApp = false,
+            string description = "")
         {
             bool memChanged = _memoryBytes != memoryBytes;
             bool cpuChanged = Math.Abs(_cpuPercent - cpuPercent) > 0.001;
             bool instChanged = _instanceIndex != instanceIndex || _instanceTotal != instanceTotal;
             bool expChanged = IsExpanded != isExpanded;
+            bool frozenChanged = _isFrozen != isFrozen;
+            bool activeChanged = _isActiveApp != isActiveApp;
+            bool descChanged = !string.IsNullOrEmpty(description) && _description != description;
 
-            if (memChanged || cpuChanged || instChanged || expChanged)
+            if (memChanged || cpuChanged || instChanged || expChanged || frozenChanged || activeChanged || descChanged)
             {
                 _memoryBytes = memoryBytes;
                 _cpuPercent = cpuPercent;
                 _instanceIndex = instanceIndex;
                 _instanceTotal = instanceTotal;
                 IsExpanded = isExpanded;
+                _isFrozen = isFrozen;
+                _isActiveApp = isActiveApp;
+                if (!string.IsNullOrEmpty(description)) _description = description;
 
                 if (memChanged)
                 {
@@ -253,6 +328,14 @@ namespace AccessibleTaskManager.Models
                 if (expChanged)
                 {
                     OnPropertyChanged(nameof(IsExpanded));
+                }
+                if (frozenChanged)
+                {
+                    OnPropertyChanged(nameof(IsFrozen));
+                }
+                if (activeChanged)
+                {
+                    OnPropertyChanged(nameof(IsActiveApp));
                 }
                 UpdateDisplayText();
             }
@@ -285,27 +368,36 @@ namespace AccessibleTaskManager.Models
         {
             string name = DisplayName;
             string cpuStr = CpuFormatted;
+            string prefix = string.Empty;
+            if (_isFrozen)
+            {
+                prefix = "[FROZEN - Not Responding] ";
+            }
+            else if (_isActiveApp)
+            {
+                prefix = "[Active App] ";
+            }
 
             if (IsGroupHeader)
             {
                 string state = IsExpanded ? "expanded" : "collapsed";
                 string instWord = _instanceTotal == 1 ? "instance" : "instances";
-                DisplayText = $"{name} ({_instanceTotal} {instWord}, {state}) - RAM: {MemoryFormatted}, CPU: {cpuStr}";
+                DisplayText = $"{prefix}{name} ({_instanceTotal} {instWord}, {state}) - RAM: {MemoryFormatted}, CPU: {cpuStr}";
             }
             else if (IsGroupChild)
             {
-                DisplayText = $"  {name} (PID: {Pid}) - RAM: {MemoryFormatted}, CPU: {cpuStr}";
+                DisplayText = $"  {prefix}{name} (PID: {Pid}) - RAM: {MemoryFormatted}, CPU: {cpuStr}";
             }
             else
             {
                 string instStr = _instanceTotal > 1 ? $" ({_instanceIndex} of {_instanceTotal})" : string.Empty;
                 if (ShowPid)
                 {
-                    DisplayText = $"{name}{instStr} (PID: {Pid}) - RAM: {MemoryFormatted}, CPU: {cpuStr}";
+                    DisplayText = $"{prefix}{name}{instStr} (PID: {Pid}) - RAM: {MemoryFormatted}, CPU: {cpuStr}";
                 }
                 else
                 {
-                    DisplayText = $"{name}{instStr} - RAM: {MemoryFormatted}, CPU: {cpuStr}";
+                    DisplayText = $"{prefix}{name}{instStr} - RAM: {MemoryFormatted}, CPU: {cpuStr}";
                 }
             }
         }
@@ -324,21 +416,107 @@ namespace AccessibleTaskManager.Models
 
     #region App Data Usage Item
 
-    public class AppDataUsageItem
+    public class AppDataUsageItem : INotifyPropertyChanged
     {
-        public string AppName { get; set; } = string.Empty;
-        public string RawIdentifier { get; set; } = string.Empty;
-        public long BytesReceived { get; set; }
-        public long BytesSent { get; set; }
-        public long TotalBytes => BytesReceived + BytesSent;
+        private long _bytesReceived;
+        private long _bytesSent;
+        private double _usagePercent;
+        private string _appName = string.Empty;
+        private string _rawIdentifier = string.Empty;
 
-        public string ReceivedFormatted => FormatHelper.FormatBytes(BytesReceived);
-        public string SentFormatted => FormatHelper.FormatBytes(BytesSent);
+        public event PropertyChangedEventHandler? PropertyChanged;
+
+        public string AppName
+        {
+            get => _appName;
+            set
+            {
+                if (_appName != value)
+                {
+                    _appName = value;
+                    OnPropertyChanged();
+                    OnPropertyChanged(nameof(DisplayText));
+                }
+            }
+        }
+
+        public string RawIdentifier
+        {
+            get => _rawIdentifier;
+            set
+            {
+                if (_rawIdentifier != value)
+                {
+                    _rawIdentifier = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        public long BytesReceived
+        {
+            get => _bytesReceived;
+            set
+            {
+                if (_bytesReceived != value)
+                {
+                    _bytesReceived = value;
+                    OnPropertyChanged();
+                    OnPropertyChanged(nameof(TotalBytes));
+                    OnPropertyChanged(nameof(ReceivedFormatted));
+                    OnPropertyChanged(nameof(TotalFormatted));
+                    OnPropertyChanged(nameof(DisplayText));
+                }
+            }
+        }
+
+        public long BytesSent
+        {
+            get => _bytesSent;
+            set
+            {
+                if (_bytesSent != value)
+                {
+                    _bytesSent = value;
+                    OnPropertyChanged();
+                    OnPropertyChanged(nameof(TotalBytes));
+                    OnPropertyChanged(nameof(SentFormatted));
+                    OnPropertyChanged(nameof(TotalFormatted));
+                    OnPropertyChanged(nameof(DisplayText));
+                }
+            }
+        }
+
+        public double UsagePercent
+        {
+            get => _usagePercent;
+            set
+            {
+                if (Math.Abs(_usagePercent - value) > 0.01)
+                {
+                    _usagePercent = value;
+                    OnPropertyChanged();
+                    OnPropertyChanged(nameof(HasPercent));
+                }
+            }
+        }
+
+        public bool HasPercent => _usagePercent >= 0.5;
+
+        public long TotalBytes => _bytesReceived + _bytesSent;
+
+        public string ReceivedFormatted => FormatHelper.FormatBytes(_bytesReceived);
+        public string SentFormatted => FormatHelper.FormatBytes(_bytesSent);
         public string TotalFormatted => FormatHelper.FormatBytes(TotalBytes);
 
         public string DisplayText => $"{AppName} - Total: {TotalFormatted} (Down: {ReceivedFormatted}, Up: {SentFormatted})";
 
         public override string ToString() => DisplayText;
+
+        protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
 
         public static string CleanAppName(string rawId)
         {
@@ -397,74 +575,4 @@ namespace AccessibleTaskManager.Models
     #endregion
 
 
-
-    #region Service Item
-
-    public class ServiceItem : INotifyPropertyChanged
-    {
-        private string _status = "Unknown";
-        private string _startupType = "Unknown";
-        private string _displayText = string.Empty;
-
-        public string ServiceName { get; set; } = string.Empty;
-        public string DisplayName { get; set; } = string.Empty;
-
-        public string Status
-        {
-            get => _status;
-            set
-            {
-                if (_status != value)
-                {
-                    _status = value;
-                    UpdateDisplayText();
-                    OnPropertyChanged();
-                }
-            }
-        }
-
-        public string StartupType
-        {
-            get => _startupType;
-            set
-            {
-                if (_startupType != value)
-                {
-                    _startupType = value;
-                    UpdateDisplayText();
-                    OnPropertyChanged();
-                }
-            }
-        }
-
-        public string DisplayText
-        {
-            get => _displayText;
-            private set
-            {
-                if (_displayText != value)
-                {
-                    _displayText = value;
-                    OnPropertyChanged();
-                }
-            }
-        }
-
-        public void UpdateDisplayText()
-        {
-            string disp = string.IsNullOrWhiteSpace(DisplayName) ? ServiceName : DisplayName;
-            DisplayText = $"{disp} ({ServiceName}) - Status: {Status}, Startup: {StartupType}";
-        }
-
-        public override string ToString() => DisplayText;
-
-        public event PropertyChangedEventHandler? PropertyChanged;
-        protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
-        {
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-        }
-    }
-
-    #endregion
 }
-

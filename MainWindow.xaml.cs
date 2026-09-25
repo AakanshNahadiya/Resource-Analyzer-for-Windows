@@ -26,10 +26,11 @@ namespace AccessibleTaskManager
         private readonly IProcessService _processService;
         private readonly ISettingsService _settingsService;
         private readonly IDataUsageService _dataUsageService;
+        private readonly IBatteryUsageService _batteryUsageService;
         private readonly IThemeService _themeService;
         private readonly IHardwareDetailService _hardwareDetailService;
-        private readonly IWindowsServiceManager _serviceManager;
         private readonly IUpdateService _updateService;
+        private readonly INetworkPortService _networkPortService;
         private HotkeyService? _hotkeyService;
 
         private readonly DispatcherTimer _refreshTimer;
@@ -38,10 +39,18 @@ namespace AccessibleTaskManager
 
         private readonly ObservableCollection<ResourceItem> _resourceItems = new();
         private readonly ObservableCollection<ProcessItem> _processItems = new();
-        private readonly ObservableCollection<ServiceItem> _serviceItems = new();
+        private readonly ObservableCollection<ProcessItem> _frozenItems = new();
         private readonly ObservableCollection<AppDataUsageItem> _dataUsageItems = new();
-        private List<ServiceItem> _allServices = new();
+        private readonly Dictionary<string, AppDataUsageItem> _dataUsageMap = new(StringComparer.OrdinalIgnoreCase);
+        private readonly ObservableCollection<BatteryUsageItem> _batteryItems = new();
+        private readonly ObservableCollection<AppBatteryUsageItem> _appBatteryItems = new();
+        private readonly Dictionary<string, AppBatteryUsageItem> _appBatteryMap = new(StringComparer.OrdinalIgnoreCase);
+        private readonly ObservableCollection<NetworkPortItem> _networkPortItems = new();
+        private readonly Dictionary<string, NetworkPortItem> _networkPortMap = new(StringComparer.OrdinalIgnoreCase);
+        private List<NetworkPortItem> _rawNetworkPortList = new();
+        private string _currentPortSort = "Port";
         private string? _latestUpdateUrl;
+        private long _lastTotalDischargeMwh = 0;
 
         private readonly Dictionary<string, ResourceItem> _resourceMap = new();
         private readonly Dictionary<string, DateTime> _lastAlertTimes = new(StringComparer.OrdinalIgnoreCase);
@@ -61,18 +70,22 @@ namespace AccessibleTaskManager
             _processService = new ProcessService();
             _settingsService = new SettingsService();
             _dataUsageService = new DataUsageService();
+            _batteryUsageService = new BatteryUsageService();
             _themeService = new ThemeService();
             _hardwareDetailService = new HardwareDetailService();
-            _serviceManager = new WindowsServiceManager();
             _updateService = new UpdateService();
+            _networkPortService = new NetworkPortService();
 
             _refreshTimer = new DispatcherTimer();
             _refreshTimer.Tick += async (s, e) => await OnTimerTickAsync();
 
             lstResources.ItemsSource = _resourceItems;
             lstProcesses.ItemsSource = _processItems;
-            lstServices.ItemsSource = _serviceItems;
+            lstFrozenApps.ItemsSource = _frozenItems;
             lstDataUsage.ItemsSource = _dataUsageItems;
+            lstBatteryUsage.ItemsSource = _batteryItems;
+            lstAppBatteryUsage.ItemsSource = _appBatteryItems;
+            lstNetworkPorts.ItemsSource = _networkPortItems;
         }
 
         private bool _isInitialized = false;
@@ -91,7 +104,7 @@ namespace AccessibleTaskManager
 
             _themeService.ApplyTheme(_settingsService.CurrentSettings.Theme);
             LoadSettingsIntoUI();
-            ApplySettingsToServices();
+            ApplySettingsToRuntime();
 
             // Build initial resource items
             BuildResourceItemList();
@@ -103,18 +116,12 @@ namespace AccessibleTaskManager
                 Title = "Resource Analyzer for Windows (Administrator)";
                 badgeAdmin.Visibility = Visibility.Visible;
                 btnHeaderAdmin.Visibility = Visibility.Collapsed;
-                txtAdminPrivilegeInfo.Text = "Current status: Full Administrator privileges active.";
-                btnSettingsRestartAdmin.IsEnabled = false;
-                btnSettingsRestartAdmin.Content = "Administrator Mode Active";
             }
             else
             {
                 Title = "Resource Analyzer for Windows";
                 badgeAdmin.Visibility = Visibility.Collapsed;
                 btnHeaderAdmin.Visibility = Visibility.Visible;
-                txtAdminPrivilegeInfo.Text = "Current status: Standard User privileges.";
-                btnSettingsRestartAdmin.IsEnabled = true;
-                btnSettingsRestartAdmin.Content = "Restart as Administrator (Ctrl+Shift+A)";
             }
 
             string curVer = _updateService.GetCurrentVersion();
@@ -303,18 +310,6 @@ namespace AccessibleTaskManager
                         FocusListBoxItem(lstProcesses);
                     }
                 }
-                else if (tabServices.IsSelected)
-                {
-                    if (!string.IsNullOrEmpty(txtServiceSearch.Text))
-                    {
-                        txtServiceSearch.Focus();
-                        txtServiceSearch.SelectAll();
-                    }
-                    else
-                    {
-                        FocusListBoxItem(lstServices);
-                    }
-                }
                 else if (tabDataUsage.IsSelected)
                 {
                     if (!string.IsNullOrEmpty(txtDataSearch.Text))
@@ -325,6 +320,29 @@ namespace AccessibleTaskManager
                     else
                     {
                         FocusListBoxItem(lstDataUsage);
+                    }
+                }
+                else if (tabBatteryUsage.IsSelected)
+                {
+                    if (lstAppBatteryUsage.IsKeyboardFocusWithin)
+                    {
+                        FocusListBoxItem(lstAppBatteryUsage);
+                    }
+                    else
+                    {
+                        FocusListBoxItem(lstBatteryUsage);
+                    }
+                }
+                else if (tabNetworkPorts.IsSelected)
+                {
+                    if (!string.IsNullOrEmpty(txtPortSearch.Text))
+                    {
+                        txtPortSearch.Focus();
+                        txtPortSearch.SelectAll();
+                    }
+                    else
+                    {
+                        FocusListBoxItem(lstNetworkPorts);
                     }
                 }
                 else if (tabSettings.IsSelected)
@@ -486,11 +504,15 @@ namespace AccessibleTaskManager
                     }
 
                     bool isExpanded = expandedGroups.Contains(appName);
+                    bool groupIsFrozen = g.Any(p => p.IsFrozen);
+                    bool groupIsActive = g.Any(p => p.IsActiveApp);
+                    string groupDesc = g.FirstOrDefault(p => !string.IsNullOrEmpty(p.Description))?.Description ?? string.Empty;
 
                     var header = new ProcessItem
                     {
                         Pid = 0,
                         Name = appName,
+                        Description = groupDesc,
                         IsGroupHeader = true,
                         IsGroupChild = false,
                         IsExpanded = isExpanded,
@@ -499,7 +521,9 @@ namespace AccessibleTaskManager
                         MemoryBytes = totalMemory,
                         CpuPercent = totalCpu,
                         InstanceIndex = 1,
-                        InstanceTotal = count
+                        InstanceTotal = count,
+                        IsFrozen = groupIsFrozen,
+                        IsActiveApp = groupIsActive
                     };
                     header.UpdateDisplayText();
 
@@ -560,6 +584,30 @@ namespace AccessibleTaskManager
                 // Check resource overuse alerts on raw processes
                 CheckResourceAlerts(rawList);
 
+                // Populate dynamic Frozen Applications panel
+                var frozenList = rawList.Where(p => p.IsFrozen).ToList();
+                if (frozenList.Count > 0)
+                {
+                    if (pnlFrozenApps.Visibility != Visibility.Visible)
+                    {
+                        pnlFrozenApps.Visibility = Visibility.Visible;
+                        _speechService.Speak($"Warning: {frozenList.Count} frozen application{(frozenList.Count > 1 ? "s" : "")} detected.", interrupt: false);
+                    }
+                    _frozenItems.Clear();
+                    foreach (var f in frozenList)
+                    {
+                        _frozenItems.Add(f);
+                    }
+                }
+                else
+                {
+                    if (pnlFrozenApps.Visibility != Visibility.Collapsed)
+                    {
+                        pnlFrozenApps.Visibility = Visibility.Collapsed;
+                    }
+                    _frozenItems.Clear();
+                }
+
                 var list = BuildDisplayList(rawList, _currentSort, groupProcesses, _expandedGroups);
 
                 int appCount = groupProcesses ? rawList.Select(p => p.Name).Distinct(StringComparer.OrdinalIgnoreCase).Count() : list.Count;
@@ -607,7 +655,7 @@ namespace AccessibleTaskManager
                             item.IsGroupChild = fresh.IsGroupChild;
                             item.GroupName = fresh.GroupName;
                             item.GroupChildPids = fresh.GroupChildPids;
-                            item.UpdateMetrics(fresh.MemoryBytes, fresh.CpuPercent, fresh.InstanceIndex, fresh.InstanceTotal, fresh.IsExpanded);
+                            item.UpdateMetrics(fresh.MemoryBytes, fresh.CpuPercent, fresh.InstanceIndex, fresh.InstanceTotal, fresh.IsExpanded, fresh.IsFrozen, fresh.IsActiveApp, fresh.Description);
                         }
                     }
 
@@ -645,13 +693,21 @@ namespace AccessibleTaskManager
                             }
                         }
 
-                        // Restore selection cleanly
+                        // Restore selection cleanly with focus lock
                         if (!string.IsNullOrEmpty(prevSelectedKey))
                         {
                             var match = _processItems.FirstOrDefault(p => string.Equals(p.ItemKey, prevSelectedKey, StringComparison.OrdinalIgnoreCase));
                             if (match != null)
                             {
-                                lstProcesses.SelectedItem = match;
+                                if (!ReferenceEquals(lstProcesses.SelectedItem, match))
+                                {
+                                    lstProcesses.SelectedItem = match;
+                                }
+                                if (lstProcesses.IsKeyboardFocusWithin)
+                                {
+                                    var container = lstProcesses.ItemContainerGenerator.ContainerFromItem(match) as ListBoxItem;
+                                    container?.Focus();
+                                }
                             }
                         }
                         else if (_processItems.Count > 0 && lstProcesses.SelectedIndex < 0)
@@ -805,6 +861,94 @@ namespace AccessibleTaskManager
             await RefreshProcessesAsync(isFullReset: true);
         }
 
+        private async Task TryEndSelectedProcessTreeAsync()
+        {
+            if (lstProcesses.SelectedItem is not ProcessItem item)
+            {
+                _speechService.Speak("No process selected.", interrupt: true);
+                return;
+            }
+
+            bool confirm = _settingsService.CurrentSettings.ConfirmBeforeEndTask;
+
+            if (item.IsGroupHeader)
+            {
+                if (confirm)
+                {
+                    string promptTarget = $"entire process trees of all {item.InstanceTotal} instances of {item.DisplayName}";
+                    var dlg = new ConfirmEndTaskDialog(promptTarget, pid: -1)
+                    {
+                        Owner = this
+                    };
+
+                    bool? result = dlg.ShowDialog();
+                    if (result != true || !dlg.Confirmed)
+                    {
+                        _speechService.Speak("Task termination canceled.", interrupt: true);
+                        return;
+                    }
+
+                    if (dlg.DisableFuturePrompts)
+                    {
+                        _settingsService.CurrentSettings.ConfirmBeforeEndTask = false;
+                        if (cmbProcessManager != null)
+                        {
+                            bool hideSys = _settingsService.CurrentSettings.HideSystemProcesses;
+                            cmbProcessManager.SelectedIndex = hideSys ? 1 : 3;
+                        }
+                        _settingsService.Save();
+                    }
+                }
+
+                int killedCount = 0;
+                var pidsToKill = item.GroupChildPids.ToList();
+                foreach (int pid in pidsToKill)
+                {
+                    var (ok, _) = await _processService.KillProcessTreeAsync(pid, item.DisplayName);
+                    if (ok) killedCount++;
+                }
+
+                string msg = $"Ended process trees for {killedCount} of {pidsToKill.Count} instances of {item.DisplayName}.";
+                _speechService.Speak(msg, interrupt: true);
+                txtAnnouncement.Text = msg;
+
+                await RefreshProcessesAsync(isFullReset: true);
+                return;
+            }
+
+            if (confirm)
+            {
+                var dlg = new ConfirmEndTaskDialog($"{item.DisplayName} (PID {item.Pid}) and child processes", item.Pid)
+                {
+                    Owner = this
+                };
+
+                bool? result = dlg.ShowDialog();
+                if (result != true || !dlg.Confirmed)
+                {
+                    _speechService.Speak("Task termination canceled.", interrupt: true);
+                    return;
+                }
+
+                if (dlg.DisableFuturePrompts)
+                {
+                    _settingsService.CurrentSettings.ConfirmBeforeEndTask = false;
+                    if (cmbProcessManager != null)
+                    {
+                        bool hideSys = _settingsService.CurrentSettings.HideSystemProcesses;
+                        cmbProcessManager.SelectedIndex = hideSys ? 1 : 3;
+                    }
+                    _settingsService.Save();
+                }
+            }
+
+            var (success, singleMsg) = await _processService.KillProcessTreeAsync(item.Pid, item.DisplayName);
+            _speechService.Speak(singleMsg, interrupt: true);
+            txtAnnouncement.Text = singleMsg;
+
+            await RefreshProcessesAsync(isFullReset: true);
+        }
+
         #endregion
 
         #region Data Usage Management
@@ -832,9 +976,11 @@ namespace AccessibleTaskManager
                 txtDataSummary.Text = summary;
 
                 _dataUsageItems.Clear();
+                _dataUsageMap.Clear();
                 foreach (var a in apps)
                 {
                     _dataUsageItems.Add(a);
+                    _dataUsageMap[a.AppName] = a;
                 }
 
                 if (_dataUsageItems.Count > 0 && lstDataUsage.SelectedIndex < 0)
@@ -852,6 +998,80 @@ namespace AccessibleTaskManager
             {
                 Debug.WriteLine($"Error querying data usage: {ex.Message}");
                 txtDataSummary.Text = "Unable to load data usage on this connection.";
+            }
+        }
+
+        private async Task RefreshDataUsageRealtimeAsync()
+        {
+            try
+            {
+                bool currentOnly = cmbDataNetwork.SelectedIndex != 1; // 0 = Current (Default), 1 = All Networks
+                string timeRange = cmbDataTimeRange.SelectedIndex switch
+                {
+                    0 => "Full",
+                    1 => "Last Month",
+                    2 => "Last Week",
+                    3 => "Last 24 Hours",
+                    4 => "Today",
+                    _ => "Full"
+                };
+
+                string search = txtDataSearch.Text;
+                var (apps, totalRecv, totalSent) = await _dataUsageService.GetDataUsageAsync(timeRange, currentOnly, search);
+
+                long grandTotal = totalRecv + totalSent;
+                string summary = $"Showing {apps.Count} applications. Total: {FormatHelper.FormatBytes(grandTotal)} (Down: {FormatHelper.FormatBytes(totalRecv)}, Up: {FormatHelper.FormatBytes(totalSent)}).";
+                txtDataSummary.Text = summary;
+
+                UpdateDataUsageCollectionInPlace(apps);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error in realtime data usage scan: {ex.Message}");
+            }
+        }
+
+        private void UpdateDataUsageCollectionInPlace(List<AppDataUsageItem> newItems)
+        {
+            if (_dataUsageItems.Count == 0)
+            {
+                _dataUsageMap.Clear();
+                foreach (var a in newItems)
+                {
+                    _dataUsageItems.Add(a);
+                    _dataUsageMap[a.AppName] = a;
+                }
+                if (_dataUsageItems.Count > 0 && lstDataUsage.SelectedIndex < 0)
+                {
+                    lstDataUsage.SelectedIndex = 0;
+                }
+                return;
+            }
+
+            var newKeySet = new HashSet<string>(newItems.Select(i => i.AppName), StringComparer.OrdinalIgnoreCase);
+
+            for (int i = _dataUsageItems.Count - 1; i >= 0; i--)
+            {
+                if (!newKeySet.Contains(_dataUsageItems[i].AppName))
+                {
+                    _dataUsageMap.Remove(_dataUsageItems[i].AppName);
+                    _dataUsageItems.RemoveAt(i);
+                }
+            }
+
+            foreach (var newItem in newItems)
+            {
+                if (_dataUsageMap.TryGetValue(newItem.AppName, out var existing))
+                {
+                    existing.BytesReceived = newItem.BytesReceived;
+                    existing.BytesSent = newItem.BytesSent;
+                    existing.UsagePercent = newItem.UsagePercent;
+                }
+                else
+                {
+                    _dataUsageItems.Add(newItem);
+                    _dataUsageMap[newItem.AppName] = newItem;
+                }
             }
         }
 
@@ -898,6 +1118,778 @@ namespace AccessibleTaskManager
             }
         }
 
+        private void CmbBatteryTimeRange_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_isUpdatingUI) return;
+            _ = RefreshBatteryUsageAsync(announce: false);
+        }
+
+        private void ChkSinceLastCharge_Checked(object sender, RoutedEventArgs e)
+        {
+            if (_isUpdatingUI) return;
+            _batteryUsageService.ResetAppEnergy();
+            _ = RefreshBatteryUsageAsync(announce: true);
+        }
+
+        private void ChkSinceLastCharge_Unchecked(object sender, RoutedEventArgs e)
+        {
+            if (_isUpdatingUI) return;
+            _batteryUsageService.ResetAppEnergy();
+            _ = RefreshBatteryUsageAsync(announce: true);
+        }
+
+        private void BtnRefreshBattery_Click(object sender, RoutedEventArgs e)
+        {
+            _ = RefreshBatteryUsageAsync(announce: true);
+        }
+
+        private void BtnDismissBatteryDisclaimer_Click(object sender, RoutedEventArgs e)
+        {
+            if (chkDoNotShowBatteryDisclaimer?.IsChecked == true)
+            {
+                _settingsService.CurrentSettings.HideBatteryDisclaimer = true;
+                _settingsService.Save();
+            }
+            pnlBatteryDisclaimer.Visibility = Visibility.Collapsed;
+            _speechService.Speak("Battery accuracy disclaimer dismissed.", interrupt: true);
+        }
+
+        private static string FormatRelativeTime(DateTime pastTime)
+        {
+            var span = DateTime.Now - pastTime;
+            if (span.TotalSeconds < 0) return "just now";
+            if (span.TotalMinutes < 1) return "just now";
+            if (span.TotalMinutes < 60) return $"{(int)span.TotalMinutes}m ago";
+            if (span.TotalHours < 24) return $"{(int)span.TotalHours}h {span.Minutes}m ago";
+            return $"{(int)span.TotalDays}d ago";
+        }
+
+        private async Task RefreshBatteryUsageAsync(bool announce = false)
+        {
+            try
+            {
+                string timeRange = cmbBatteryTimeRange?.SelectedIndex switch
+                {
+                    0 => "Full",
+                    1 => "Last Month",
+                    2 => "Last Week",
+                    3 => "Last 24 Hours",
+                    4 => "Today",
+                    _ => "Full"
+                };
+
+                bool sinceLastCharge = chkSinceLastCharge?.IsChecked == true;
+                var (sessions, totalDischarge, totalDischargePct, activeDur, standbyDur, hasBattery, lastDisconnect) =
+                    await _batteryUsageService.GetBatteryUsageAsync(timeRange, sinceLastCharge);
+
+                if (!hasBattery)
+                {
+                    string noBatt = "No battery detected (Desktop PC or AC only).";
+                    txtBatterySummary.Text = noBatt;
+                    _batteryItems.Clear();
+                    _appBatteryItems.Clear();
+                    _appBatteryMap.Clear();
+                    if (announce)
+                    {
+                        _speechService.Speak(noBatt, interrupt: true);
+                        txtAnnouncement.Text = noBatt;
+                    }
+                    return;
+                }
+
+                _lastTotalDischargeMwh = totalDischarge;
+
+                string activeStr = activeDur.TotalHours >= 1 ? $"{(int)activeDur.TotalHours}h {activeDur.Minutes}m" : $"{activeDur.Minutes}m";
+                string standbyStr = standbyDur.TotalHours >= 1 ? $"{(int)standbyDur.TotalHours}h {standbyDur.Minutes}m" : $"{standbyDur.Minutes}m";
+
+                string relTime = lastDisconnect.HasValue ? $", {FormatRelativeTime(lastDisconnect.Value)}" : "";
+                string filterDesc = sinceLastCharge
+                    ? (lastDisconnect.HasValue ? $" (Since last charge: {lastDisconnect.Value:dd-MMM HH:mm}{relTime})" : " (Since last charge)")
+                    : $" ({timeRange})";
+
+                string summary = $"Showing {sessions.Count} battery sessions{filterDesc}. Total Discharge: {totalDischarge:N0} mWh ({totalDischargePct:F1}%). Active: {activeStr}, Standby: {standbyStr}.";
+                txtBatterySummary.Text = summary;
+
+                _batteryItems.Clear();
+                foreach (var s in sessions)
+                {
+                    _batteryItems.Add(s);
+                }
+
+                if (_batteryItems.Count > 0 && lstBatteryUsage.SelectedIndex < 0)
+                {
+                    lstBatteryUsage.SelectedIndex = 0;
+                }
+
+                // Refresh real-time application battery usage with full reset when requested
+                await RefreshAppBatteryUsageAsync(isFullReset: announce);
+
+                if (announce)
+                {
+                    _speechService.Speak(summary, interrupt: true);
+                    txtAnnouncement.Text = summary;
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error querying battery usage: {ex.Message}");
+                txtBatterySummary.Text = "Unable to load battery energy usage.";
+            }
+        }
+
+        private async Task RefreshAppBatteryUsageAsync(bool isFullReset = false)
+        {
+            try
+            {
+                var liveState = _batteryUsageService.GetLiveBatteryState();
+                if (!liveState.HasBattery)
+                {
+                    _appBatteryItems.Clear();
+                    _appBatteryMap.Clear();
+                    return;
+                }
+
+                var rawProcs = await _processService.GetProcessesAsync(string.Empty, "CPU", hideSystemProcesses: false);
+
+                IntPtr fgHwnd = NativeMethods.GetForegroundWindow();
+                int fgPid = 0;
+                if (fgHwnd != IntPtr.Zero)
+                {
+                    NativeMethods.GetWindowThreadProcessId(fgHwnd, out fgPid);
+                }
+
+                int refreshSecs = _settingsService.CurrentSettings.RefreshIntervalSeconds;
+                double elapsedSecs = refreshSecs > 0 ? refreshSecs : 2.0;
+
+                _batteryUsageService.AccumulateAppEnergy(
+                    rawProcs,
+                    liveState.DischargeRateMw,
+                    liveState.IsDischarging,
+                    elapsedSecs,
+                    fgPid);
+
+                string displayMode = _settingsService.CurrentSettings.BatteryAppDisplayMode ?? "Combined";
+                var updatedApps = _batteryUsageService.GetAppBatteryUsage(
+                    rawProcs,
+                    liveState.DischargeRateMw,
+                    liveState.IsDischarging,
+                    fgPid,
+                    displayMode);
+
+                UpdateAppBatteryCollectionInPlace(updatedApps, isFullReset);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error refreshing app battery usage: {ex.Message}");
+            }
+        }
+
+        private void UpdateAppBatteryCollectionInPlace(List<AppBatteryUsageItem> newItems, bool isFullReset = false)
+        {
+            var currentSelected = lstAppBatteryUsage.SelectedItem as AppBatteryUsageItem;
+            string? selectedKey = currentSelected?.ProcessName;
+
+            if (_appBatteryItems.Count == 0)
+            {
+                _appBatteryMap.Clear();
+                foreach (var it in newItems)
+                {
+                    _appBatteryItems.Add(it);
+                    _appBatteryMap[it.ProcessName] = it;
+                }
+                if (_appBatteryItems.Count > 0 && lstAppBatteryUsage.SelectedIndex < 0)
+                {
+                    lstAppBatteryUsage.SelectedIndex = 0;
+                }
+                return;
+            }
+
+            var newKeySet = new HashSet<string>(newItems.Select(i => i.ProcessName), StringComparer.OrdinalIgnoreCase);
+
+            for (int i = _appBatteryItems.Count - 1; i >= 0; i--)
+            {
+                if (!newKeySet.Contains(_appBatteryItems[i].ProcessName))
+                {
+                    _appBatteryMap.Remove(_appBatteryItems[i].ProcessName);
+                    _appBatteryItems.RemoveAt(i);
+                }
+            }
+
+            // Update existing items in-place without moving them
+            foreach (var incoming in newItems)
+            {
+                if (_appBatteryMap.TryGetValue(incoming.ProcessName, out var existing))
+                {
+                    existing.DisplayName = incoming.DisplayName;
+                    existing.Pid = incoming.Pid;
+                    existing.UpdateMetrics(
+                        incoming.EstimatedPowerMw,
+                        incoming.EnergyConsumedMwh,
+                        incoming.BatteryPercent,
+                        incoming.PowerImpact,
+                        incoming.IsForeground,
+                        incoming.DisplayMode);
+                }
+                else
+                {
+                    _appBatteryItems.Add(incoming);
+                    _appBatteryMap[incoming.ProcessName] = incoming;
+                }
+            }
+
+            // Only reorder items when user requested a full reset (F5 Refresh or Filter change).
+            // During periodic background timer ticks, items remain in place so screen reader focus is never moved.
+            if (isFullReset)
+            {
+                for (int targetIndex = 0; targetIndex < newItems.Count && targetIndex < _appBatteryItems.Count; targetIndex++)
+                {
+                    string targetKey = newItems[targetIndex].ProcessName;
+                    if (!string.Equals(_appBatteryItems[targetIndex].ProcessName, targetKey, StringComparison.OrdinalIgnoreCase))
+                    {
+                        int currentIndex = -1;
+                        for (int j = targetIndex + 1; j < _appBatteryItems.Count; j++)
+                        {
+                            if (string.Equals(_appBatteryItems[j].ProcessName, targetKey, StringComparison.OrdinalIgnoreCase))
+                            {
+                                currentIndex = j;
+                                break;
+                            }
+                        }
+                        if (currentIndex > targetIndex)
+                        {
+                            _appBatteryItems.Move(currentIndex, targetIndex);
+                        }
+                    }
+                }
+            }
+
+            if (selectedKey != null && _appBatteryMap.TryGetValue(selectedKey, out var reselect))
+            {
+                if (!ReferenceEquals(lstAppBatteryUsage.SelectedItem, reselect))
+                {
+                    lstAppBatteryUsage.SelectedItem = reselect;
+                }
+            }
+            else if (_appBatteryItems.Count > 0 && lstAppBatteryUsage.SelectedIndex < 0)
+            {
+                lstAppBatteryUsage.SelectedIndex = 0;
+            }
+        }
+
+        private void LstBatteryUsage_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Tab && Keyboard.Modifiers == ModifierKeys.None)
+            {
+                e.Handled = true;
+                FocusListBoxItem(lstAppBatteryUsage);
+            }
+            else if (e.Key == Key.F5)
+            {
+                e.Handled = true;
+                _ = RefreshBatteryUsageAsync(announce: true);
+            }
+            else if (e.Key == Key.F6)
+            {
+                e.Handled = true;
+                FocusListBoxItem(lstAppBatteryUsage);
+            }
+            else if (e.Key == Key.C && Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+            {
+                if (lstBatteryUsage.SelectedItem is BatteryUsageItem item)
+                {
+                    try
+                    {
+                        System.Windows.Clipboard.SetText(item.DisplayText);
+                        _speechService.Speak("Copied battery session details to clipboard.", interrupt: true);
+                        txtAnnouncement.Text = "Copied battery session details to clipboard.";
+                    }
+                    catch { }
+                }
+            }
+        }
+
+        private void LstAppBatteryUsage_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Tab && Keyboard.Modifiers == ModifierKeys.Shift)
+            {
+                e.Handled = true;
+                FocusListBoxItem(lstBatteryUsage);
+            }
+            else if (e.Key == Key.F5)
+            {
+                e.Handled = true;
+                _ = RefreshBatteryUsageAsync(announce: true);
+            }
+            else if (e.Key == Key.F6)
+            {
+                e.Handled = true;
+                FocusListBoxItem(lstBatteryUsage);
+            }
+            else if (e.Key == Key.Delete)
+            {
+                e.Handled = true;
+                EndSelectedAppBatteryTask();
+            }
+            else if (e.Key == Key.C && Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+            {
+                e.Handled = true;
+                CopySelectedAppBatteryDetails();
+            }
+        }
+
+        private void CtxAppBatteryEndTask_Click(object sender, RoutedEventArgs e)
+        {
+            EndSelectedAppBatteryTask();
+        }
+
+        private void CtxAppBatteryCopy_Click(object sender, RoutedEventArgs e)
+        {
+            CopySelectedAppBatteryDetails();
+        }
+
+        private void CopySelectedAppBatteryDetails()
+        {
+            if (lstAppBatteryUsage.SelectedItem is AppBatteryUsageItem item)
+            {
+                try
+                {
+                    System.Windows.Clipboard.SetText(item.DisplayText);
+                    _speechService.Speak($"Copied {item.DisplayName} battery details to clipboard.", interrupt: true);
+                    txtAnnouncement.Text = $"Copied {item.DisplayName} battery details to clipboard.";
+                }
+                catch { }
+            }
+        }
+
+        private async void EndSelectedAppBatteryTask()
+        {
+            if (lstAppBatteryUsage.SelectedItem is not AppBatteryUsageItem item)
+            {
+                _speechService.Speak("No application selected.", interrupt: true);
+                return;
+            }
+
+            if (item.Pid <= 4)
+            {
+                _speechService.Speak("Cannot terminate system process.", interrupt: true);
+                return;
+            }
+
+            bool confirm = _settingsService.CurrentSettings.ConfirmBeforeEndTask;
+            if (confirm)
+            {
+                var dlg = new ConfirmEndTaskDialog($"{item.DisplayName} (PID {item.Pid})", item.Pid)
+                {
+                    Owner = this
+                };
+
+                bool? result = dlg.ShowDialog();
+                if (result != true || !dlg.Confirmed)
+                {
+                    _speechService.Speak("Task termination canceled.", interrupt: true);
+                    return;
+                }
+            }
+
+            var (success, msg) = await _processService.KillProcessTreeAsync(item.Pid, item.DisplayName);
+            _speechService.Speak(msg, interrupt: true);
+            txtAnnouncement.Text = msg;
+
+            await RefreshAppBatteryUsageAsync(isFullReset: true);
+        }
+
+        #endregion
+
+        #region Network Ports Tab Handlers
+
+        private async Task RefreshNetworkPortsAsync(bool isFullReset = false, bool announce = false)
+        {
+            try
+            {
+                var ports = await _networkPortService.GetNetworkPortsAsync();
+                _rawNetworkPortList = ports;
+
+                var filtered = FilterAndSortPorts(ports);
+                UpdateNetworkPortCollectionInPlace(filtered, isFullReset);
+
+                int listeningCount = ports.Count(p => p.IsListening);
+                int establishedCount = ports.Count(p => p.IsEstablished);
+                int totalCount = ports.Count;
+
+                if (!string.IsNullOrWhiteSpace(txtPortSearch?.Text))
+                {
+                    txtPortCount.Text = $"Showing {filtered.Count} of {totalCount} ports ({listeningCount} listening, {establishedCount} established). Press Delete to end task, Enter for details.";
+                }
+                else
+                {
+                    txtPortCount.Text = $"{totalCount} ports & connections ({listeningCount} listening, {establishedCount} established). Press Delete to end task, Enter for details.";
+                }
+
+                if (announce)
+                {
+                    string msg = $"{filtered.Count} network ports and connections.";
+                    _speechService.Speak(msg, interrupt: true);
+                    txtAnnouncement.Text = msg;
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error refreshing network ports: {ex.Message}");
+            }
+        }
+
+        private List<NetworkPortItem> FilterAndSortPorts(List<NetworkPortItem> source)
+        {
+            var query = source.AsEnumerable();
+
+            // View filter
+            int filterIdx = cmbPortFilter?.SelectedIndex ?? 0;
+            query = filterIdx switch
+            {
+                0 => query.Where(p => p.IsListening),
+                2 => query.Where(p => p.IsEstablished),
+                _ => query // 1 = All Ports & Connections
+            };
+
+            // Search filter
+            string search = txtPortSearch?.Text?.Trim() ?? string.Empty;
+            if (!string.IsNullOrEmpty(search))
+            {
+                query = query.Where(p =>
+                    p.LocalPort.ToString().Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                    p.RemotePort.ToString().Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                    p.ProcessName.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                    p.FriendlyName.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                    p.ProcessId.ToString().Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                    p.LocalAddress.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                    p.RemoteAddress.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                    p.Protocol.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                    p.State.Contains(search, StringComparison.OrdinalIgnoreCase));
+            }
+
+            // Sorting
+            query = _currentPortSort switch
+            {
+                "App" => query.OrderBy(p => p.ProcessName).ThenBy(p => p.LocalPort),
+                "State" => query.OrderBy(p => p.State).ThenBy(p => p.LocalPort),
+                _ => query.OrderBy(p => p.LocalPort).ThenBy(p => p.Protocol) // Default "Port"
+            };
+
+            return query.ToList();
+        }
+
+        private void UpdateNetworkPortCollectionInPlace(List<NetworkPortItem> newItems, bool isFullReset = false)
+        {
+            var currentSelected = lstNetworkPorts.SelectedItem as NetworkPortItem;
+            string? selectedKey = currentSelected?.Key;
+
+            if (_networkPortItems.Count == 0 || isFullReset)
+            {
+                _networkPortItems.Clear();
+                _networkPortMap.Clear();
+                foreach (var it in newItems)
+                {
+                    _networkPortItems.Add(it);
+                    _networkPortMap[it.Key] = it;
+                }
+                if (_networkPortItems.Count > 0 && lstNetworkPorts.SelectedIndex < 0)
+                {
+                    lstNetworkPorts.SelectedIndex = 0;
+                }
+                return;
+            }
+
+            var newKeySet = new HashSet<string>(newItems.Select(i => i.Key), StringComparer.OrdinalIgnoreCase);
+
+            // Remove closed ports/connections
+            for (int i = _networkPortItems.Count - 1; i >= 0; i--)
+            {
+                if (!newKeySet.Contains(_networkPortItems[i].Key))
+                {
+                    _networkPortMap.Remove(_networkPortItems[i].Key);
+                    _networkPortItems.RemoveAt(i);
+                }
+            }
+
+            // Update existing in-place, collect new ones
+            var toAdd = new List<NetworkPortItem>();
+            foreach (var incoming in newItems)
+            {
+                if (_networkPortMap.TryGetValue(incoming.Key, out var existing))
+                {
+                    if (existing.State != incoming.State || existing.ProcessName != incoming.ProcessName || existing.FriendlyName != incoming.FriendlyName)
+                    {
+                        existing.State = incoming.State;
+                        existing.ProcessName = incoming.ProcessName;
+                        existing.FriendlyName = incoming.FriendlyName;
+                        existing.ProcessPath = incoming.ProcessPath;
+                        existing.UpdateDisplayText();
+                    }
+                }
+                else
+                {
+                    toAdd.Add(incoming);
+                }
+            }
+
+            // Add new items
+            foreach (var item in toAdd)
+            {
+                _networkPortItems.Add(item);
+                _networkPortMap[item.Key] = item;
+            }
+
+            // Restore selection if key still exists
+            if (selectedKey != null && _networkPortMap.TryGetValue(selectedKey, out var matched))
+            {
+                lstNetworkPorts.SelectedItem = matched;
+            }
+            else if (_networkPortItems.Count > 0 && lstNetworkPorts.SelectedIndex < 0)
+            {
+                lstNetworkPorts.SelectedIndex = 0;
+            }
+        }
+
+        private void BtnSortPort_Click(object sender, RoutedEventArgs e) => SetPortSort("Port");
+        private void BtnSortPortApp_Click(object sender, RoutedEventArgs e) => SetPortSort("App");
+        private void BtnSortPortState_Click(object sender, RoutedEventArgs e) => SetPortSort("State");
+
+        private void SetPortSort(string sortBy)
+        {
+            _currentPortSort = sortBy;
+            var filtered = FilterAndSortPorts(_rawNetworkPortList);
+            UpdateNetworkPortCollectionInPlace(filtered, isFullReset: true);
+            _speechService.Speak($"Sorted by {sortBy}.", interrupt: true);
+            txtAnnouncement.Text = $"Sorted by {sortBy}.";
+        }
+
+        private void BtnRefreshPorts_Click(object sender, RoutedEventArgs e)
+        {
+            _ = RefreshNetworkPortsAsync(isFullReset: false, announce: true);
+        }
+
+        private void CmbPortFilter_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (!_isInitialized) return;
+            var filtered = FilterAndSortPorts(_rawNetworkPortList);
+            UpdateNetworkPortCollectionInPlace(filtered, isFullReset: true);
+            string viewName = cmbPortFilter.SelectedItem is ComboBoxItem cbi ? (cbi.Content?.ToString() ?? "Filter") : "Filter";
+            _speechService.Speak($"View: {viewName}. {filtered.Count} items.", interrupt: true);
+            txtAnnouncement.Text = $"View: {viewName}. {filtered.Count} items.";
+        }
+
+        private void TxtPortSearch_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (tabNetworkPorts.IsSelected)
+            {
+                var filtered = FilterAndSortPorts(_rawNetworkPortList);
+                UpdateNetworkPortCollectionInPlace(filtered, isFullReset: true);
+            }
+        }
+
+        private void TxtPortSearch_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Down)
+            {
+                e.Handled = true;
+                lstNetworkPorts.Focus();
+                if (_networkPortItems.Count > 0 && lstNetworkPorts.SelectedIndex < 0)
+                {
+                    lstNetworkPorts.SelectedIndex = 0;
+                }
+            }
+            else if (e.Key == Key.Escape)
+            {
+                e.Handled = true;
+                txtPortSearch.Text = string.Empty;
+                lstNetworkPorts.Focus();
+            }
+        }
+
+        private async void LstNetworkPorts_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.F5)
+            {
+                e.Handled = true;
+                await RefreshNetworkPortsAsync(isFullReset: false, announce: true);
+            }
+            else if (e.Key == Key.Enter)
+            {
+                e.Handled = true;
+                ShowSelectedPortDetails();
+            }
+            else if (e.Key == Key.Delete)
+            {
+                e.Handled = true;
+                if ((Keyboard.Modifiers & ModifierKeys.Shift) == ModifierKeys.Shift)
+                {
+                    await TryEndSelectedPortProcessTreeAsync();
+                }
+                else
+                {
+                    await TryEndSelectedPortTaskAsync();
+                }
+            }
+            else if (e.Key == Key.C && Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+            {
+                e.Handled = true;
+                CopySelectedPortDetails();
+            }
+        }
+
+        private void LstNetworkPorts_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        {
+            ShowSelectedPortDetails();
+        }
+
+        private void ShowSelectedPortDetails()
+        {
+            if (lstNetworkPorts.SelectedItem is not NetworkPortItem item) return;
+
+            string endpointInfo = item.IsListening
+                ? $"Local Address: {item.LocalAddress}\r\nLocal Port: {item.LocalPort} ({item.Protocol})"
+                : $"Local Endpoint: {item.LocalAddress}:{item.LocalPort}\r\nRemote Endpoint: {item.RemoteAddress}:{item.RemotePort}\r\nProtocol: {item.Protocol}\r\nState: {item.State}";
+
+            string details = $"Protocol: {item.Protocol}\r\n" +
+                             $"Connection State: {item.State}\r\n" +
+                             $"{endpointInfo}\r\n" +
+                             $"Application Name: {item.ProcessName}\r\n" +
+                             $"Description: {(string.IsNullOrEmpty(item.FriendlyName) ? item.ProcessName : item.FriendlyName)}\r\n" +
+                             $"Process ID (PID): {item.ProcessId}\r\n" +
+                             $"Executable Path: {(string.IsNullOrEmpty(item.ProcessPath) ? "Unknown or System Protected" : item.ProcessPath)}";
+
+            var dlg = new ResourceDetailDialog($"Port {item.LocalPort} ({item.Protocol})", details)
+            {
+                Owner = this
+            };
+            dlg.ShowDialog();
+        }
+
+        private void CopySelectedPortDetails()
+        {
+            if (lstNetworkPorts.SelectedItem is not NetworkPortItem item) return;
+
+            try
+            {
+                Clipboard.SetText(item.DisplayText);
+                _speechService.Speak($"Copied port {item.LocalPort} details to clipboard.", interrupt: true);
+                txtAnnouncement.Text = $"Copied port {item.LocalPort} details to clipboard.";
+            }
+            catch { }
+        }
+
+        private async Task TryEndSelectedPortTaskAsync()
+        {
+            if (lstNetworkPorts.SelectedItem is not NetworkPortItem item) return;
+
+            if (item.ProcessId <= 4)
+            {
+                _speechService.Speak("Cannot end Windows system process.", interrupt: true);
+                txtAnnouncement.Text = "Cannot end Windows system process.";
+                return;
+            }
+
+            bool confirm = _settingsService.CurrentSettings.ConfirmBeforeEndTask;
+            if (confirm)
+            {
+                var dlg = new ConfirmEndTaskDialog($"{item.ProcessName} (PID {item.ProcessId}) on port {item.LocalPort}", item.ProcessId)
+                {
+                    Owner = this
+                };
+
+                bool? result = dlg.ShowDialog();
+                if (result != true || !dlg.Confirmed)
+                {
+                    _speechService.Speak("Task termination canceled.", interrupt: true);
+                    return;
+                }
+            }
+
+            var (success, msg) = await _processService.KillProcessAsync(item.ProcessId, item.ProcessName);
+            _speechService.Speak(msg, interrupt: true);
+            txtAnnouncement.Text = msg;
+
+            if (success)
+            {
+                await RefreshNetworkPortsAsync(isFullReset: true);
+            }
+        }
+
+        private async Task TryEndSelectedPortProcessTreeAsync()
+        {
+            if (lstNetworkPorts.SelectedItem is not NetworkPortItem item) return;
+
+            if (item.ProcessId <= 4)
+            {
+                _speechService.Speak("Cannot end Windows system process.", interrupt: true);
+                txtAnnouncement.Text = "Cannot end Windows system process.";
+                return;
+            }
+
+            bool confirm = _settingsService.CurrentSettings.ConfirmBeforeEndTask;
+            if (confirm)
+            {
+                var dlg = new ConfirmEndTaskDialog($"entire process tree of {item.ProcessName} (PID {item.ProcessId}) on port {item.LocalPort}", item.ProcessId)
+                {
+                    Owner = this
+                };
+
+                bool? result = dlg.ShowDialog();
+                if (result != true || !dlg.Confirmed)
+                {
+                    _speechService.Speak("Task termination canceled.", interrupt: true);
+                    return;
+                }
+            }
+
+            var (success, msg) = await _processService.KillProcessTreeAsync(item.ProcessId, item.ProcessName);
+            _speechService.Speak(msg, interrupt: true);
+            txtAnnouncement.Text = msg;
+
+            if (success)
+            {
+                await RefreshNetworkPortsAsync(isFullReset: true);
+            }
+        }
+
+        private async void CtxPortEndTask_Click(object sender, RoutedEventArgs e)
+        {
+            await TryEndSelectedPortTaskAsync();
+        }
+
+        private async void CtxPortEndProcessTree_Click(object sender, RoutedEventArgs e)
+        {
+            await TryEndSelectedPortProcessTreeAsync();
+        }
+
+        private void CtxPortOpenFileLocation_Click(object sender, RoutedEventArgs e)
+        {
+            if (lstNetworkPorts.SelectedItem is not NetworkPortItem item) return;
+            if (!string.IsNullOrEmpty(item.ProcessPath) && System.IO.File.Exists(item.ProcessPath))
+            {
+                try
+                {
+                    Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{item.ProcessPath}\"") { UseShellExecute = true });
+                }
+                catch { }
+            }
+            else
+            {
+                _speechService.Speak("File location unavailable for this process.", interrupt: true);
+                txtAnnouncement.Text = "File location unavailable for this process.";
+            }
+        }
+
+        private void CtxPortDetails_Click(object sender, RoutedEventArgs e)
+        {
+            ShowSelectedPortDetails();
+        }
+
+        private void CtxPortCopyDetails_Click(object sender, RoutedEventArgs e)
+        {
+            CopySelectedPortDetails();
+        }
+
         #endregion
 
         #region Refresh & Keyboard Handlers
@@ -917,13 +1909,17 @@ namespace AccessibleTaskManager
                 {
                     await RefreshProcessesAsync(isFullReset: true);
                 }
-                else if (tabServices.IsSelected)
-                {
-                    await RefreshServicesAsync(announce: false);
-                }
                 else if (tabDataUsage.IsSelected)
                 {
                     await RefreshDataUsageAsync(announce: false);
+                }
+                else if (tabBatteryUsage.IsSelected)
+                {
+                    await RefreshBatteryUsageAsync(announce: false);
+                }
+                else if (tabNetworkPorts.IsSelected)
+                {
+                    await RefreshNetworkPortsAsync(isFullReset: false, announce: false);
                 }
 
                 if (announce)
@@ -975,6 +1971,18 @@ namespace AccessibleTaskManager
             {
                 await RefreshProcessesAsync(isFullReset: false);
             }
+            else if (tabDataUsage.IsSelected)
+            {
+                await RefreshDataUsageRealtimeAsync();
+            }
+            else if (tabBatteryUsage.IsSelected)
+            {
+                await RefreshAppBatteryUsageAsync();
+            }
+            else if (tabNetworkPorts.IsSelected)
+            {
+                await RefreshNetworkPortsAsync(isFullReset: false);
+            }
 
             // Periodic memory trimming (every 10 seconds / 5 ticks) to keep working set tightly bounded (~25-35 MB)
             if (++_timerTickCount % 5 == 0)
@@ -1007,7 +2015,7 @@ namespace AccessibleTaskManager
             if (lstResources.SelectedItem is ResourceItem item)
             {
                 string details = await _hardwareDetailService.GetHardwareDetailsAsync(item.Id);
-                var dlg = new ResourceDetailDialog(item.Name, details)
+                var dlg = new ResourceDetailDialog(item.Name, details, _hardwareDetailService, _speechService, item.Id)
                 {
                     Owner = this
                 };
@@ -1020,7 +2028,19 @@ namespace AccessibleTaskManager
             if (e.Key == Key.Delete)
             {
                 e.Handled = true;
-                await TryEndSelectedProcessAsync();
+                if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
+                {
+                    await TryEndSelectedProcessTreeAsync();
+                }
+                else
+                {
+                    await TryEndSelectedProcessAsync();
+                }
+            }
+            else if (e.Key == Key.C && Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+            {
+                e.Handled = true;
+                CtxCopyDetails_Click(sender, e);
             }
             else if (e.Key == Key.Right)
             {
@@ -1165,6 +2185,48 @@ namespace AccessibleTaskManager
             }
         }
 
+        private async void CtxEndProcessTree_Click(object sender, RoutedEventArgs e)
+        {
+            await TryEndSelectedProcessTreeAsync();
+        }
+
+        private async void LstFrozenApps_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Delete || e.Key == Key.Enter)
+            {
+                e.Handled = true;
+                if (lstFrozenApps.SelectedItem is ProcessItem item)
+                {
+                    var (success, msg) = await _processService.KillProcessTreeAsync(item.Pid, item.DisplayName);
+                    _speechService.Speak(msg, interrupt: true);
+                    txtAnnouncement.Text = msg;
+                    await RefreshProcessesAsync(isFullReset: true);
+                }
+            }
+        }
+
+        private async void LstFrozenApps_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        {
+            if (lstFrozenApps.SelectedItem is ProcessItem item)
+            {
+                var (success, msg) = await _processService.KillProcessTreeAsync(item.Pid, item.DisplayName);
+                _speechService.Speak(msg, interrupt: true);
+                txtAnnouncement.Text = msg;
+                await RefreshProcessesAsync(isFullReset: true);
+            }
+        }
+
+        private async void CtxKillFrozen_Click(object sender, RoutedEventArgs e)
+        {
+            if (lstFrozenApps.SelectedItem is ProcessItem item)
+            {
+                var (success, msg) = await _processService.KillProcessTreeAsync(item.Pid, item.DisplayName);
+                _speechService.Speak(msg, interrupt: true);
+                txtAnnouncement.Text = msg;
+                await RefreshProcessesAsync(isFullReset: true);
+            }
+        }
+
         private void ShowShortcutsDialog()
         {
             var dlg = new KeyboardShortcutsDialog
@@ -1200,6 +2262,14 @@ namespace AccessibleTaskManager
                 return;
             }
 
+            // System diagnostic snapshot hotkey: Ctrl + Shift + C
+            if ((Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Shift)) == (ModifierKeys.Control | ModifierKeys.Shift) && e.Key == Key.C)
+            {
+                e.Handled = true;
+                CopySystemSnapshotToClipboard();
+                return;
+            }
+
             // Global in-app hotkeys
             if (Keyboard.Modifiers == ModifierKeys.Control)
             {
@@ -1222,35 +2292,43 @@ namespace AccessibleTaskManager
                 else if (e.Key == Key.D3 || e.Key == Key.NumPad3)
                 {
                     e.Handled = true;
-                    tabServices.IsSelected = true;
-                    _speechService.Speak("Tab 3: Windows Services", interrupt: true);
+                    tabDataUsage.IsSelected = true;
+                    _speechService.Speak("Tab 3: Data Usage", interrupt: true);
                     FocusCurrentTabContent();
                     return;
                 }
                 else if (e.Key == Key.D4 || e.Key == Key.NumPad4)
                 {
                     e.Handled = true;
-                    tabDataUsage.IsSelected = true;
-                    _speechService.Speak("Tab 4: Data Usage", interrupt: true);
+                    tabBatteryUsage.IsSelected = true;
+                    _speechService.Speak("Tab 4: Battery Usage", interrupt: true);
                     FocusCurrentTabContent();
                     return;
                 }
                 else if (e.Key == Key.D5 || e.Key == Key.NumPad5)
                 {
                     e.Handled = true;
+                    tabNetworkPorts.IsSelected = true;
+                    _speechService.Speak("Tab 5: Network Ports", interrupt: true);
+                    FocusCurrentTabContent();
+                    return;
+                }
+                else if (e.Key == Key.D6 || e.Key == Key.NumPad6)
+                {
+                    e.Handled = true;
                     tabSettings.IsSelected = true;
-                    _speechService.Speak("Tab 5: Settings", interrupt: true);
+                    _speechService.Speak("Tab 6: Settings", interrupt: true);
                     cmbProcessManager?.Focus();
                     return;
                 }
                 else if (e.Key == Key.F)
                 {
                     e.Handled = true;
-                    if (tabServices.IsSelected)
+                    if (tabNetworkPorts.IsSelected)
                     {
-                        txtServiceSearch.Focus();
-                        txtServiceSearch.SelectAll();
-                        _speechService.Speak("Search Windows services.", interrupt: true);
+                        txtPortSearch.Focus();
+                        txtPortSearch.SelectAll();
+                        _speechService.Speak("Search network ports. Type port number, process name, or IP.", interrupt: true);
                     }
                     else if (tabDataUsage.IsSelected)
                     {
@@ -1273,16 +2351,58 @@ namespace AccessibleTaskManager
                     SetSort("Memory");
                     return;
                 }
-                else if (e.Key == Key.C)
+                else if (e.Key == Key.P)
                 {
                     e.Handled = true;
                     SetSort("CPU");
                     return;
                 }
+                else if (e.Key == Key.O)
+                {
+                    if (tabNetworkPorts.IsSelected)
+                    {
+                        e.Handled = true;
+                        SetPortSort("Port");
+                        return;
+                    }
+                }
+                else if (e.Key == Key.S && (Keyboard.Modifiers & ModifierKeys.Shift) != ModifierKeys.Shift)
+                {
+                    if (tabNetworkPorts.IsSelected)
+                    {
+                        e.Handled = true;
+                        SetPortSort("State");
+                        return;
+                    }
+                }
+                else if (e.Key == Key.C)
+                {
+                    e.Handled = true;
+                    if (tabNetworkPorts.IsSelected && lstNetworkPorts.SelectedItem != null)
+                    {
+                        CopySelectedPortDetails();
+                    }
+                    else if (tabProcesses.IsSelected && lstProcesses.SelectedItem != null)
+                    {
+                        CtxCopyDetails_Click(sender, e);
+                    }
+                    else
+                    {
+                        SetSort("CPU");
+                    }
+                    return;
+                }
                 else if (e.Key == Key.N)
                 {
                     e.Handled = true;
-                    SetSort("Name");
+                    if (tabNetworkPorts.IsSelected)
+                    {
+                        SetPortSort("App");
+                    }
+                    else
+                    {
+                        SetSort("Name");
+                    }
                     return;
                 }
                 else if (e.Key == Key.G)
@@ -1358,20 +2478,25 @@ namespace AccessibleTaskManager
                     lstProcesses.Focus();
                 }
             }
-            else if (tabServices.IsSelected)
-            {
-                await RefreshServicesAsync();
-                if (string.IsNullOrEmpty(txtServiceSearch.Text))
-                {
-                    lstServices.Focus();
-                }
-            }
             else if (tabDataUsage.IsSelected)
             {
                 await RefreshDataUsageAsync();
                 if (string.IsNullOrEmpty(txtDataSearch.Text))
                 {
                     lstDataUsage.Focus();
+                }
+            }
+            else if (tabBatteryUsage.IsSelected)
+            {
+                await RefreshBatteryUsageAsync();
+                lstBatteryUsage.Focus();
+            }
+            else if (tabNetworkPorts.IsSelected)
+            {
+                await RefreshNetworkPortsAsync(isFullReset: true);
+                if (string.IsNullOrEmpty(txtPortSearch.Text))
+                {
+                    lstNetworkPorts.Focus();
                 }
             }
         }
@@ -1554,12 +2679,6 @@ namespace AccessibleTaskManager
                 // Preferences Memory combo
                 cmbRememberPrefs.SelectedIndex = s.RememberSortFilter ? 1 : 0;
 
-                // Update Channel combo
-                if (cmbUpdateChannel != null)
-                {
-                    cmbUpdateChannel.SelectedIndex = s.UpdateChannel.Equals("Stable", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
-                }
-
                 // Data usage filters
                 cmbDataNetwork.SelectedIndex = s.DataUsageNetworkFilter.Equals("All", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
                 cmbDataTimeRange.SelectedIndex = s.DataUsageTimeFilter switch
@@ -1570,6 +2689,26 @@ namespace AccessibleTaskManager
                     "Today" => 4,
                     _ => 0
                 };
+
+                // Battery app display mode
+                if (cmbBatteryAppDisplayMode != null)
+                {
+                    cmbBatteryAppDisplayMode.SelectedIndex = s.BatteryAppDisplayMode switch
+                    {
+                        "Percentage" => 1,
+                        "DrainRate" => 2,
+                        _ => 0
+                    };
+                }
+
+                if (pnlBatteryDisclaimer != null)
+                {
+                    pnlBatteryDisclaimer.Visibility = s.HideBatteryDisclaimer ? Visibility.Collapsed : Visibility.Visible;
+                }
+                if (chkDoNotShowBatteryDisclaimer != null)
+                {
+                    chkDoNotShowBatteryDisclaimer.IsChecked = s.HideBatteryDisclaimer;
+                }
 
                 if (s.RememberSortFilter && !string.IsNullOrWhiteSpace(s.SortBy))
                 {
@@ -1609,7 +2748,7 @@ namespace AccessibleTaskManager
             }
         }
 
-        private void ApplySettingsToServices()
+        private void ApplySettingsToRuntime()
         {
             ProcessItem.ShowExtension = _settingsService.CurrentSettings.ShowProcessExtension;
             ProcessItem.ShowPid = _settingsService.CurrentSettings.ShowProcessPid;
@@ -1845,7 +2984,7 @@ namespace AccessibleTaskManager
             };
 
             _settingsService.CurrentSettings.RefreshIntervalSeconds = seconds;
-            ApplySettingsToServices();
+            ApplySettingsToRuntime();
             _settingsService.Save();
         }
 
@@ -1876,7 +3015,7 @@ namespace AccessibleTaskManager
             {
                 _isUpdatingUI = false;
             }
-            ApplySettingsToServices();
+            ApplySettingsToRuntime();
             foreach (var item in _processItems)
             {
                 item.UpdateDisplayText();
@@ -2081,6 +3220,17 @@ namespace AccessibleTaskManager
                 };
             }
 
+            // Battery app display mode
+            if (cmbBatteryAppDisplayMode != null && cmbBatteryAppDisplayMode.SelectedIndex >= 0)
+            {
+                s.BatteryAppDisplayMode = cmbBatteryAppDisplayMode.SelectedIndex switch
+                {
+                    1 => "Percentage",
+                    2 => "DrainRate",
+                    _ => "Combined"
+                };
+            }
+
             _settingsService.Save();
 
             if (!silent)
@@ -2088,6 +3238,39 @@ namespace AccessibleTaskManager
                 _speechService.Speak("Settings saved.", interrupt: true);
                 txtAnnouncement.Text = "Settings saved.";
             }
+        }
+
+        private void CmbBatteryAppDisplayMode_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_isUpdatingUI) return;
+            if (cmbBatteryAppDisplayMode == null || cmbBatteryAppDisplayMode.SelectedIndex < 0) return;
+
+            string mode = cmbBatteryAppDisplayMode.SelectedIndex switch
+            {
+                1 => "Percentage",
+                2 => "DrainRate",
+                _ => "Combined"
+            };
+
+            _settingsService.CurrentSettings.BatteryAppDisplayMode = mode;
+            SaveSettingsFromUI(silent: true);
+
+            foreach (var item in _appBatteryItems)
+            {
+                item.DisplayMode = mode;
+                item.UpdateDisplayText();
+            }
+
+            string announcement = mode switch
+            {
+                "Percentage" => "Battery app display set to Percentage Only.",
+                "DrainRate" => "Battery app display set to Live Drain Rate Only.",
+                _ => "Battery app display set to Combined Percentage and Live Drain Rate."
+            };
+            _speechService.Speak(announcement, interrupt: true);
+            txtAnnouncement.Text = announcement;
+
+            _ = RefreshAppBatteryUsageAsync(isFullReset: true);
         }
 
         #endregion
@@ -2109,7 +3292,7 @@ namespace AccessibleTaskManager
             }
 
             var result = MessageBox.Show(
-                "Restart Resource Analyzer for Windows with Administrator privileges?\n\nThis will allow you to control Windows Services and end protected processes.",
+                "Restart Resource Analyzer for Windows with Administrator privileges?\n\nThis will allow you to end protected processes and access advanced system telemetry.",
                 "Restart as Administrator",
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Question);
@@ -2150,278 +3333,68 @@ namespace AccessibleTaskManager
             OpenWindowsStartupSettings();
         }
 
-        #endregion
-
-        #region TAB 3: Windows Services
-
-        private async Task RefreshServicesAsync(bool announce = false)
+        private async void CopySystemSnapshotToClipboard()
         {
             try
             {
-                var services = await Task.Run(() => _serviceManager.GetServices());
-                _allServices = services;
-                ApplyServiceFilter();
+                _speechService.Speak("Gathering system diagnostic snapshot...", interrupt: true);
+                txtAnnouncement.Text = "Gathering system diagnostic snapshot...";
 
-                if (announce)
-                {
-                    string msg = $"Windows services refreshed. {_serviceItems.Count} services displayed.";
-                    _speechService.Speak(msg, interrupt: true);
-                    txtAnnouncement.Text = msg;
-                }
+                string snapshot = await _hardwareDetailService.GenerateSystemSnapshotAsync();
+                Clipboard.SetText(snapshot);
+
+                _speechService.Speak("System snapshot copied to clipboard.", interrupt: true);
+                txtAnnouncement.Text = "System snapshot copied to clipboard.";
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"Error loading services: {ex.Message}");
-                txtServiceCount.Text = "Failed to load Windows services.";
+                _speechService.Speak($"Failed to copy system snapshot: {ex.Message}", interrupt: true);
+                txtAnnouncement.Text = $"Failed to copy system snapshot: {ex.Message}";
             }
         }
 
-        private void ApplyServiceFilter()
+        private void BtnCopySystemSnapshot_Click(object sender, RoutedEventArgs e)
         {
-            string filter = txtServiceSearch?.Text?.Trim() ?? string.Empty;
-            string statusFilter = cmbServiceFilter?.SelectedIndex switch
-            {
-                1 => "Running",
-                2 => "Stopped",
-                _ => "All"
-            };
-
-            _serviceItems.Clear();
-
-            var filtered = _allServices.AsEnumerable();
-
-            if (statusFilter == "Running")
-            {
-                filtered = filtered.Where(s => s.Status.Equals("Running", StringComparison.OrdinalIgnoreCase));
-            }
-            else if (statusFilter == "Stopped")
-            {
-                filtered = filtered.Where(s => s.Status.Equals("Stopped", StringComparison.OrdinalIgnoreCase));
-            }
-
-            if (!string.IsNullOrEmpty(filter))
-            {
-                filtered = filtered.Where(s =>
-                    s.ServiceName.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
-                    s.DisplayName.Contains(filter, StringComparison.OrdinalIgnoreCase));
-            }
-
-            foreach (var item in filtered)
-            {
-                _serviceItems.Add(item);
-            }
-
-            int runningCount = _allServices.Count(s => s.Status.Equals("Running", StringComparison.OrdinalIgnoreCase));
-            int stoppedCount = _allServices.Count(s => s.Status.Equals("Stopped", StringComparison.OrdinalIgnoreCase));
-            txtServiceCount.Text = $"{_serviceItems.Count} services listed ({runningCount} running, {stoppedCount} stopped). Enter: Start/Stop, Ctrl+R: Restart.";
+            CopySystemSnapshotToClipboard();
         }
 
-        private void TxtServiceSearch_TextChanged(object sender, TextChangedEventArgs e)
+        #endregion
+
+        #region Windows Services Manager Launcher
+
+        private void OpenWindowsServicesManager()
         {
-            if (tabServices.IsSelected)
+            try
             {
-                ApplyServiceFilter();
+                string servicesMscPath = Path.Combine(Environment.SystemDirectory, "services.msc");
+                Process.Start(new ProcessStartInfo(servicesMscPath) { UseShellExecute = true });
+                _speechService.Speak("Opening Windows Services Manager.", interrupt: true);
+                txtAnnouncement.Text = "Opened Windows Services Manager.";
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Failed to open Windows services manager: {ex.Message}");
+                _speechService.Speak("Could not open Windows Services Manager.", interrupt: true);
+                txtAnnouncement.Text = "Could not open Windows Services Manager.";
             }
         }
 
-        private void TxtServiceSearch_KeyDown(object sender, KeyEventArgs e)
+        private void BtnOpenServicesManager_Click(object sender, RoutedEventArgs e)
         {
-            if (e.Key == Key.Down)
-            {
-                e.Handled = true;
-                lstServices.Focus();
-                if (_serviceItems.Count > 0 && lstServices.SelectedIndex < 0)
-                {
-                    lstServices.SelectedIndex = 0;
-                }
-            }
-            else if (e.Key == Key.Escape)
-            {
-                e.Handled = true;
-                txtServiceSearch.Text = string.Empty;
-                lstServices.Focus();
-            }
-        }
-
-        private void CmbServiceFilter_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        {
-            if (!_isUpdatingUI && tabServices.IsSelected)
-            {
-                ApplyServiceFilter();
-            }
-        }
-
-        private void LstServices_KeyDown(object sender, KeyEventArgs e)
-        {
-            if (e.Key == Key.Enter || e.Key == Key.Space)
-            {
-                e.Handled = true;
-                ToggleSelectedService();
-            }
-            else if (e.Key == Key.R && Keyboard.Modifiers == ModifierKeys.Control)
-            {
-                e.Handled = true;
-                RestartSelectedService();
-            }
-            else if (e.Key == Key.F5)
-            {
-                e.Handled = true;
-                _ = RefreshServicesAsync(announce: true);
-            }
-        }
-
-        private void BtnStartService_Click(object sender, RoutedEventArgs e) => StartSelectedService();
-        private void BtnStopService_Click(object sender, RoutedEventArgs e) => StopSelectedService();
-        private void BtnRestartService_Click(object sender, RoutedEventArgs e) => RestartSelectedService();
-
-        private void CtxServiceStart_Click(object sender, RoutedEventArgs e) => StartSelectedService();
-        private void CtxServiceStop_Click(object sender, RoutedEventArgs e) => StopSelectedService();
-        private void CtxServiceRestart_Click(object sender, RoutedEventArgs e) => RestartSelectedService();
-
-        private async void StartSelectedService()
-        {
-            if (lstServices.SelectedItem is not ServiceItem item)
-            {
-                _speechService.Speak("No service selected.", interrupt: true);
-                return;
-            }
-
-            txtAnnouncement.Text = $"Starting service {item.DisplayName}...";
-            _speechService.Speak($"Starting {item.DisplayName}.", interrupt: true);
-
-            var (success, msg) = await _serviceManager.StartServiceAsync(item.ServiceName);
-            _speechService.Speak(msg, interrupt: true);
-            txtAnnouncement.Text = msg;
-
-            if (!success && !ElevationHelper.IsRunningAsAdmin())
-            {
-                PromptElevationForService(msg);
-            }
-            else
-            {
-                await RefreshServicesAsync(announce: false);
-            }
-        }
-
-        private async void StopSelectedService()
-        {
-            if (lstServices.SelectedItem is not ServiceItem item)
-            {
-                _speechService.Speak("No service selected.", interrupt: true);
-                return;
-            }
-
-            txtAnnouncement.Text = $"Stopping service {item.DisplayName}...";
-            _speechService.Speak($"Stopping {item.DisplayName}.", interrupt: true);
-
-            var (success, msg) = await _serviceManager.StopServiceAsync(item.ServiceName);
-            _speechService.Speak(msg, interrupt: true);
-            txtAnnouncement.Text = msg;
-
-            if (!success && !ElevationHelper.IsRunningAsAdmin())
-            {
-                PromptElevationForService(msg);
-            }
-            else
-            {
-                await RefreshServicesAsync(announce: false);
-            }
-        }
-
-        private async void RestartSelectedService()
-        {
-            if (lstServices.SelectedItem is not ServiceItem item)
-            {
-                _speechService.Speak("No service selected.", interrupt: true);
-                return;
-            }
-
-            txtAnnouncement.Text = $"Restarting service {item.DisplayName}...";
-            _speechService.Speak($"Restarting {item.DisplayName}.", interrupt: true);
-
-            var (success, msg) = await _serviceManager.RestartServiceAsync(item.ServiceName);
-            _speechService.Speak(msg, interrupt: true);
-            txtAnnouncement.Text = msg;
-
-            if (!success && !ElevationHelper.IsRunningAsAdmin())
-            {
-                PromptElevationForService(msg);
-            }
-            else
-            {
-                await RefreshServicesAsync(announce: false);
-            }
-        }
-
-        private void ToggleSelectedService()
-        {
-            if (lstServices.SelectedItem is not ServiceItem item)
-            {
-                _speechService.Speak("No service selected.", interrupt: true);
-                return;
-            }
-
-            if (item.Status.Equals("Running", StringComparison.OrdinalIgnoreCase))
-            {
-                StopSelectedService();
-            }
-            else
-            {
-                StartSelectedService();
-            }
-        }
-
-        private void PromptElevationForService(string message)
-        {
-            var res = MessageBox.Show(
-                $"{message}\n\nWould you like to restart Resource Analyzer in Administrator Mode to manage Windows Services?",
-                "Administrator Privileges Required",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Information);
-
-            if (res == MessageBoxResult.Yes)
-            {
-                ElevationHelper.RestartAsAdmin($"--tab {tabMain.SelectedIndex}");
-            }
-        }
-
-        private void CtxServiceCopyDetails_Click(object sender, RoutedEventArgs e)
-        {
-            if (lstServices.SelectedItem is ServiceItem item)
-            {
-                Clipboard.SetText(item.DisplayText);
-                _speechService.Speak($"Copied {item.DisplayName} details to clipboard.", interrupt: true);
-                txtAnnouncement.Text = $"Copied {item.DisplayName} details to clipboard.";
-            }
+            OpenWindowsServicesManager();
         }
 
         #endregion
 
         #region Application Updates
 
-        private void CmbUpdateChannel_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        {
-            if (_isUpdatingUI || cmbUpdateChannel == null || cmbUpdateChannel.SelectedIndex < 0) return;
-
-            string selectedChannel = cmbUpdateChannel.SelectedIndex == 1 ? "Stable" : "Beta";
-            _settingsService.CurrentSettings.UpdateChannel = selectedChannel;
-            _settingsService.Save();
-
-            string desc = selectedChannel == "Stable"
-                ? "Update channel set to Stable (v1.1.x official stable releases only)."
-                : "Update channel set to Beta (v1.0.x experimental and preview releases).";
-            _speechService.Speak(desc, interrupt: true);
-            txtAnnouncement.Text = desc;
-        }
-
         private async void BtnCheckForUpdates_Click(object sender, RoutedEventArgs e)
         {
             btnCheckForUpdates.IsEnabled = false;
-            string channel = cmbUpdateChannel?.SelectedIndex == 1 ? "Stable" : "Beta";
-            txtUpdateStatus.Text = $"Checking for {channel} updates from GitHub...";
-            _speechService.Speak($"Checking for {channel} updates.", interrupt: true);
+            txtUpdateStatus.Text = "Checking for updates from GitHub...";
+            _speechService.Speak("Checking for updates.", interrupt: true);
 
-            var info = await _updateService.CheckForUpdatesAsync(channel);
+            var info = await _updateService.CheckForUpdatesAsync();
             btnCheckForUpdates.IsEnabled = true;
 
             txtUpdateStatus.Text = info.Message;

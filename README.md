@@ -1,16 +1,16 @@
 # Resource Analyzer for Windows
 
-> A lightweight, screen-reader-first system monitor, process manager, and network data usage tracker designed specifically for Windows.
+> A lightweight, screen-reader-first system monitor, process manager, network data usage tracker, battery telemetry analyzer, and port scanner designed specifically for Windows.
 
 ---
 
 I was struggling to use the default Windows Task Manager with a screen reader. The complicated tables made it frustrating to check basic things like CPU and RAM usage.
 
-Also, finding out which app is eating your internet data in Windows is one of the most frustrating problems. The default Windows settings page for data usage is slow, buried, and confusing with screen readers.
+Also, finding out which app is eating your internet data or draining your laptop battery in Windows is one of the most frustrating problems. The default Windows settings pages are slow, buried, and confusing with screen readers.
 
 This is why I have created a tool called **Resource Analyzer for Windows**.
 
-This tool gives you a clean, single-line overview of your computer health, processes, and network data usage without cluttered tables.
+This tool gives you a clean, single-line overview of your computer health, processes, network data usage, battery sessions, and active network ports without cluttered tables.
 
 In this guide, I'm going to show you how you can use this tool step-by-step.
 
@@ -20,11 +20,12 @@ Now let's understand what Resource Analyzer is.
 
 ## What is Resource Analyzer?
 
-Resource Analyzer is an all-in-one solution for monitoring system resources, managing processes, and tracking data usage.
+Resource Analyzer is an all-in-one solution for monitoring system resources, managing processes, tracking network data usage, inspecting battery energy drain, and auditing open network ports.
 
 * **No Cluttered Tables:** Speaks everything as simple, natural single-line sentences.
-* **100% Screen Reader Friendly:** Built and optimized for NVDA, JAWS, and Windows Narrator.
+* **100% Screen Reader Friendly:** Built and optimized from the ground up for NVDA, JAWS, and Windows Narrator.
 * **Solves Windows Data Usage:** Gives an instant breakdown of how much internet data each application has consumed.
+* **Real-Time Battery & Port Telemetry:** Tracks battery discharge logs, live per-app milliwatt drain, and active listening ports.
 * **Ultra-Lightweight:** Runs on only **18 MB to 35 MB of RAM** (compared to 150 MB+ on standard monitors).
 
 Now it's time to set up Resource Analyzer step-by-step.
@@ -36,13 +37,13 @@ Now it's time to set up Resource Analyzer step-by-step.
 1. **Operating System:** Windows 10 or Windows 11 (64-bit).
 2. **Screen Reader:** Fully tested with NVDA, but the same behavior can be expected from other screen readers such as JAWS and Windows Narrator.
 3. **No extra dependencies:** Ready-to-run package; no separate .NET installation needed.
-4. **Standard Privileges:** Installs to your user profile without needing Administrator rights.
+4. **Standard Privileges:** Installs to your user profile without needing Administrator rights (optional elevation available anytime via <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>A</kbd>).
 
 ---
 
 ## Step 1: Download and Install Resource Analyzer
 
-1. Locate the setup file: `ResourceAnalyzer_Setup_v1.0.0.exe`.
+1. Locate the setup file: `ResourceAnalyzer_Setup_v1.0.1.exe`.
 2. Press <kbd>Enter</kbd> on the setup file to open the installation wizard.
 3. Press <kbd>Enter</kbd> on the **Next** button.
 4. Use the <kbd>Tab</kbd> key to review installation options:
@@ -55,7 +56,7 @@ Now it's time to set up Resource Analyzer step-by-step.
 
 ## Step 2: Check Your System Resources
 
-When you open Resource Analyzer, you land on the **Resources** tab by default.
+When you open Resource Analyzer, you land on **Tab 1: Resources** by default.
 
 Use the <kbd>Down Arrow</kbd> and <kbd>Up Arrow</kbd> keys to move through your hardware items:
 
@@ -78,11 +79,14 @@ If you want deep technical specifications, press <kbd>Enter</kbd> on any hardwar
 > [!TIP]
 > Inside the Technical Details dialog, use <kbd>Down Arrow</kbd> and <kbd>Up Arrow</kbd> to read each specification line-by-line. Press <kbd>Ctrl</kbd> + <kbd>C</kbd> (or <kbd>Tab</kbd> to **Copy to Clipboard**) to copy the full technical report, and press <kbd>Escape</kbd> to close.
 
+### Copy System Diagnostic Snapshot (<kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>C</kbd>)
+Whenever you need technical support, press <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>C</kbd> anywhere in the application. It immediately generates a clean, plain-text summary of your OS, processor, RAM, graphics, storage, network, and battery, and copies it to your clipboard ready to paste into an email or forum post.
+
 ---
 
 ## Step 3: Manage Your Processes & Groups
 
-Press <kbd>Ctrl</kbd> + <kbd>Tab</kbd> (or <kbd>Ctrl</kbd> + <kbd>2</kbd>) to switch to the **Processes** tab.
+Press <kbd>Ctrl</kbd> + <kbd>2</kbd> (or <kbd>Ctrl</kbd> + <kbd>Tab</kbd>) to switch to **Tab 2: Processes**.
 
 Every running process is shown as a clean, single-line sentence. Multi-instance apps like Google Chrome or Microsoft Edge are grouped together automatically.
 
@@ -91,18 +95,20 @@ Every running process is shown as a clean, single-line sentence. Multi-instance 
    * On any grouped process, press <kbd>Right Arrow</kbd> to expand the group.
    * Use <kbd>Down Arrow</kbd> to explore each individual child process with its Process ID (PID).
    * Press <kbd>Left Arrow</kbd> to collapse the group back.
+   * Press <kbd>Ctrl</kbd> + <kbd>G</kbd> to toggle application grouping on or off.
 2. **Search for an App:**
    * Press <kbd>Ctrl</kbd> + <kbd>F</kbd> to focus the search box.
    * Type the app name (e.g., `notepad`) and press <kbd>Down Arrow</kbd> to enter the filtered list.
    * Press <kbd>Escape</kbd> to clear the search.
 3. **Sort the List:**
    * <kbd>Ctrl</kbd> + <kbd>M</kbd>: Sort by highest Memory (RAM).
-   * <kbd>Ctrl</kbd> + <kbd>C</kbd>: Sort by highest CPU usage.
+   * <kbd>Ctrl</kbd> + <kbd>P</kbd>: Sort by highest CPU usage.
    * <kbd>Ctrl</kbd> + <kbd>N</kbd>: Sort alphabetically by Name.
 4. **End an Unresponsive Task:**
    * Select the process you want to close and press <kbd>Delete</kbd>.
    * If confirmation is enabled, press <kbd>Enter</kbd> on **Yes**.
-   * You can also press <kbd>Shift</kbd> + <kbd>F10</kbd> (or the Application key) to open the context menu for **End Process Tree** or **Open File Location**.
+   * Press <kbd>Shift</kbd> + <kbd>Delete</kbd> to end an entire process tree.
+   * You can also press <kbd>Shift</kbd> + <kbd>F10</kbd> (or the Application key) to open the context menu for **Open File Location** or **Search on Web**.
 
 ---
 
@@ -110,18 +116,47 @@ Every running process is shown as a clean, single-line sentence. Multi-instance 
 
 In Windows, checking which application is consuming your internet data is a huge headache. The default Windows Data Usage settings page is slow and hard to navigate with speech.
 
-Resource Analyzer solves this with a dedicated **Data Usage** tab.
+Resource Analyzer solves this with a dedicated, real-time **Data Usage** tab.
 
-Press <kbd>Ctrl</kbd> + <kbd>Tab</kbd> (or <kbd>Ctrl</kbd> + <kbd>3</kbd>) to switch to the **Data Usage** tab:
+Press <kbd>Ctrl</kbd> + <kbd>3</kbd> to switch to **Tab 3: Data Usage**:
 
 1. **Select Network Connection:** Press <kbd>Tab</kbd> to reach the Network dropdown. Choose **Current Connected Network** or **All Networks**.
 2. **Choose Time Period:** Press <kbd>Tab</kbd> to reach the Period dropdown. Filter by **Today**, **Last 24 Hours**, **Last Week (7 Days)**, **Last Month (30 Days)**, or **Full (All Recorded)**.
 3. **Search by Name:** Press <kbd>Tab</kbd> to reach the Filter box. Type any app name (like Chrome or Steam) to see exactly how much data it used.
-4. **Explore Application Data:** Press <kbd>Tab</kbd> to enter the list. Each item speaks the app name, data received, data sent, and combined total in MB or GB. At the top, you hear the overall summary.
+4. **Explore Application Data:** Press <kbd>Tab</kbd> to enter the list. Each item speaks the app name, data received, data sent, and combined total in MB or GB. Updates scan in real-time without moving your cursor.
 
 ---
 
-## Step 5: Check Network Speed from Anywhere (<kbd>Ctrl</kbd> + <kbd>Win</kbd> + <kbd>I</kbd>)
+## Step 5: Monitor Battery Sessions & App Energy Drain
+
+Press <kbd>Ctrl</kbd> + <kbd>4</kbd> to switch to **Tab 4: Battery Usage** (on laptops and battery-equipped tablets):
+
+1. **Filter by Time Range:** Choose **Full**, **Last Month**, **Last Week**, **Last 24 Hours**, or **Today**.
+2. **Since Last Charge:** Check the *"Since Last Charge"* box to calculate discharge energy and active time starting from the moment you unplugged your charger.
+3. **Accuracy Disclaimer:** A clear, non-technical explanation notes that individual app energy draw is estimated from processor and display activity. You can check *"Don't show again"* and press *"Dismiss"* to hide it.
+4. **Dual Accessible Lists:**
+   * **List 1 (Battery Sessions):** Shows historical battery discharge and charging sessions with start time, duration, energy consumed (mWh), and discharge %.
+   * **List 2 (Application Battery Usage):** Live telemetry scanning running applications to show their energy impact, estimated power draw in milliwatts (mW), and percentage of battery consumed.
+   * Press <kbd>Tab</kbd> to move between List 1 and List 2. Inside List 2, press <kbd>Delete</kbd> to end any high-drain app.
+
+---
+
+## Step 6: Scan Open Network Ports
+
+Press <kbd>Ctrl</kbd> + <kbd>5</kbd> to switch to **Tab 5: Network Ports**:
+
+1. **Filter by Protocol:** Filter between **All Protocols**, **TCP Only**, or **UDP Only**.
+2. **Filter by State:** Filter between **All States**, **Listening Only**, or **Established Only**.
+3. **Search:** Press <kbd>Ctrl</kbd> + <kbd>F</kbd> or tab to the search box to find ports by port number, IP address, or process name.
+4. **Sort Ports:**
+   * <kbd>Ctrl</kbd> + <kbd>P</kbd>: Sort by Port Number.
+   * <kbd>Ctrl</kbd> + <kbd>N</kbd>: Sort by Process Name.
+   * <kbd>Ctrl</kbd> + <kbd>S</kbd>: Sort by Connection State.
+5. **Close Connection Process:** Press <kbd>Delete</kbd> on any port item to terminate the process listening on that port.
+
+---
+
+## Step 7: Check Network Speed from Anywhere (<kbd>Ctrl</kbd> + <kbd>Win</kbd> + <kbd>I</kbd>)
 
 You don't need to open Resource Analyzer every time you want to check your internet connection:
 
@@ -130,9 +165,9 @@ You don't need to open Resource Analyzer every time you want to check your inter
 
 ---
 
-## Step 6: Configure Your Settings
+## Step 8: Configure Your Settings
 
-Press <kbd>Ctrl</kbd> + <kbd>Tab</kbd> (or <kbd>Ctrl</kbd> + <kbd>4</kbd>) to reach the **Settings** tab.
+Press <kbd>Ctrl</kbd> + <kbd>6</kbd> to reach **Tab 6: Settings**.
 
 Use <kbd>Tab</kbd> and <kbd>Arrow keys</kbd> to customize your options:
 
@@ -153,7 +188,10 @@ Use <kbd>Tab</kbd> and <kbd>Arrow keys</kbd> to customize your options:
 6. **Startup and System Tray:**
    * Configure window closing behavior (minimize to system tray or exit completely).
    * Toggle starting automatically with Windows.
-7. **Preferences and Reset:**
+7. **Windows System Tools:**
+   * Open native **Windows Startup Apps Settings** (<kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>S</kbd>) directly.
+   * Open native **Windows Services Manager** (`services.msc`) directly from an accessible button.
+8. **Preferences and Reset:**
    * Choose whether to remember your process sort and filter preferences across restarts.
    * Press **Reset All Settings to Defaults** to restore original configurations anytime.
 
@@ -176,17 +214,24 @@ Use <kbd>Tab</kbd> and <kbd>Arrow keys</kbd> to customize your options:
 | <kbd>Ctrl</kbd> + <kbd>1</kbd> | Switch to Tab 1 (Resources) |
 | <kbd>Ctrl</kbd> + <kbd>2</kbd> | Switch to Tab 2 (Processes) |
 | <kbd>Ctrl</kbd> + <kbd>3</kbd> | Switch to Tab 3 (Data Usage) |
-| <kbd>Ctrl</kbd> + <kbd>4</kbd> | Switch to Tab 4 (Settings) |
+| <kbd>Ctrl</kbd> + <kbd>4</kbd> | Switch to Tab 4 (Battery Usage) |
+| <kbd>Ctrl</kbd> + <kbd>5</kbd> | Switch to Tab 5 (Network Ports) |
+| <kbd>Ctrl</kbd> + <kbd>6</kbd> | Switch to Tab 6 (Settings) |
 | <kbd>F1</kbd> or <kbd>Shift</kbd> + <kbd>/</kbd> | Open Keyboard Shortcuts Help dialog |
 | <kbd>F5</kbd> | Refresh current tab data immediately |
 | <kbd>Enter</kbd> | View detailed technical hardware specifications (Resources tab) |
-| <kbd>Ctrl</kbd> + <kbd>F</kbd> | Search / filter processes or data usage apps |
+| <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>C</kbd> | Copy complete plain-text System Diagnostic Snapshot to clipboard |
+| <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>A</kbd> | Restart Resource Analyzer as Administrator |
+| <kbd>Ctrl</kbd> + <kbd>F</kbd> | Search / filter processes, data usage, or network ports |
 | <kbd>Ctrl</kbd> + <kbd>M</kbd> | Sort processes by Memory (RAM) usage |
-| <kbd>Ctrl</kbd> + <kbd>C</kbd> | Sort processes by CPU usage |
-| <kbd>Ctrl</kbd> + <kbd>N</kbd> | Sort processes alphabetically by Name |
+| <kbd>Ctrl</kbd> + <kbd>P</kbd> | Sort processes by CPU usage / Sort ports by Port Number |
+| <kbd>Ctrl</kbd> + <kbd>N</kbd> | Sort processes or ports alphabetically by Name |
+| <kbd>Ctrl</kbd> + <kbd>S</kbd> | Sort network ports by Connection State |
+| <kbd>Ctrl</kbd> + <kbd>G</kbd> | Toggle application grouping on or off (Processes tab) |
 | <kbd>Right Arrow</kbd> | Expand grouped application to see sub-processes (Processes tab) |
 | <kbd>Left Arrow</kbd> | Collapse grouped application (Processes tab) |
-| <kbd>Delete</kbd> | End selected task |
+| <kbd>Delete</kbd> | End selected task or port owner process |
+| <kbd>Shift</kbd> + <kbd>Delete</kbd> | End entire process tree (Processes tab) |
 | <kbd>Ctrl</kbd> + <kbd>Win</kbd> + <kbd>I</kbd> | Global hotkey: Speak current network speed from anywhere |
 | <kbd>Ctrl</kbd> + <kbd>Win</kbd> + <kbd>T</kbd> | Global hotkey: Show or restore Resource Analyzer window |
 
@@ -194,7 +239,7 @@ Use <kbd>Tab</kbd> and <kbd>Arrow keys</kbd> to customize your options:
 
 ## In the End
 
-This is how you can easily monitor your PC resources, track your data usage, and manage processes with a screen reader.
+This is how you can easily monitor your PC resources, track your data usage, inspect battery drain, audit network ports, and manage processes with a screen reader.
 
 Finally, I will end here. If you have any questions, suggestions, ideas, or anything else, do let me know in the GitHub issues section!
 

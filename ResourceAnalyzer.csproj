@@ -25,15 +25,12 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Remove="nvda_client\**" />
-    <None Remove="nvda_client\**" />
     <Compile Remove="Tests\**" />
     <None Remove="Tests\**" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="System.Management" Version="9.0.2" />
-    <PackageReference Include="System.ServiceProcess.ServiceController" Version="9.0.2" />
     <PackageReference Include="System.Speech" Version="9.0.2" />
   </ItemGroup>
 
@@ -44,6 +41,10 @@
     <None Update="Resources\app.ico">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="ResourceAnalyzer.Tests" />
   </ItemGroup>
 
 </Project>

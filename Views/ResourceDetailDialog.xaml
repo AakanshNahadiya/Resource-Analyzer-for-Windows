@@ -60,17 +60,24 @@
             </ListBox.ItemTemplate>
         </ListBox>
 
-        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right">
-            <Button x:Name="btnCopy" Content="Copy to Clipboard" Width="140" Height="32" Margin="0,0,10,0"
-                    Click="BtnCopy_Click"
-                    Background="{DynamicResource SurfaceBackgroundBrush}" Foreground="{DynamicResource TextPrimaryBrush}"
-                    BorderBrush="{DynamicResource BorderBrush}"
-                    AutomationProperties.Name="Copy Technical Information to Clipboard"/>
-            <Button x:Name="btnClose" Content="Close (Escape)" Width="120" Height="32"
-                    IsCancel="True" Click="BtnClose_Click"
-                    Background="{DynamicResource SurfaceBackgroundBrush}" Foreground="{DynamicResource TextPrimaryBrush}"
-                    BorderBrush="{DynamicResource BorderBrush}"
-                    AutomationProperties.Name="Close Dialog"/>
-        </StackPanel>
+        <DockPanel Grid.Row="3">
+            <Button x:Name="btnFlushMemory" Content="_Flush Memory Cache (F)" Height="32" Padding="12,0" Margin="0,0,10,0"
+                    Visibility="Collapsed" Click="BtnFlushMemory_Click"
+                    Background="{DynamicResource AccentBrush}" Foreground="{DynamicResource SelectionForegroundBrush}"
+                    BorderBrush="{DynamicResource AccentBrush}" FontWeight="SemiBold"
+                    AutomationProperties.Name="Flush Standby and Working Set Memory Cache (Hotkey F)"/>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button x:Name="btnCopy" Content="Copy to Clipboard" Width="140" Height="32" Margin="0,0,10,0"
+                        Click="BtnCopy_Click"
+                        Background="{DynamicResource SurfaceBackgroundBrush}" Foreground="{DynamicResource TextPrimaryBrush}"
+                        BorderBrush="{DynamicResource BorderBrush}"
+                        AutomationProperties.Name="Copy Technical Information to Clipboard"/>
+                <Button x:Name="btnClose" Content="Close (Escape)" Width="120" Height="32"
+                        IsCancel="True" Click="BtnClose_Click"
+                        Background="{DynamicResource SurfaceBackgroundBrush}" Foreground="{DynamicResource TextPrimaryBrush}"
+                        BorderBrush="{DynamicResource BorderBrush}"
+                        AutomationProperties.Name="Close Dialog"/>
+            </StackPanel>
+        </DockPanel>
     </Grid>
 </Window>

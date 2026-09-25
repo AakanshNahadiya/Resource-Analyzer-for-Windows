@@ -13,6 +13,10 @@ namespace AccessibleTaskManager.Services
     {
         Task<List<ProcessItem>> GetProcessesAsync(string searchTerm, string sortBy, bool hideSystemProcesses = false);
         Task<(bool Success, string Message)> KillProcessAsync(int pid, string processName);
+        Task<(bool Success, string Message)> KillProcessTreeAsync(int pid, string processName);
+        HashSet<int> GetHungPids();
+        int GetActiveForegroundPid();
+        string GetProcessDescription(int pid, string processName);
     }
 
     public class ProcessService : IProcessService
@@ -145,6 +149,105 @@ namespace AccessibleTaskManager.Services
         private readonly Dictionary<int, (long TotalCpuTime100Ns, DateTime SampleTime)> _cpuHistory = new();
         private readonly object _syncLock = new();
 
+        private static int _lastExternalForegroundPid;
+
+        public static int GetActiveForegroundPid()
+        {
+            try
+            {
+                IntPtr hwnd = NativeMethods.GetForegroundWindow();
+                if (hwnd != IntPtr.Zero)
+                {
+                    NativeMethods.GetWindowThreadProcessId(hwnd, out int fgPid);
+                    if (fgPid > 0 && fgPid != Environment.ProcessId)
+                    {
+                        _lastExternalForegroundPid = fgPid;
+                    }
+                }
+            }
+            catch { }
+            return _lastExternalForegroundPid;
+        }
+
+        public static HashSet<int> GetHungPids()
+        {
+            var hungPids = new HashSet<int>();
+            try
+            {
+                NativeMethods.EnumWindows((hWnd, lParam) =>
+                {
+                    if (NativeMethods.IsWindowVisible(hWnd) && NativeMethods.IsHungAppWindow(hWnd))
+                    {
+                        NativeMethods.GetWindowThreadProcessId(hWnd, out int pid);
+                        if (pid > 0)
+                        {
+                            hungPids.Add(pid);
+                        }
+                    }
+                    return true;
+                }, IntPtr.Zero);
+            }
+            catch { }
+            return hungPids;
+        }
+
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _descriptionCache = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["explorer"] = "Windows Explorer",
+            ["taskmgr"] = "Task Manager",
+            ["cmd"] = "Command Prompt",
+            ["powershell"] = "Windows PowerShell",
+            ["pwsh"] = "PowerShell 7",
+            ["notepad"] = "Notepad",
+            ["devenv"] = "Visual Studio",
+            ["code"] = "Visual Studio Code",
+            ["chrome"] = "Google Chrome",
+            ["msedge"] = "Microsoft Edge",
+            ["firefox"] = "Mozilla Firefox",
+            ["brave"] = "Brave Browser",
+            ["spotify"] = "Spotify",
+            ["discord"] = "Discord",
+            ["slack"] = "Slack",
+            ["teams"] = "Microsoft Teams",
+            ["steam"] = "Steam",
+            ["epicgameslauncher"] = "Epic Games Launcher"
+        };
+
+        public static string GetProcessDescription(int pid, string processName)
+        {
+            if (_descriptionCache.TryGetValue(processName, out var cached))
+            {
+                return cached;
+            }
+
+            try
+            {
+                using var proc = Process.GetProcessById(pid);
+                string? path = proc.MainModule?.FileName;
+                if (!string.IsNullOrEmpty(path))
+                {
+                    var fvi = FileVersionInfo.GetVersionInfo(path);
+                    if (!string.IsNullOrWhiteSpace(fvi.FileDescription))
+                    {
+                        string desc = fvi.FileDescription.Trim();
+                        _descriptionCache[processName] = desc;
+                        return desc;
+                    }
+                }
+            }
+            catch
+            {
+                // Access denied or terminated process
+            }
+
+            _descriptionCache[processName] = processName;
+            return processName;
+        }
+
+        HashSet<int> IProcessService.GetHungPids() => GetHungPids();
+        int IProcessService.GetActiveForegroundPid() => GetActiveForegroundPid();
+        string IProcessService.GetProcessDescription(int pid, string processName) => GetProcessDescription(pid, processName);
+
         public async Task<List<ProcessItem>> GetProcessesAsync(string searchTerm, string sortBy, bool hideSystemProcesses = false)
         {
             return await Task.Run(() =>
@@ -156,6 +259,8 @@ namespace AccessibleTaskManager.Services
 
                 // Use high-performance NtQuerySystemInformation (0.2ms total execution time, 0 handle allocations)
                 var rawProcesses = GetProcessesNative();
+                var hungPids = GetHungPids();
+                int activeFgPid = GetActiveForegroundPid();
 
                 // If native query returned empty for any reason, gracefully fall back to Process.GetProcesses()
                 if (rawProcesses.Count == 0)
@@ -233,12 +338,19 @@ namespace AccessibleTaskManager.Services
                         }
                     }
 
+                    bool isFrozen = hungPids.Contains(pid);
+                    bool isActiveApp = (pid == activeFgPid);
+                    string description = GetProcessDescription(pid, cleanName);
+
                     var item = new ProcessItem
                     {
                         Pid = pid,
                         Name = cleanName,
+                        Description = description,
                         MemoryBytes = p.MemoryBytes,
-                        CpuPercent = cpuPercent
+                        CpuPercent = cpuPercent,
+                        IsFrozen = isFrozen,
+                        IsActiveApp = isActiveApp
                     };
                     item.UpdateDisplayText();
 
@@ -307,7 +419,7 @@ namespace AccessibleTaskManager.Services
                 try
                 {
                     using var proc = Process.GetProcessById(pid);
-                    proc.Kill(true); // Terminate process and entire process tree
+                    proc.Kill(); // Terminate single process
                     return (true, $"Ended {processName}");
                 }
                 catch (ArgumentException)
@@ -321,6 +433,61 @@ namespace AccessibleTaskManager.Services
                 catch (Exception ex)
                 {
                     return (false, $"Failed to end {processName}: {ex.Message}");
+                }
+            });
+        }
+
+        public async Task<(bool Success, string Message)> KillProcessTreeAsync(int pid, string processName)
+        {
+            return await Task.Run(() =>
+            {
+                if (pid == 0 || pid == 4 || CriticalKernelProcesses.Contains(processName))
+                {
+                    return (false, $"{processName} is a critical Windows system process and cannot be terminated.");
+                }
+
+                try
+                {
+                    bool taskkillSuccess = false;
+                    try
+                    {
+                        var psi = new ProcessStartInfo
+                        {
+                            FileName = "taskkill.exe",
+                            Arguments = $"/T /F /PID {pid}",
+                            CreateNoWindow = true,
+                            UseShellExecute = false,
+                            RedirectStandardError = true,
+                            RedirectStandardOutput = true
+                        };
+                        using var p = Process.Start(psi);
+                        if (p != null)
+                        {
+                            p.WaitForExit(3000);
+                            taskkillSuccess = (p.ExitCode == 0);
+                        }
+                    }
+                    catch { }
+
+                    if (!taskkillSuccess)
+                    {
+                        using var proc = Process.GetProcessById(pid);
+                        proc.Kill(true); // Terminate process and entire tree
+                    }
+
+                    return (true, $"Terminated process tree for {processName} (PID {pid}) and all child processes.");
+                }
+                catch (ArgumentException)
+                {
+                    return (false, $"{processName} is no longer running.");
+                }
+                catch (System.ComponentModel.Win32Exception)
+                {
+                    return (false, $"Access denied. Administrator privileges may be required to end {processName}.");
+                }
+                catch (Exception ex)
+                {
+                    return (false, $"Failed to end process tree for {processName}: {ex.Message}");
                 }
             });
         }
