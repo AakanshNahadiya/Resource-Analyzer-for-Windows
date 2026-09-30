@@ -51,6 +51,7 @@ namespace AccessibleTaskManager
         private List<NetworkPortItem> _rawNetworkPortList = new();
         private string _currentPortSort = "Port";
         private string? _latestUpdateUrl;
+        private UpdateInfo? _latestUpdateInfo;
         private long _lastTotalDischargeMwh = 0;
 
         private readonly Dictionary<string, ResourceItem> _resourceMap = new();
@@ -3477,20 +3478,36 @@ namespace AccessibleTaskManager
 
             if (info.HasUpdate)
             {
+                _latestUpdateInfo = info;
                 _latestUpdateUrl = !string.IsNullOrEmpty(info.DownloadUrl) ? info.DownloadUrl : info.HtmlUrl;
                 btnDownloadUpdate.Visibility = Visibility.Visible;
-                btnDownloadUpdate.Content = $"Download Update ({info.LatestVersion})";
+                btnDownloadUpdate.Content = $"Download and Install (v{info.LatestVersion})";
                 btnDownloadUpdate.Focus();
+
+                var dlg = new UpdateAvailableDialog(info, _updateService, _speechService)
+                {
+                    Owner = this
+                };
+                dlg.ShowDialog();
             }
             else
             {
+                _latestUpdateInfo = null;
                 btnDownloadUpdate.Visibility = Visibility.Collapsed;
             }
         }
 
         private void BtnDownloadUpdate_Click(object sender, RoutedEventArgs e)
         {
-            if (!string.IsNullOrEmpty(_latestUpdateUrl))
+            if (_latestUpdateInfo != null && _latestUpdateInfo.HasUpdate)
+            {
+                var dlg = new UpdateAvailableDialog(_latestUpdateInfo, _updateService, _speechService)
+                {
+                    Owner = this
+                };
+                dlg.ShowDialog();
+            }
+            else if (!string.IsNullOrEmpty(_latestUpdateUrl))
             {
                 _updateService.OpenUrl(_latestUpdateUrl);
                 _speechService.Speak("Opening update download link in your browser.", interrupt: true);
