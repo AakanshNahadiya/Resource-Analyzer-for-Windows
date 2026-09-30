@@ -10,6 +10,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
+using System.Windows.Media;
 using System.Windows.Threading;
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 using AccessibleTaskManager.Helpers;
@@ -352,6 +353,23 @@ namespace AccessibleTaskManager
             }));
         }
 
+        private void SelectAndFocusTab(int index)
+        {
+            if (index >= 0 && index < tabMain.Items.Count)
+            {
+                tabMain.SelectedIndex = index;
+                if (tabMain.Items[index] is TabItem item)
+                {
+                    item.IsSelected = true;
+                    item.Focus();
+                    Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() =>
+                    {
+                        item.Focus();
+                    }));
+                }
+            }
+        }
+
         private void FocusListBoxItem(System.Windows.Controls.ListBox listBox)
         {
             if (listBox == null) return;
@@ -581,8 +599,11 @@ namespace AccessibleTaskManager
                 bool groupProcesses = _settingsService.CurrentSettings.GroupProcesses;
                 var rawList = await _processService.GetProcessesAsync(term, _currentSort, hideSystem);
 
-                // Check resource overuse alerts on raw processes
-                CheckResourceAlerts(rawList);
+                // Check resource overuse alerts on raw processes (only if unfiltered; timer handles full scan when filtered)
+                if (string.IsNullOrEmpty(term))
+                {
+                    CheckResourceAlerts(rawList);
+                }
 
                 // Populate dynamic Frozen Applications panel
                 var frozenList = rawList.Where(p => p.IsFrozen).ToList();
@@ -737,36 +758,48 @@ namespace AccessibleTaskManager
             double cpuLimitPercent = s.HighCpuLimitPercent;
             var now = DateTime.UtcNow;
 
-            foreach (var p in list)
+            // Group by process name so that multi-instance applications (like Chrome, Edge, etc.)
+            // have their combined total resource usage evaluated against the limit.
+            var appGroups = list.GroupBy(p => p.Name, StringComparer.OrdinalIgnoreCase);
+
+            foreach (var group in appGroups)
             {
+                long totalRamBytes = group.Sum(p => p.MemoryBytes);
+                double totalCpuPercent = group.Sum(p => p.CpuPercent);
+                var first = group.First();
+                int count = group.Count();
+                string appTitle = count > 1 ? $"{first.DisplayName} ({count} instances)" : first.DisplayName;
+
                 // Check RAM
-                if (checkRam && p.MemoryBytes > ramLimitBytes)
+                if (checkRam && totalRamBytes > ramLimitBytes)
                 {
-                    string ramKey = $"RAM_{p.Name}";
+                    string ramKey = $"RAM_{group.Key}";
                     if (!_lastAlertTimes.TryGetValue(ramKey, out var lastTime) || (now - lastTime).TotalSeconds >= 60)
                     {
                         _lastAlertTimes[ramKey] = now;
                         string limitStr = $"{s.HighRamLimitValue} {s.HighRamLimitUnit}";
-                        string usedStr = FormatHelper.FormatBytes(p.MemoryBytes);
-                        string msg = $"{p.DisplayName} is exceeding maximum RAM usage ({usedStr}, limit: {limitStr}).";
+                        string usedStr = FormatHelper.FormatBytes(totalRamBytes);
+                        string msg = $"{appTitle} is exceeding maximum RAM usage ({usedStr}, limit: {limitStr}).";
 
+                        try { System.Media.SystemSounds.Exclamation.Play(); } catch { }
                         _trayIcon?.ShowBalloonTip("High RAM Usage Alert", msg);
-                        _speechService.Speak(msg, interrupt: false);
+                        _speechService.Speak(msg, interrupt: true);
                         txtAnnouncement.Text = msg;
                     }
                 }
 
                 // Check CPU
-                if (checkCpu && p.CpuPercent >= cpuLimitPercent)
+                if (checkCpu && totalCpuPercent >= cpuLimitPercent)
                 {
-                    string cpuKey = $"CPU_{p.Name}";
+                    string cpuKey = $"CPU_{group.Key}";
                     if (!_lastAlertTimes.TryGetValue(cpuKey, out var lastTime) || (now - lastTime).TotalSeconds >= 60)
                     {
                         _lastAlertTimes[cpuKey] = now;
-                        string msg = $"{p.DisplayName} is exceeding maximum CPU usage ({p.CpuPercent:F1}%, limit: {cpuLimitPercent:F0}%).";
+                        string msg = $"{appTitle} is exceeding maximum CPU usage ({totalCpuPercent:F1}%, limit: {cpuLimitPercent:F0}%).";
 
+                        try { System.Media.SystemSounds.Exclamation.Play(); } catch { }
                         _trayIcon?.ShowBalloonTip("High CPU Usage Alert", msg);
-                        _speechService.Speak(msg, interrupt: false);
+                        _speechService.Speak(msg, interrupt: true);
                         txtAnnouncement.Text = msg;
                     }
                 }
@@ -1936,6 +1969,8 @@ namespace AccessibleTaskManager
 
         private async Task OnTimerTickAsync()
         {
+            _timerTickCount++;
+
             // Always sample network throughput in background (costs < 0.05ms) so live speed hotkey and Tab 1 stay current
             _monitorService.SampleNetwork();
 
@@ -1946,7 +1981,7 @@ namespace AccessibleTaskManager
                 bool alertsEnabled = (s.EnableHighRamAlert && s.HighRamLimitValue > 0) || (s.EnableHighCpuAlert && s.HighCpuLimitPercent > 0);
 
                 // Only scan processes while minimized if user enabled high usage alerts (throttled to once every 10 seconds)
-                if (alertsEnabled && ++_timerTickCount % 5 == 0)
+                if (alertsEnabled && _timerTickCount % 5 == 0)
                 {
                     try
                     {
@@ -1984,8 +2019,27 @@ namespace AccessibleTaskManager
                 await RefreshNetworkPortsAsync(isFullReset: false);
             }
 
+            // Periodic background check for resource overuse alerts when not on Tab 2 or when Tab 2 is filtered
+            var settings = _settingsService.CurrentSettings;
+            bool overuseAlertsEnabled = (settings.EnableHighRamAlert && settings.HighRamLimitValue > 0) || (settings.EnableHighCpuAlert && settings.HighCpuLimitPercent > 0);
+            if (overuseAlertsEnabled && (!tabProcesses.IsSelected || !string.IsNullOrEmpty(txtSearch.Text)))
+            {
+                if (_timerTickCount % 2 == 0)
+                {
+                    try
+                    {
+                        var alertList = await _processService.GetProcessesAsync(string.Empty, "Memory", settings.HideSystemProcesses);
+                        CheckResourceAlerts(alertList);
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"Background alert scan error: {ex.Message}");
+                    }
+                }
+            }
+
             // Periodic memory trimming (every 10 seconds / 5 ticks) to keep working set tightly bounded (~25-35 MB)
-            if (++_timerTickCount % 5 == 0)
+            if (_timerTickCount % 5 == 0)
             {
                 TrimProcessMemory();
             }
@@ -2270,6 +2324,71 @@ namespace AccessibleTaskManager
                 return;
             }
 
+            // Arrow key navigation across Tab headers (guarantees seamless 1 <-> 2 <-> 3 <-> 4 <-> 5 <-> 6 circular navigation even if multi-row wrapped)
+            if (Keyboard.Modifiers == ModifierKeys.None)
+            {
+                TabItem? focusedTabItem = Keyboard.FocusedElement as TabItem;
+                if (focusedTabItem == null && Keyboard.FocusedElement is DependencyObject depObj)
+                {
+                    DependencyObject? parent = depObj;
+                    while (parent != null)
+                    {
+                        if (parent is TabItem ti && tabMain.Items.Contains(ti))
+                        {
+                            focusedTabItem = ti;
+                            break;
+                        }
+                        if (parent is TabControl) break;
+                        parent = VisualTreeHelper.GetParent(parent);
+                    }
+                }
+
+                if (focusedTabItem != null && tabMain.Items.Contains(focusedTabItem))
+                {
+                    int currentIndex = tabMain.Items.IndexOf(focusedTabItem);
+                    if (currentIndex < 0) currentIndex = tabMain.SelectedIndex;
+
+                    if (e.Key == Key.Right)
+                    {
+                        e.Handled = true;
+                        int next = (currentIndex + 1) % tabMain.Items.Count;
+                        SelectAndFocusTab(next);
+                        return;
+                    }
+                    else if (e.Key == Key.Left)
+                    {
+                        e.Handled = true;
+                        int prev = (currentIndex - 1 + tabMain.Items.Count) % tabMain.Items.Count;
+                        SelectAndFocusTab(prev);
+                        return;
+                    }
+                    else if (e.Key == Key.Down)
+                    {
+                        e.Handled = true;
+                        FocusCurrentTabContent();
+                        return;
+                    }
+                    else if (e.Key == Key.Up)
+                    {
+                        // Suppress WPF TabPanel default row-jumping on Up arrow
+                        e.Handled = true;
+                        return;
+                    }
+                    else if (e.Key == Key.Home)
+                    {
+                        e.Handled = true;
+                        SelectAndFocusTab(0);
+                        return;
+                    }
+                    else if (e.Key == Key.End)
+                    {
+                        e.Handled = true;
+                        SelectAndFocusTab(tabMain.Items.Count - 1);
+                        return;
+                    }
+                }
+            }
+
             // Global in-app hotkeys
             if (Keyboard.Modifiers == ModifierKeys.Control)
             {
@@ -2468,36 +2587,22 @@ namespace AccessibleTaskManager
             if (tabResources.IsSelected)
             {
                 await RefreshResourcesAsync();
-                lstResources.Focus();
             }
             else if (tabProcesses.IsSelected)
             {
                 await RefreshProcessesAsync(isFullReset: true);
-                if (string.IsNullOrEmpty(txtSearch.Text))
-                {
-                    lstProcesses.Focus();
-                }
             }
             else if (tabDataUsage.IsSelected)
             {
                 await RefreshDataUsageAsync();
-                if (string.IsNullOrEmpty(txtDataSearch.Text))
-                {
-                    lstDataUsage.Focus();
-                }
             }
             else if (tabBatteryUsage.IsSelected)
             {
                 await RefreshBatteryUsageAsync();
-                lstBatteryUsage.Focus();
             }
             else if (tabNetworkPorts.IsSelected)
             {
                 await RefreshNetworkPortsAsync(isFullReset: true);
-                if (string.IsNullOrEmpty(txtPortSearch.Text))
-                {
-                    lstNetworkPorts.Focus();
-                }
             }
         }
 

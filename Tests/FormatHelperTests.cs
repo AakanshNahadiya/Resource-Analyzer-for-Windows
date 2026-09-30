@@ -91,8 +91,8 @@ namespace AccessibleTaskManager.Tests
         }
 
         [Theory]
-        [InlineData("", "System & Deleted Applications")]
-        [InlineData("   ", "System & Deleted Applications")]
+        [InlineData("", "System")]
+        [InlineData("   ", "System")]
         [InlineData(@"\device\harddiskvolume3\windows\explorer.exe", "explorer")]
         [InlineData(@"\device\harddiskvolume3\program files\google\chrome\application\chrome.exe", "chrome")]
         [InlineData("Microsoft.WindowsNotepad_8wekyb3d8bbwe", "WindowsNotepad")]
