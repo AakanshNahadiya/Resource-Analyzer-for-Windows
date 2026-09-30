@@ -13,9 +13,9 @@
     <Company>Accessible Tools</Company>
     <Product>Resource Analyzer for Windows</Product>
     <Description>Resource Analyzer for Windows</Description>
-    <Version>1.0.2</Version>
-    <FileVersion>1.0.2.0</FileVersion>
-    <AssemblyVersion>1.0.2.0</AssemblyVersion>
+    <Version>1.0.3</Version>
+    <FileVersion>1.0.3.0</FileVersion>
+    <AssemblyVersion>1.0.3.0</AssemblyVersion>
     <PublishReadyToRun>false</PublishReadyToRun>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
@@ -31,7 +31,6 @@
 
   <ItemGroup>
     <PackageReference Include="System.Management" Version="9.0.2" />
-    <PackageReference Include="System.Speech" Version="9.0.2" />
   </ItemGroup>
 
   <ItemGroup>

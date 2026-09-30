@@ -520,7 +520,7 @@ namespace AccessibleTaskManager.Models
 
         public static string CleanAppName(string rawId)
         {
-            if (string.IsNullOrWhiteSpace(rawId)) return "System & Deleted Applications";
+            if (string.IsNullOrWhiteSpace(rawId)) return "System";
 
             try
             {

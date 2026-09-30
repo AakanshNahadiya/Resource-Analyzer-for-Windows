@@ -4,6 +4,7 @@ using System.IO;
 using System.Net.Http;
 using System.Reflection;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace AccessibleTaskManager.Services
@@ -28,6 +29,8 @@ namespace AccessibleTaskManager.Services
         Task<UpdateInfo> CheckForUpdatesAsync(string channel = "Beta");
         string GetCurrentVersion();
         void OpenUrl(string url);
+        Task<string?> DownloadInstallerAsync(string downloadUrl, IProgress<int>? progress = null, CancellationToken cancellationToken = default);
+        bool LaunchInstaller(string installerPath);
     }
 
     public class UpdateService : IUpdateService
@@ -197,6 +200,72 @@ namespace AccessibleTaskManager.Services
             catch
             {
                 // Ignore if browser launch fails
+            }
+        }
+
+        public async Task<string?> DownloadInstallerAsync(string downloadUrl, IProgress<int>? progress = null, CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(downloadUrl)) return null;
+
+            try
+            {
+                string tempDir = Path.GetTempPath();
+                string fileName = Path.GetFileName(new Uri(downloadUrl).LocalPath);
+                if (string.IsNullOrWhiteSpace(fileName) || !fileName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                {
+                    fileName = "ResourceAnalyzer_Update.exe";
+                }
+                string tempFilePath = Path.Combine(tempDir, fileName);
+
+                using var response = await _httpClient.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+                response.EnsureSuccessStatusCode();
+
+                long? totalBytes = response.Content.Headers.ContentLength;
+                using var contentStream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+                using var fileStream = new FileStream(tempFilePath, FileMode.Create, FileAccess.Write, FileShare.None, 8192, true);
+
+                byte[] buffer = new byte[8192];
+                long totalRead = 0;
+                int bytesRead;
+
+                while ((bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length, cancellationToken).ConfigureAwait(false)) > 0)
+                {
+                    await fileStream.WriteAsync(buffer, 0, bytesRead, cancellationToken).ConfigureAwait(false);
+                    totalRead += bytesRead;
+
+                    if (totalBytes.HasValue && totalBytes.Value > 0)
+                    {
+                        int progressPercent = (int)((totalRead * 100) / totalBytes.Value);
+                        progress?.Report(progressPercent);
+                    }
+                }
+
+                return tempFilePath;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Failed to download installer: {ex.Message}");
+                return null;
+            }
+        }
+
+        public bool LaunchInstaller(string installerPath)
+        {
+            if (string.IsNullOrWhiteSpace(installerPath) || !File.Exists(installerPath)) return false;
+
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = installerPath,
+                    UseShellExecute = true
+                });
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Failed to launch installer: {ex.Message}");
+                return false;
             }
         }
     }

@@ -20,7 +20,6 @@ namespace AccessibleTaskManager.Services
         private const string RunRegistryKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
         private const string StartupApprovedKey = @"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run";
         private const string AppName = "Resource Analyzer for Windows";
-        private static readonly string[] LegacyAppNames = new[] { "Accessible Task Manager", "AccessibleTaskManager" };
 
         private readonly string _settingsFilePath;
         public AppSettings CurrentSettings { get; private set; } = new();
@@ -86,28 +85,9 @@ namespace AccessibleTaskManager.Services
             {
                 using var runKey = Registry.CurrentUser.OpenSubKey(RunRegistryKey, false);
                 bool inRunKey = runKey?.GetValue(AppName) != null;
-                if (!inRunKey && runKey != null)
-                {
-                    foreach (var legacy in LegacyAppNames)
-                    {
-                        if (runKey.GetValue(legacy) != null)
-                        {
-                            inRunKey = true;
-                            break;
-                        }
-                    }
-                }
 
                 using var approvedKey = Registry.CurrentUser.OpenSubKey(StartupApprovedKey, false);
                 object? val = approvedKey?.GetValue(AppName);
-                if (val == null && approvedKey != null)
-                {
-                    foreach (var legacy in LegacyAppNames)
-                    {
-                        val = approvedKey.GetValue(legacy);
-                        if (val != null) break;
-                    }
-                }
 
                 if (inRunKey && val is byte[] bytes && bytes.Length > 0)
                 {
@@ -159,31 +139,17 @@ namespace AccessibleTaskManager.Services
                         byte[] enabledBytes = new byte[] { 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
                         approvedKey?.SetValue(AppName, enabledBytes, RegistryValueKind.Binary);
 
-                        // Clean up any legacy registry value names
-                        foreach (var legacy in LegacyAppNames)
-                        {
-                            if (runKey?.GetValue(legacy) != null) runKey.DeleteValue(legacy, false);
-                            if (approvedKey?.GetValue(legacy) != null) approvedKey.DeleteValue(legacy, false);
-                        }
                     }
                 }
                 else
                 {
-                    if (runKey != null)
+                    if (runKey != null && runKey.GetValue(AppName) != null)
                     {
-                        if (runKey.GetValue(AppName) != null) runKey.DeleteValue(AppName, false);
-                        foreach (var legacy in LegacyAppNames)
-                        {
-                            if (runKey.GetValue(legacy) != null) runKey.DeleteValue(legacy, false);
-                        }
+                        runKey.DeleteValue(AppName, false);
                     }
-                    if (approvedKey != null)
+                    if (approvedKey != null && approvedKey.GetValue(AppName) != null)
                     {
-                        if (approvedKey.GetValue(AppName) != null) approvedKey.DeleteValue(AppName, false);
-                        foreach (var legacy in LegacyAppNames)
-                        {
-                            if (approvedKey.GetValue(legacy) != null) approvedKey.DeleteValue(legacy, false);
-                        }
+                        approvedKey.DeleteValue(AppName, false);
                     }
                 }
             }

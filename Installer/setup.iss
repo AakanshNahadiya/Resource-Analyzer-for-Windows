@@ -1,6 +1,6 @@
 ; Script generated for Resource Analyzer for Windows
 #define MyAppName "Resource Analyzer for Windows"
-#define MyAppVersion "1.0.2"
+#define MyAppVersion "1.0.3"
 #define MyAppPublisher "Accessible Tools"
 #define MyAppExeName "ResourceAnalyzer.exe"
 
@@ -16,7 +16,7 @@ DirExistsWarning=no
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 OutputDir=Output
-OutputBaseFilename=ResourceAnalyzer_Setup_v1.0.2
+OutputBaseFilename=ResourceAnalyzer_Setup_v1.0.3
 SetupIconFile=..\Resources\app.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 SetupMutex=ResourceAnalyzerSetup_Mutex
@@ -64,7 +64,6 @@ begin
   Result := True;
   // Use fully-qualified system path to taskkill.exe to guarantee execution
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM ResourceAnalyzer.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM AccessibleTaskManager.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Sleep(300); // Give Windows time to cleanly release file locks and clean up tray icon
 end;
 
@@ -188,48 +187,21 @@ begin
   begin
     // Register uninstaller with /SILENT so Windows "Add or Remove Programs" directly uses our unified dialog
     RegWriteStringValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{E7A23C84-4845-4DC3-8DC2-A7210FD2A882}_is1', 'UninstallString', '"' + ExpandConstant('{uninstallexe}') + '" /SILENT');
-
-    // Clean up legacy autostart registry entries
-    RegDeleteValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Run', 'Accessible Task Manager');
-    RegDeleteValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Run', 'AccessibleTaskManager');
-    RegDeleteValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run', 'Accessible Task Manager');
-    RegDeleteValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run', 'AccessibleTaskManager');
-
-    // Clean up legacy shortcuts
-    DeleteFile(ExpandConstant('{userprograms}\Accessible Task Manager.lnk'));
-    DeleteFile(ExpandConstant('{userdesktop}\Accessible Task Manager.lnk'));
-
-    // Clean up legacy install folder if it existed
-    if DirExists(ExpandConstant('{localappdata}\Programs\Accessible Task Manager')) then
-    begin
-      DelTree(ExpandConstant('{localappdata}\Programs\Accessible Task Manager'), True, True, True);
-    end;
-
-    // Clean up legacy roaming settings folder
-    if DirExists(ExpandConstant('{userappdata}\AccessibleTaskManager')) then
-    begin
-      DelTree(ExpandConstant('{userappdata}\AccessibleTaskManager'), True, True, True);
-    end;
-
-    // Clean up legacy uninstall registry key
-    RegDeleteKeyIncludingSubkeys(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{D3E8B582-F02A-4D7F-8A2D-7B5D5B8D8F4E}_is1');
   end;
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
-  AppDataDir, LegacyAppDataDir: String;
+  AppDataDir: String;
 begin
   if CurUninstallStep = usPostUninstall then
   begin
     AppDataDir := ExpandConstant('{userappdata}\ResourceAnalyzer');
-    LegacyAppDataDir := ExpandConstant('{userappdata}\AccessibleTaskManager');
 
     // Clean up settings if user checked the checkbox on the confirmation dialog
     if DeleteUserSettings then
     begin
       if DirExists(AppDataDir) then DelTree(AppDataDir, True, True, True);
-      if DirExists(LegacyAppDataDir) then DelTree(LegacyAppDataDir, True, True, True);
     end;
 
     // Announce uninstallation completion to the user

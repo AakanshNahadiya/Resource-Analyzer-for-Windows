@@ -9,7 +9,6 @@ Write-Host ""
 # Close any running instances
 Write-Host "Closing any running instances..." -ForegroundColor Yellow
 Get-Process -Name ResourceAnalyzer -ErrorAction SilentlyContinue | Stop-Process -Force
-Get-Process -Name AccessibleTaskManager -ErrorAction SilentlyContinue | Stop-Process -Force
 Start-Sleep -Milliseconds 500
 
 $targetDir = Join-Path $env:LOCALAPPDATA 'Programs\Resource Analyzer for Windows'
@@ -47,12 +46,6 @@ $desktopShortcut.WorkingDirectory = $targetDir
 $desktopShortcut.Description = 'Resource Analyzer for Windows for Screen Readers'
 $desktopShortcut.IconLocation = Join-Path $targetDir 'Resources\app.ico'
 $desktopShortcut.Save()
-
-# Clean up legacy shortcuts if they exist
-$legacyStart = Join-Path $startMenuDir 'Accessible Task Manager.lnk'
-if (Test-Path $legacyStart) { Remove-Item -Path $legacyStart -Force -ErrorAction SilentlyContinue }
-$legacyDesktop = Join-Path $desktopDir 'Accessible Task Manager.lnk'
-if (Test-Path $legacyDesktop) { Remove-Item -Path $legacyDesktop -Force -ErrorAction SilentlyContinue }
 
 Write-Host ""
 Write-Host "Installation successful!" -ForegroundColor Green
