@@ -1,9 +1,9 @@
-<Window x:Class="AccessibleTaskManager.MainWindow"
+<Window x:Class="ResourceAnalyzer.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:local="clr-namespace:AccessibleTaskManager"
+        xmlns:local="clr-namespace:ResourceAnalyzer"
         mc:Ignorable="d"
         Title="Resource Analyzer for Windows"
         Height="580" Width="840"
@@ -219,9 +219,9 @@
                             Background="{DynamicResource SurfaceBackgroundBrush}"
                             BorderBrush="#FFE53935" BorderThickness="1.5">
                         <StackPanel>
-                            <TextBlock Text="⚠️ Frozen Applications (Not Responding) - Press Delete or Enter to Force Close"
+                            <TextBlock Text="Frozen Applications (Not Responding) - Press Delete or Enter to Force Close"
                                        FontWeight="Bold" Foreground="#FFE53935" Margin="0,0,0,4"
-                                       AutomationProperties.Name="Warning: Frozen Applications detected. Press Delete or Enter to Force Close"/>
+                                       AutomationProperties.Name="Frozen Applications detected. Press Delete or Enter to Force Close"/>
                             <ListBox x:Name="lstFrozenApps" MaxHeight="100"
                                      Background="Transparent" BorderThickness="0"
                                      ScrollViewer.VerticalScrollBarVisibility="Auto"
@@ -699,6 +699,7 @@
                             <CheckBox x:Name="chkShowCpu" Content="CPU (Processor utilization and cores)" IsChecked="True" Checked="ResourceVisibilityChanged" Unchecked="ResourceVisibilityChanged"/>
                             <CheckBox x:Name="chkShowRam" Content="RAM (Memory usage with dynamic MB / GB auto-switching)" IsChecked="True" Checked="ResourceVisibilityChanged" Unchecked="ResourceVisibilityChanged"/>
                             <CheckBox x:Name="chkShowGpu" Content="GPU (Graphics utilization and adapter name)" IsChecked="True" Checked="ResourceVisibilityChanged" Unchecked="ResourceVisibilityChanged"/>
+                            <CheckBox x:Name="chkShowDisplay" Content="Display (Resolution, refresh rate, scaling, and monitor model)" IsChecked="True" Checked="ResourceVisibilityChanged" Unchecked="ResourceVisibilityChanged"/>
                             <CheckBox x:Name="chkShowNetwork" Content="Network (Download and upload throughput)" IsChecked="True" Checked="ResourceVisibilityChanged" Unchecked="ResourceVisibilityChanged"/>
                             <CheckBox x:Name="chkShowDisk" Content="Disk (Drive free space and total size)" IsChecked="True" Checked="ResourceVisibilityChanged" Unchecked="ResourceVisibilityChanged"/>
                             <CheckBox x:Name="chkShowBattery" Content="Battery (Charge percentage and status, auto-hides on desktop PCs)" IsChecked="True" Checked="ResourceVisibilityChanged" Unchecked="ResourceVisibilityChanged"/>
@@ -752,8 +753,8 @@
 
                         <Separator Background="{DynamicResource BorderBrush}" Margin="0,16"/>
 
-                        <!-- Section 6: Startup and System Tray -->
-                        <TextBlock Text="Startup and System Tray" FontWeight="Bold" FontSize="15" Foreground="{DynamicResource AccentBrush}" Margin="0,0,0,4"/>
+                        <!-- Section 6: Startup, System Tray & Preferences -->
+                        <TextBlock Text="Startup, System Tray &amp; Preferences" FontWeight="Bold" FontSize="15" Foreground="{DynamicResource AccentBrush}" Margin="0,0,0,4"/>
                         <TextBlock Text="Window closing and Windows login startup options:" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,8"/>
                         <ComboBox x:Name="cmbStartupTray" Width="460" Height="30" HorizontalAlignment="Left"
                                   SelectedIndex="0"
@@ -764,6 +765,15 @@
                             <ComboBoxItem Content="Minimize to System Tray on close (Do not start with Windows)"/>
                             <ComboBoxItem Content="Exit completely on close + Start with Windows"/>
                             <ComboBoxItem Content="Exit completely on close (Do not start with Windows)"/>
+                        </ComboBox>
+
+                        <TextBlock Text="Session memory for process list sorting and filtering:" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,14,0,8"/>
+                        <ComboBox x:Name="cmbRememberPrefs" Width="460" Height="30" HorizontalAlignment="Left"
+                                  SelectionChanged="CmbRememberPrefs_SelectionChanged"
+                                  Background="{DynamicResource InputBackgroundBrush}" Foreground="{DynamicResource InputForegroundBrush}" BorderBrush="{DynamicResource InputBorderBrush}"
+                                  AutomationProperties.Name="Preferences Memory Options">
+                            <ComboBoxItem Content="Start fresh each session (Default)"/>
+                            <ComboBoxItem Content="Remember process sort and filter preferences across restarts"/>
                         </ComboBox>
 
                         <TextBlock Text="Windows Startup Applications:" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,14,0,8"/>
@@ -778,19 +788,6 @@
 
                         <Separator Background="{DynamicResource BorderBrush}" Margin="0,16"/>
 
-                        <!-- Section 7: Preferences Memory -->
-                        <TextBlock Text="Preferences" FontWeight="Bold" FontSize="15" Foreground="{DynamicResource AccentBrush}" Margin="0,0,0,4"/>
-                        <TextBlock Text="Session memory for process list sorting and filtering:" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,8"/>
-                        <ComboBox x:Name="cmbRememberPrefs" Width="460" Height="30" HorizontalAlignment="Left"
-                                  SelectionChanged="CmbRememberPrefs_SelectionChanged"
-                                  Background="{DynamicResource InputBackgroundBrush}" Foreground="{DynamicResource InputForegroundBrush}" BorderBrush="{DynamicResource InputBorderBrush}"
-                                  AutomationProperties.Name="Preferences Memory Options">
-                            <ComboBoxItem Content="Start fresh each session (Default)"/>
-                            <ComboBoxItem Content="Remember process sort and filter preferences across restarts"/>
-                        </ComboBox>
-
-                        <Separator Background="{DynamicResource BorderBrush}" Margin="0,16"/>
-
                         <!-- System Diagnostic Snapshot -->
                         <TextBlock Text="System Diagnostic Snapshot" FontWeight="Bold" FontSize="15" Foreground="{DynamicResource AccentBrush}" Margin="0,0,0,4"/>
                         <TextBlock Text="Generate and copy a clean technical support summary of your hardware, OS, and status to the clipboard:" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,8" TextWrapping="Wrap"/>
@@ -800,9 +797,9 @@
 
                         <Separator Background="{DynamicResource BorderBrush}" Margin="0,16"/>
 
-                        <!-- Section 8: Application Updates -->
+                        <!-- Section 7: Application Updates -->
                         <TextBlock Text="Application Updates &amp; Version" FontWeight="Bold" FontSize="15" Foreground="{DynamicResource AccentBrush}" Margin="0,0,0,4"/>
-                        <TextBlock x:Name="txtCurrentVersion" Text="Current Version: v1.0.3" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,10"/>
+                        <TextBlock x:Name="txtCurrentVersion" Text="Current Version: v1.0.4" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,10"/>
 
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                             <Button x:Name="btnCheckForUpdates" Content="Check for Updates" Width="180" Height="30" Margin="0,0,10,0"

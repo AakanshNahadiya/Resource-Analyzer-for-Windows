@@ -1,12 +1,12 @@
-using System;
+﻿using System;
 using System.Threading.Tasks;
 using Xunit;
 using Xunit.Abstractions;
-using AccessibleTaskManager.Helpers;
-using AccessibleTaskManager.Models;
-using AccessibleTaskManager.Services;
+using ResourceAnalyzer.Helpers;
+using ResourceAnalyzer.Models;
+using ResourceAnalyzer.Services;
 
-namespace AccessibleTaskManager.Tests
+namespace ResourceAnalyzer.Tests
 {
     public class ElevationAndFeatureTests
     {

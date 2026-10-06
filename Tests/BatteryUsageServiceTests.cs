@@ -1,9 +1,9 @@
-using System;
+﻿using System;
 using System.Linq;
-using AccessibleTaskManager.Services;
+using ResourceAnalyzer.Services;
 using Xunit;
 
-namespace AccessibleTaskManager.Tests
+namespace ResourceAnalyzer.Tests
 {
     public class BatteryUsageServiceTests
     {

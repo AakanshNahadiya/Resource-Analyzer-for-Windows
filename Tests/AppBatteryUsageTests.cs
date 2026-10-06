@@ -1,11 +1,11 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using AccessibleTaskManager.Models;
-using AccessibleTaskManager.Services;
+using ResourceAnalyzer.Models;
+using ResourceAnalyzer.Services;
 using Xunit;
 
-namespace AccessibleTaskManager.Tests
+namespace ResourceAnalyzer.Tests
 {
     public class AppBatteryUsageTests
     {

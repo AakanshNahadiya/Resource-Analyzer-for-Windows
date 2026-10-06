@@ -1,8 +1,8 @@
-using Xunit;
-using AccessibleTaskManager.Helpers;
-using AccessibleTaskManager.Models;
+﻿using Xunit;
+using ResourceAnalyzer.Helpers;
+using ResourceAnalyzer.Models;
 
-namespace AccessibleTaskManager.Tests
+namespace ResourceAnalyzer.Tests
 {
     public class FormatHelperTests
     {
@@ -172,6 +172,46 @@ namespace AccessibleTaskManager.Tests
             Assert.Equal(85.5, deserialized.HighCpuLimitPercent);
             Assert.False(deserialized.ShowGpu);
             Assert.False(deserialized.ShowBattery);
+        }
+
+        [Fact]
+        public void FormatDiskSize_VariousCapacities_FormatsCleanly()
+        {
+            // 475.89 GB formatted SSD
+            long bytes476 = 510_985_756_672L;
+            Assert.Equal("475.89 GB", FormatHelper.FormatDiskSize(bytes476));
+
+            // 232.24 GB free space
+            long bytes232 = 249_363_746_816L;
+            Assert.Equal("232.24 GB", FormatHelper.FormatDiskSize(bytes232));
+
+            // 15.22 GB USB drive
+            long bytesUsbTotal = 16_339_959_808L;
+            Assert.Equal("15.22 GB", FormatHelper.FormatDiskSize(bytesUsbTotal));
+
+            // 8.61 GB USB free
+            long bytesUsbFree = 9_243_156_480L;
+            Assert.Equal("8.61 GB", FormatHelper.FormatDiskSize(bytesUsbFree));
+
+            // 2 TB drive
+            long bytes2Tb = 2L * 1024 * 1024 * 1024 * 1024;
+            Assert.Equal("2 TB", FormatHelper.FormatDiskSize(bytes2Tb));
+        }
+
+        [Fact]
+        public void FormatHardwareCapacity_StandardSizes_FormatsCleanly()
+        {
+            // 512 GB SSD hardware
+            long bytes512Hw = 512_105_932_800L;
+            Assert.Equal("512 GB Hardware", FormatHelper.FormatHardwareCapacity(bytes512Hw));
+
+            // 16 GB USB drive hardware
+            long bytes16Hw = 16_351_856_640L;
+            Assert.Equal("16 GB Hardware", FormatHelper.FormatHardwareCapacity(bytes16Hw));
+
+            // 1 TB hardware
+            long bytes1TbHw = 1_000_000_000_000L;
+            Assert.Equal("1 TB Hardware", FormatHelper.FormatHardwareCapacity(bytes1TbHw));
         }
     }
 }

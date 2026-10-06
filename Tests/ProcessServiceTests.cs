@@ -1,11 +1,11 @@
-using System.Linq;
+﻿using System.Linq;
 using System.Threading.Tasks;
-using AccessibleTaskManager;
-using AccessibleTaskManager.Models;
-using AccessibleTaskManager.Services;
+using ResourceAnalyzer;
+using ResourceAnalyzer.Models;
+using ResourceAnalyzer.Services;
 using Xunit;
 
-namespace AccessibleTaskManager.Tests
+namespace ResourceAnalyzer.Tests
 {
     public class ProcessServiceTests
     {

@@ -1,9 +1,9 @@
-using System.Threading.Tasks;
+﻿using System.Threading.Tasks;
 using Xunit;
 using Xunit.Abstractions;
-using AccessibleTaskManager.Services;
+using ResourceAnalyzer.Services;
 
-namespace AccessibleTaskManager.Tests
+namespace ResourceAnalyzer.Tests
 {
     public class HardwareDetailServiceTests
     {
@@ -161,6 +161,40 @@ namespace AccessibleTaskManager.Tests
                 Assert.Contains("Windows 11", os);
                 Assert.DoesNotContain("Windows 10", os);
             }
+        }
+
+        [Fact]
+        public async Task GetHardwareDetailsAsync_Disk0_ContainsCleanInternalSpecsAndPartitions()
+        {
+            var service = new HardwareDetailService();
+            string details = await service.GetHardwareDetailsAsync("disk");
+            var lines = details.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None).Where(l => !string.IsNullOrWhiteSpace(l)).ToList();
+            for (int i = 0; i < lines.Count; i++)
+            {
+                _output.WriteLine($"Item {i + 1} of {lines.Count}: '{lines[i]}'");
+            }
+
+            Assert.Contains("Physical Drive:", details);
+            Assert.Contains("Drive Location: Internal (Fixed Storage)", details);
+            Assert.Contains("Drive Capacity:", details);
+            Assert.Contains("Partitions on this Drive", details);
+            Assert.Contains("Partition 1: Drive C:", details);
+            Assert.Contains("BitLocker (C:):", details);
+            Assert.DoesNotContain("•", details);
+            Assert.DoesNotContain("—", details);
+        }
+
+        [Fact]
+        public async Task GetHardwareDetailsAsync_UsbResource_ReturnsExternalSpecs()
+        {
+            var service = new HardwareDetailService();
+            string details = await service.GetHardwareDetailsAsync("usb_E");
+            _output.WriteLine($"=== USB DETAILS ===\n{details}\n");
+
+            Assert.Contains("Physical Drive:", details);
+            Assert.Contains("Drive Location: External (Removable USB Storage)", details);
+            Assert.Contains("Safe Removal:", details);
+            Assert.Contains("Bus Type: USB", details);
         }
     }
 }

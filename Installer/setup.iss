@@ -1,6 +1,6 @@
 ; Script generated for Resource Analyzer for Windows
 #define MyAppName "Resource Analyzer for Windows"
-#define MyAppVersion "1.0.3"
+#define MyAppVersion "1.0.4"
 #define MyAppPublisher "Accessible Tools"
 #define MyAppExeName "ResourceAnalyzer.exe"
 
@@ -16,13 +16,10 @@ DirExistsWarning=no
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 OutputDir=Output
-OutputBaseFilename=ResourceAnalyzer_Setup_v1.0.3
+OutputBaseFilename=ResourceAnalyzer_Setup_v1.0.4
 SetupIconFile=..\Resources\app.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 SetupMutex=ResourceAnalyzerSetup_Mutex
-AppMutex=ResourceAnalyzer_SingleInstance_Mutex
-CloseApplications=yes
-RestartApplications=no
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
@@ -60,32 +57,26 @@ Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChang
 function KillRunningApp(): Boolean;
 var
   ResultCode: Integer;
+  i: Integer;
 begin
   Result := True;
-  // Use fully-qualified system path to taskkill.exe to guarantee execution
-  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM ResourceAnalyzer.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  Sleep(300); // Give Windows time to cleanly release file locks and clean up tray icon
+  // Automatically terminate any running instance (standard taskkill + PowerShell fallback)
+  Exec('taskkill.exe', '/F /IM ResourceAnalyzer.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec('powershell.exe', '-NoProfile -Command "Stop-Process -Name ResourceAnalyzer -Force -ErrorAction SilentlyContinue"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+
+  // Allow up to 800ms for Windows to release file locks and mutex
+  for i := 1 to 8 do
+  begin
+    if not CheckForMutexes('ResourceAnalyzer_SingleInstance_Mutex') then
+      Break;
+    Sleep(100);
+  end;
 end;
 
 function InitializeSetup(): Boolean;
 begin
-  // Terminate any running instance before installing or updating
+  // Terminate any running instance before installing or updating automatically
   KillRunningApp();
-
-  // If the app was running elevated, lowest-privilege taskkill cannot terminate it.
-  // Prompt the user to close it so file-lock errors (Code 5) never occur.
-  while CheckForMutexes('ResourceAnalyzer_SingleInstance_Mutex') do
-  begin
-    if MsgBox('Resource Analyzer for Windows is currently running.' + #13#10 + #13#10 +
-              'Please close Resource Analyzer from the system tray or Task Manager before continuing setup.',
-              mbConfirmation, MB_OKCANCEL) = IDCANCEL then
-    begin
-      Result := False;
-      Exit;
-    end;
-    KillRunningApp();
-  end;
-
   Result := True;
 end;
 

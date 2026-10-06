@@ -1,9 +1,9 @@
-using System;
+﻿using System;
 using System.Threading.Tasks;
 using Xunit;
-using AccessibleTaskManager.Services;
+using ResourceAnalyzer.Services;
 
-namespace AccessibleTaskManager.Tests
+namespace ResourceAnalyzer.Tests
 {
     public class SystemMonitorServiceTests
     {
@@ -104,6 +104,42 @@ There is 1 interface on the system:
             // Must not contain comma-separated Wi-Fi band or signal percentages in quick speed summary
             Assert.DoesNotContain("GHz", quickSpeech);
             Assert.DoesNotContain("%", quickSpeech);
+        }
+
+        [Fact]
+        public void SampleAllDisks_ContainsDisk0_WithOverallCapacityFormat()
+        {
+            var service = new SystemMonitorService();
+            var allDisks = service.SampleAllDisks();
+
+            Assert.NotNull(allDisks);
+            Assert.True(allDisks.ContainsKey("disk"));
+
+            var disk0 = allDisks["disk"];
+            Assert.False(string.IsNullOrWhiteSpace(disk0.Summary));
+            // Summary format: "Disk 0 (Internal SSD): 232 GB free of 476 GB (51% used)"
+            Assert.StartsWith("Disk 0 (Internal ", disk0.Summary);
+            Assert.Contains("free of", disk0.Summary);
+            Assert.Contains("% used)", disk0.Summary);
+
+            // Per user requirement, the summary name itself should NOT list partition letters
+            string titleBeforeColon = disk0.Summary.Substring(0, disk0.Summary.IndexOf(':'));
+            Assert.DoesNotContain("C:", titleBeforeColon);
+            Assert.DoesNotContain("D:", titleBeforeColon);
+
+            // Details should contain partition list and capacity
+            Assert.Contains("Partitions (", disk0.Details);
+            Assert.True(disk0.Percent >= 0);
+        }
+
+        [Fact]
+        public async Task SampleMetricsAsync_PopulatesAllDisksCleanly()
+        {
+            var service = new SystemMonitorService();
+            var metrics = await service.SampleMetricsAsync();
+
+            Assert.True(metrics.ContainsKey("disk"));
+            Assert.StartsWith("Disk 0 (Internal ", metrics["disk"].Summary);
         }
     }
 }
