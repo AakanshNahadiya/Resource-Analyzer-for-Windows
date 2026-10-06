@@ -1,8 +1,8 @@
-using System;
+﻿using System;
 using System.Linq;
 using System.Threading.Tasks;
-using AccessibleTaskManager.Models;
-using AccessibleTaskManager.Services;
+using ResourceAnalyzer.Models;
+using ResourceAnalyzer.Services;
 using Xunit;
 
 namespace ResourceAnalyzer.Tests

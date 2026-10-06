@@ -1,12 +1,12 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Windows;
 
-using AccessibleTaskManager.Helpers;
+using ResourceAnalyzer.Helpers;
 
-namespace AccessibleTaskManager
+namespace ResourceAnalyzer
 {
     public partial class App : System.Windows.Application
     {
