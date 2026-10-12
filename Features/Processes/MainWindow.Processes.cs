@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -95,6 +95,11 @@ namespace ResourceAnalyzer
                             child.IsGroupHeader = false;
                             child.IsGroupChild = true;
                             child.GroupName = appName;
+                            string detail = ResourceAnalyzer.Services.ProcessDetailResolver.ResolveSubProcessDetail(child.Pid, child.Name, child.DisplayName);
+                            if (!string.IsNullOrWhiteSpace(detail))
+                            {
+                                child.SubProcessDetail = detail;
+                            }
                             child.UpdateDisplayText();
                             children.Add(child);
                         }
@@ -516,6 +521,31 @@ namespace ResourceAnalyzer
             await RefreshProcessesAsync(isFullReset: true);
         }
 
+        private async Task TryRestartSelectedProcessAsync()
+        {
+            if (lstProcesses.SelectedItem is not ProcessItem item) return;
+
+            int targetPid = item.Pid;
+            if (item.IsGroupHeader)
+            {
+                if (item.GroupChildPids.Count > 0)
+                {
+                    targetPid = item.GroupChildPids[0];
+                }
+                else
+                {
+                    _speechService.Speak($"Cannot restart {item.DisplayName}: no running instances found.", interrupt: true);
+                    return;
+                }
+            }
+
+            var (success, msg) = await _processService.RestartProcessAsync(targetPid, item.DisplayName);
+            _speechService.Speak(msg, interrupt: true);
+            txtAnnouncement.Text = msg;
+
+            await RefreshProcessesAsync(isFullReset: true);
+        }
+
         #endregion
 
         #region Process UI & Keyboard Handlers
@@ -538,6 +568,11 @@ namespace ResourceAnalyzer
             {
                 e.Handled = true;
                 CtxCopyDetails_Click(sender, e);
+            }
+            else if (e.Key == Key.R && Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+            {
+                e.Handled = true;
+                await TryRestartSelectedProcessAsync();
             }
             else if (e.Key == Key.Right)
             {
@@ -685,6 +720,11 @@ namespace ResourceAnalyzer
         private async void CtxEndProcessTree_Click(object sender, RoutedEventArgs e)
         {
             await TryEndSelectedProcessTreeAsync();
+        }
+
+        private async void CtxRestartTask_Click(object sender, RoutedEventArgs e)
+        {
+            await TryRestartSelectedProcessAsync();
         }
 
         private async void LstFrozenApps_KeyDown(object sender, KeyEventArgs e)

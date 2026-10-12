@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -1210,6 +1210,15 @@ namespace ResourceAnalyzer.Services
 
             // Real Battery Health, Wear Level, and Capacity Telemetry (via powercfg /batteryreport /xml)
             var (designMwh, fullMwh, cycles, mfg, serial) = GetBatteryHealthData();
+            if (cycles <= 0)
+            {
+                int? wmiCycles = BatteryUsageService.QueryWmiCycleCount();
+                if (wmiCycles.HasValue && wmiCycles.Value > 0)
+                {
+                    cycles = wmiCycles.Value;
+                }
+            }
+
             if (designMwh > 0 && fullMwh > 0)
             {
                 double healthPct = (fullMwh * 100.0) / designMwh;
@@ -1223,7 +1232,11 @@ namespace ResourceAnalyzer.Services
                     _ => "Poor (Replacement recommended)"
                 };
 
-                sb.AppendLine($"Battery Health: {healthPct:F1}% ({condition})");
+                string cycleSnippet = cycles > 0
+                    ? $" | Charge Cycles: {cycles:N0} of 1,000"
+                    : string.Empty;
+
+                sb.AppendLine($"Battery Health: {healthPct:F1}% ({condition}){cycleSnippet}");
                 sb.AppendLine($"Wear Level: {wearPct:F1}%");
                 sb.AppendLine($"Full Charge Capacity: {fullMwh:N0} mWh");
                 sb.AppendLine($"Design Capacity: {designMwh:N0} mWh");
@@ -1231,7 +1244,8 @@ namespace ResourceAnalyzer.Services
 
             if (cycles > 0)
             {
-                sb.AppendLine($"Cycle Count: {cycles:N0} cycles");
+                double pctUsed = Math.Min(100.0, (cycles / 1000.0) * 100.0);
+                sb.AppendLine($"Cycle Count: {cycles:N0} of 1,000 cycles ({pctUsed:F0}% used)");
             }
 
             if (!string.IsNullOrEmpty(mfg))

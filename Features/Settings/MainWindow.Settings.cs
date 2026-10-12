@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.IO;
 using System.Windows;
@@ -461,6 +461,20 @@ namespace ResourceAnalyzer
 
         private void BtnResetDefaults_Click(object sender, RoutedEventArgs e)
         {
+            var result = MessageBox.Show(
+                this,
+                "Are you sure? All of your settings values will be reset to default.",
+                "Reset All Settings to Defaults",
+                MessageBoxButton.OKCancel,
+                MessageBoxImage.Warning);
+
+            if (result != MessageBoxResult.OK)
+            {
+                _speechService.Speak("Settings reset was canceled.", interrupt: true);
+                txtAnnouncement.Text = "Settings reset canceled.";
+                return;
+            }
+
             _settingsService.ResetToDefaults();
             _isUpdatingUI = true;
             try
@@ -744,19 +758,24 @@ namespace ResourceAnalyzer
             }
 
             var result = MessageBox.Show(
+                this,
                 "Restart Resource Analyzer for Windows with Administrator privileges?\n\nThis will allow you to end protected processes and access advanced system telemetry.",
                 "Restart as Administrator",
-                MessageBoxButton.YesNo,
+                MessageBoxButton.OKCancel,
                 MessageBoxImage.Question);
 
-            if (result == MessageBoxResult.Yes)
+            if (result != MessageBoxResult.OK)
             {
-                bool success = ElevationHelper.RestartAsAdmin($"--tab {tabMain.SelectedIndex}");
-                if (!success)
-                {
-                    _speechService.Speak("Administrator elevation was canceled.", interrupt: true);
-                    txtAnnouncement.Text = "Administrator elevation canceled.";
-                }
+                _speechService.Speak("Administrator elevation was canceled.", interrupt: true);
+                txtAnnouncement.Text = "Administrator elevation canceled.";
+                return;
+            }
+
+            bool success = ElevationHelper.RestartAsAdmin($"--tab {tabMain.SelectedIndex}");
+            if (!success)
+            {
+                _speechService.Speak("Administrator elevation was canceled.", interrupt: true);
+                txtAnnouncement.Text = "Administrator elevation canceled.";
             }
         }
 

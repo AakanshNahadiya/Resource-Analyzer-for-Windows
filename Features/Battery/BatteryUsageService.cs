@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -19,6 +19,8 @@ namespace ResourceAnalyzer.Services
 
         DateTime? GetLastAcDisconnectTime();
 
+        Task<BatteryHealthInfo> GetBatteryHealthAsync();
+
         void AccumulateAppEnergy(
             IEnumerable<ProcessItem> processes,
             int currentDischargeRateMw,
@@ -34,6 +36,45 @@ namespace ResourceAnalyzer.Services
             string displayMode);
 
         void ResetAppEnergy();
+    }
+
+    public class BatteryHealthInfo
+    {
+        public bool HasBattery { get; set; }
+        public int? CycleCount { get; set; }
+        public int RatedMaxCycles { get; set; } = 1000;
+        public long DesignCapacityMwh { get; set; }
+        public long FullChargeCapacityMwh { get; set; }
+        public double? HealthPercent => DesignCapacityMwh > 0 && FullChargeCapacityMwh > 0
+            ? Math.Min(100.0, (double)FullChargeCapacityMwh / DesignCapacityMwh * 100.0)
+            : null;
+        public string Chemistry { get; set; } = string.Empty;
+        public string Manufacturer { get; set; } = string.Empty;
+
+        public string FormatSummaryText()
+        {
+            if (!HasBattery) return "No battery detected (Desktop PC or AC only).";
+
+            var parts = new List<string>();
+
+            if (HealthPercent.HasValue)
+            {
+                parts.Add($"Health: {HealthPercent.Value:F1}% ({FullChargeCapacityMwh:N0} / {DesignCapacityMwh:N0} mWh)");
+            }
+
+            if (CycleCount.HasValue && CycleCount.Value > 0)
+            {
+                double pct = Math.Min(100.0, (CycleCount.Value / (double)RatedMaxCycles) * 100.0);
+                parts.Add($"Charge Cycles: {CycleCount.Value:N0} of {RatedMaxCycles:N0} ({pct:F0}% used)");
+            }
+
+            if (!string.IsNullOrWhiteSpace(Chemistry) && !Chemistry.Equals("Unknown", StringComparison.OrdinalIgnoreCase))
+            {
+                parts.Add($"Chemistry: {Chemistry}");
+            }
+
+            return string.Join(" | ", parts);
+        }
     }
 
     public class AppEnergyRecord
@@ -68,6 +109,32 @@ namespace ResourceAnalyzer.Services
                 DateTime? liveDisconnect = _liveLastAcDisconnectTime;
                 DateTime? disconnectTime = liveDisconnect ?? GetLastAcDisconnectTime(xmlContent);
                 return ParseBatteryReportXml(xmlContent, timeRange, null, sinceLastCharge, disconnectTime);
+            });
+        }
+
+        public async Task<BatteryHealthInfo> GetBatteryHealthAsync()
+        {
+            return await Task.Run(() =>
+            {
+                string? xmlContent = GetBatteryReportXml();
+                var health = ParseBatteryHealth(xmlContent);
+
+                if (health.HasBattery && (!health.CycleCount.HasValue || health.CycleCount.Value == 0))
+                {
+                    int? wmiCycles = QueryWmiCycleCount();
+                    if (wmiCycles.HasValue && wmiCycles.Value > 0)
+                    {
+                        health.CycleCount = wmiCycles;
+                    }
+                }
+
+                var live = GetLiveBatteryState();
+                if (!live.HasBattery && !health.HasBattery)
+                {
+                    health.HasBattery = false;
+                }
+
+                return health;
             });
         }
 
@@ -389,6 +456,91 @@ namespace ResourceAnalyzer.Services
             {
                 return null;
             }
+        }
+
+        public static BatteryHealthInfo ParseBatteryHealth(string? xmlContent)
+        {
+            var info = new BatteryHealthInfo();
+            if (string.IsNullOrWhiteSpace(xmlContent)) return info;
+
+            try
+            {
+                var doc = XDocument.Parse(xmlContent);
+                var ns = doc.Root?.Name.Namespace ?? XNamespace.None;
+                var batteries = doc.Root?.Element(ns + "Batteries")?.Elements(ns + "Battery").ToList();
+                if (batteries == null || batteries.Count == 0) return info;
+
+                info.HasBattery = true;
+                long totalDesign = 0;
+                long totalFcc = 0;
+                int? maxCycles = null;
+                string chem = string.Empty;
+                string mfr = string.Empty;
+
+                foreach (var b in batteries)
+                {
+                    string? desVal = GetAttrOrElement(b, ns, "DesignCapacity");
+                    if (long.TryParse(desVal, out long des) && des > 0)
+                    {
+                        totalDesign += des;
+                    }
+
+                    string? fccVal = GetAttrOrElement(b, ns, "FullChargeCapacity");
+                    if (long.TryParse(fccVal, out long fcc) && fcc > 0)
+                    {
+                        totalFcc += fcc;
+                    }
+
+                    string? cycVal = GetAttrOrElement(b, ns, "CycleCount");
+                    if (int.TryParse(cycVal, out int cyc) && cyc > 0)
+                    {
+                        maxCycles = Math.Max(maxCycles ?? 0, cyc);
+                    }
+
+                    if (string.IsNullOrEmpty(chem))
+                    {
+                        chem = GetAttrOrElement(b, ns, "Chemistry") ?? string.Empty;
+                    }
+                    if (string.IsNullOrEmpty(mfr))
+                    {
+                        mfr = GetAttrOrElement(b, ns, "Manufacturer") ?? string.Empty;
+                    }
+                }
+
+                info.DesignCapacityMwh = totalDesign;
+                info.FullChargeCapacityMwh = totalFcc;
+                info.CycleCount = maxCycles;
+                info.Chemistry = chem;
+                info.Manufacturer = mfr;
+            }
+            catch { }
+
+            return info;
+        }
+
+        public static int? QueryWmiCycleCount()
+        {
+            try
+            {
+                using var searcher = new System.Management.ManagementObjectSearcher(@"root\wmi", "SELECT CycleCount, Active FROM BatteryCycleCount");
+                foreach (var obj in searcher.Get())
+                {
+                    try
+                    {
+                        if (obj["CycleCount"] != null)
+                        {
+                            int c = Convert.ToInt32(obj["CycleCount"]);
+                            if (c > 0) return c;
+                        }
+                    }
+                    finally
+                    {
+                        obj.Dispose();
+                    }
+                }
+            }
+            catch { }
+            return null;
         }
 
         internal static (List<BatteryUsageItem> Sessions, long TotalDischargeMwh, double TotalDischargePercent, TimeSpan ActiveDuration, TimeSpan StandbyDuration, bool HasBattery, DateTime? LastAcDisconnectTime) ParseBatteryReportXml(

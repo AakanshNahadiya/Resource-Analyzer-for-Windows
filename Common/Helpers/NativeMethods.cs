@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Runtime.InteropServices;
 
 namespace ResourceAnalyzer.Helpers
@@ -152,6 +152,23 @@ namespace ResourceAnalyzer.Helpers
             return -1;
         }
 
+        public const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        public static extern IntPtr OpenProcess(uint processAccess, bool bInheritHandle, int processId);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool CloseHandle(IntPtr hObject);
+
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool QueryFullProcessImageName(
+            IntPtr hProcess,
+            int dwFlags,
+            System.Text.StringBuilder lpExeName,
+            ref uint lpdwSize);
+
         #endregion
 
         #region User32
@@ -193,6 +210,12 @@ namespace ResourceAnalyzer.Helpers
         [DllImport("user32.dll")]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+
+        [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        public static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder lpString, int nMaxCount);
+
+        [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+        public static extern int GetWindowTextLength(IntPtr hWnd);
 
         [StructLayout(LayoutKind.Sequential)]
         public struct PERFORMANCE_INFORMATION
@@ -248,6 +271,78 @@ namespace ResourceAnalyzer.Helpers
             int systemInformationClass,
             IntPtr systemInformation,
             int systemInformationLength);
+
+        public const int ProcessCommandLineInformation = 60;
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct UNICODE_STRING
+        {
+            public ushort Length;
+            public ushort MaximumLength;
+            public IntPtr Buffer;
+        }
+
+        [DllImport("ntdll.dll")]
+        public static extern int NtQueryInformationProcess(
+            IntPtr processHandle,
+            int processInformationClass,
+            IntPtr processInformation,
+            int processInformationLength,
+            out int returnLength);
+
+        #endregion
+
+        #region Advapi32
+
+        public const uint SC_MANAGER_ENUMERATE_SERVICE = 0x0004;
+        public const int SC_ENUM_PROCESS_INFO = 0;
+        public const int SERVICE_WIN32 = 0x00000030;
+        public const int SERVICE_STATE_ALL = 0x00000003;
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        public struct ENUM_SERVICE_STATUS_PROCESS
+        {
+            [MarshalAs(UnmanagedType.LPWStr)]
+            public string lpServiceName;
+            [MarshalAs(UnmanagedType.LPWStr)]
+            public string lpDisplayName;
+            public SERVICE_STATUS_PROCESS ServiceStatusProcess;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct SERVICE_STATUS_PROCESS
+        {
+            public int dwServiceType;
+            public int dwCurrentState;
+            public int dwControlsAccepted;
+            public int dwWin32ExitCode;
+            public int dwServiceSpecificExitCode;
+            public int dwCheckPoint;
+            public int dwWaitHint;
+            public int dwProcessId;
+            public int dwServiceFlags;
+        }
+
+        [DllImport("advapi32.dll", EntryPoint = "OpenSCManagerW", ExactSpelling = true, CharSet = CharSet.Unicode, SetLastError = true)]
+        public static extern IntPtr OpenSCManager(string? lpMachineName, string? lpDatabaseName, uint dwDesiredAccess);
+
+        [DllImport("advapi32.dll", ExactSpelling = true, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool CloseServiceHandle(IntPtr hSCObject);
+
+        [DllImport("advapi32.dll", EntryPoint = "EnumServicesStatusExW", ExactSpelling = true, CharSet = CharSet.Unicode, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool EnumServicesStatusEx(
+            IntPtr hSCManager,
+            int infoLevel,
+            int dwServiceType,
+            int dwServiceState,
+            IntPtr lpServices,
+            int cbBufSize,
+            out int pcbBytesNeeded,
+            out int lpServicesReturned,
+            ref int lpResumeHandle,
+            string? pszGroupName);
 
         #endregion
 

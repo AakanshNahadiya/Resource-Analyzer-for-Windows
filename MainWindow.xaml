@@ -256,6 +256,7 @@
                             <ContextMenu x:Name="ctxProcessMenu">
                                 <MenuItem Header="End Task (Delete)" Click="CtxEndTask_Click" InputGestureText="Del" AutomationProperties.Name="End Selected Task"/>
                                 <MenuItem Header="End Process Tree (Shift+Delete)" Click="CtxEndProcessTree_Click" InputGestureText="Shift+Del" AutomationProperties.Name="End Entire Process Tree"/>
+                                <MenuItem Header="Restart Task (Ctrl+R)" Click="CtxRestartTask_Click" InputGestureText="Ctrl+R" AutomationProperties.Name="Restart Selected Task"/>
                                 <MenuItem Header="Open File Location" Click="CtxOpenFileLocation_Click" AutomationProperties.Name="Open File Location in Explorer"/>
                                 <MenuItem Header="Search on Web" Click="CtxSearchWeb_Click" AutomationProperties.Name="Search Process Online"/>
                                 <Separator Background="{DynamicResource BorderBrush}"/>
@@ -390,10 +391,15 @@
                                 AutomationProperties.Name="Refresh Battery Sessions and Live Telemetry"/>
                     </WrapPanel>
 
-                    <!-- Summary line -->
-                    <TextBlock x:Name="txtBatterySummary" Grid.Row="1" Margin="0,0,0,8" Foreground="{DynamicResource AccentBrush}" FontWeight="SemiBold"
-                               Text="Loading battery energy usage..."
-                               AutomationProperties.Name="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+                    <!-- Summary and Health Info -->
+                    <StackPanel Grid.Row="1" Margin="0,0,0,8">
+                        <TextBlock x:Name="txtBatterySummary" Foreground="{DynamicResource AccentBrush}" FontWeight="SemiBold"
+                                   Text="Loading battery energy usage..." Margin="0,0,0,3"
+                                   AutomationProperties.Name="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+                        <TextBlock x:Name="txtBatteryHealthAndCycles" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12.5"
+                                   Text="Battery Health &amp; Cycles: Loading..."
+                                   AutomationProperties.Name="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+                    </StackPanel>
 
                     <!-- Disclaimer Banner -->
                     <Border x:Name="pnlBatteryDisclaimer" Grid.Row="2"

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -84,6 +84,7 @@ namespace ResourceAnalyzer
                 {
                     string noBatt = "No battery detected (Desktop PC or AC only).";
                     txtBatterySummary.Text = noBatt;
+                    txtBatteryHealthAndCycles.Visibility = Visibility.Collapsed;
                     _batteryItems.Clear();
                     _appBatteryItems.Clear();
                     _appBatteryMap.Clear();
@@ -107,6 +108,17 @@ namespace ResourceAnalyzer
 
                 string summary = $"Showing {sessions.Count} battery sessions{filterDesc}. Total Discharge: {totalDischarge:N0} mWh ({totalDischargePct:F1}%). Active: {activeStr}, Standby: {standbyStr}.";
                 txtBatterySummary.Text = summary;
+
+                var health = await _batteryUsageService.GetBatteryHealthAsync();
+                if (health.HasBattery)
+                {
+                    txtBatteryHealthAndCycles.Text = health.FormatSummaryText();
+                    txtBatteryHealthAndCycles.Visibility = Visibility.Visible;
+                }
+                else
+                {
+                    txtBatteryHealthAndCycles.Visibility = Visibility.Collapsed;
+                }
 
                 _batteryItems.Clear();
                 foreach (var s in sessions)

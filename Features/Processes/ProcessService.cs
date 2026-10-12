@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -14,6 +14,8 @@ namespace ResourceAnalyzer.Services
         Task<List<ProcessItem>> GetProcessesAsync(string searchTerm, string sortBy, bool hideSystemProcesses = false);
         Task<(bool Success, string Message)> KillProcessAsync(int pid, string processName);
         Task<(bool Success, string Message)> KillProcessTreeAsync(int pid, string processName);
+        Task<(bool Success, string Message)> RestartProcessAsync(int pid, string processName);
+        string? GetProcessExecutablePath(int pid);
         HashSet<int> GetHungPids();
         int GetActiveForegroundPid();
         string GetProcessDescription(int pid, string processName);
@@ -491,5 +493,125 @@ namespace ResourceAnalyzer.Services
                 }
             });
         }
+
+        public async Task<(bool Success, string Message)> RestartProcessAsync(int pid, string processName)
+        {
+            return await Task.Run(() =>
+            {
+                if (pid == 0 || pid == 4 || CriticalKernelProcesses.Contains(processName))
+                {
+                    return (false, $"{processName} is a critical Windows system process and cannot be restarted.");
+                }
+
+                string? exePath = GetProcessExecutablePath(pid);
+                if (string.IsNullOrEmpty(exePath) || !System.IO.File.Exists(exePath))
+                {
+                    return (false, $"Cannot restart {processName}: executable file path could not be determined.");
+                }
+
+                // Terminate process tree
+                try
+                {
+                    bool taskkillSuccess = false;
+                    try
+                    {
+                        var psi = new ProcessStartInfo
+                        {
+                            FileName = "taskkill.exe",
+                            Arguments = $"/T /F /PID {pid}",
+                            CreateNoWindow = true,
+                            UseShellExecute = false,
+                            RedirectStandardError = true,
+                            RedirectStandardOutput = true
+                        };
+                        using var p = Process.Start(psi);
+                        if (p != null)
+                        {
+                            p.WaitForExit(3000);
+                            taskkillSuccess = (p.ExitCode == 0);
+                        }
+                    }
+                    catch { }
+
+                    if (!taskkillSuccess)
+                    {
+                        try
+                        {
+                            using var proc = Process.GetProcessById(pid);
+                            proc.Kill(true);
+                            proc.WaitForExit(2000);
+                        }
+                        catch { }
+                    }
+                }
+                catch { }
+
+                // Brief grace period for socket and file release
+                System.Threading.Thread.Sleep(300);
+
+                // Start fresh instance
+                try
+                {
+                    var startPsi = new ProcessStartInfo
+                    {
+                        FileName = exePath,
+                        UseShellExecute = true,
+                        WorkingDirectory = System.IO.Path.GetDirectoryName(exePath) ?? string.Empty
+                    };
+                    Process.Start(startPsi);
+                    return (true, $"Restarted {processName}");
+                }
+                catch (Exception ex)
+                {
+                    return (false, $"Terminated {processName}, but failed to launch a new instance: {ex.Message}");
+                }
+            });
+        }
+
+        public static string? GetProcessExecutablePath(int pid)
+        {
+            if (pid <= 4) return null;
+
+            try
+            {
+                using var proc = Process.GetProcessById(pid);
+                string? path = proc.MainModule?.FileName;
+                if (!string.IsNullOrEmpty(path) && System.IO.File.Exists(path))
+                {
+                    return path;
+                }
+            }
+            catch { }
+
+            try
+            {
+                IntPtr hProcess = NativeMethods.OpenProcess(NativeMethods.PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
+                if (hProcess != IntPtr.Zero)
+                {
+                    try
+                    {
+                        uint capacity = 1024;
+                        var sb = new System.Text.StringBuilder((int)capacity);
+                        if (NativeMethods.QueryFullProcessImageName(hProcess, 0, sb, ref capacity))
+                        {
+                            string path = sb.ToString();
+                            if (!string.IsNullOrEmpty(path) && System.IO.File.Exists(path))
+                            {
+                                return path;
+                            }
+                        }
+                    }
+                    finally
+                    {
+                        NativeMethods.CloseHandle(hProcess);
+                    }
+                }
+            }
+            catch { }
+
+            return null;
+        }
+
+        string? IProcessService.GetProcessExecutablePath(int pid) => GetProcessExecutablePath(pid);
     }
 }
