@@ -33,9 +33,12 @@ namespace ResourceAnalyzer.Services
             int currentDischargeRateMw,
             bool isDischarging,
             int foregroundPid,
-            string displayMode);
+            string displayMode,
+            bool isOnAc = false);
 
         void ResetAppEnergy();
+
+        void InvalidateCache();
     }
 
     public class BatteryHealthInfo
@@ -94,12 +97,22 @@ namespace ResourceAnalyzer.Services
     {
         private string? _cachedXmlContent;
         private DateTime _lastReportTime = DateTime.MinValue;
+        private DateTime _cachedTodayDate = DateTime.Today;
         private readonly object _lock = new();
 
         private static bool? _lastKnownAcOnline;
         private static DateTime? _liveLastAcDisconnectTime;
 
         private readonly Dictionary<string, AppEnergyRecord> _appEnergyRecords = new(StringComparer.OrdinalIgnoreCase);
+
+        public void InvalidateCache()
+        {
+            lock (_lock)
+            {
+                _cachedXmlContent = null;
+                _lastReportTime = DateTime.MinValue;
+            }
+        }
 
         public async Task<(List<BatteryUsageItem> Sessions, long TotalDischargeMwh, double TotalDischargePercent, TimeSpan ActiveDuration, TimeSpan StandbyDuration, bool HasBattery, DateTime? LastAcDisconnectTime)> GetBatteryUsageAsync(string timeRange, bool sinceLastCharge = false)
         {
@@ -241,22 +254,54 @@ namespace ResourceAnalyzer.Services
 
             lock (_lock)
             {
+                var today = DateTime.Today;
+                if (_cachedTodayDate != today)
+                {
+                    _cachedTodayDate = today;
+                    _appEnergyRecords.Clear();
+                }
+
                 var procList = processes.Where(p => !p.IsGroupHeader && p.Pid > 4).ToList();
                 if (procList.Count == 0) return;
+
+                var appGroups = procList.GroupBy(p => p.Name, StringComparer.OrdinalIgnoreCase).ToList();
+
+                // If laptop is plugged into AC power (not discharging), do not accumulate battery discharge mWh
+                if (!isDischarging)
+                {
+                    foreach (var g in appGroups)
+                    {
+                        string appName = g.Key;
+                        string displayName = g.FirstOrDefault(p => !string.IsNullOrEmpty(p.DisplayName))?.DisplayName ?? appName;
+                        if (!_appEnergyRecords.TryGetValue(appName, out var rec))
+                        {
+                            rec = new AppEnergyRecord
+                            {
+                                ProcessName = appName,
+                                DisplayName = displayName,
+                                Pid = g.First().Pid,
+                                FirstSeen = DateTime.Now
+                            };
+                            _appEnergyRecords[appName] = rec;
+                        }
+                        rec.LastPowerMw = 0;
+                        rec.LastIsForeground = g.Any(p => foregroundPid > 0 && p.Pid == foregroundPid);
+                        rec.LastCpuPercent = g.Sum(p => p.CpuPercent);
+                        rec.LastSeen = DateTime.Now;
+                        if (!string.IsNullOrEmpty(displayName))
+                        {
+                            rec.DisplayName = displayName;
+                        }
+                    }
+                    return;
+                }
 
                 double totalCpu = procList.Sum(p => p.CpuPercent);
 
                 // System discharge / power budget in mW
-                int systemPowerMw;
-                if (isDischarging && currentDischargeRateMw > 0)
-                {
-                    systemPowerMw = currentDischargeRateMw;
-                }
-                else
-                {
-                    // Baseline power consumption estimate based on CPU load (idle ~8W up to ~35W)
-                    systemPowerMw = Math.Min(35000, 8000 + (int)(totalCpu * 200));
-                }
+                int systemPowerMw = currentDischargeRateMw > 0
+                    ? currentDischargeRateMw
+                    : Math.Min(35000, 8000 + (int)(totalCpu * 200));
 
                 // Dynamic software power pool scales with actual system CPU activity:
                 // Total system power draw includes platform baseline (screen backlight, Wi-Fi, motherboard, DRAM).
@@ -264,9 +309,6 @@ namespace ResourceAnalyzer.Services
                 // Under heavy load (100% CPU), software dynamic consumption accounts for up to 60% of total discharge.
                 double cpuActivityRatio = Math.Clamp(totalCpu / 100.0, 0.0, 1.0);
                 double dynamicPoolMw = Math.Min(systemPowerMw * 0.60, 350.0 + (cpuActivityRatio * (systemPowerMw * 0.55)));
-
-                // Group by application name (e.g. all 15 instances of msedge.exe into one application)
-                var appGroups = procList.GroupBy(p => p.Name, StringComparer.OrdinalIgnoreCase).ToList();
 
                 foreach (var g in appGroups)
                 {
@@ -322,7 +364,8 @@ namespace ResourceAnalyzer.Services
             int currentDischargeRateMw,
             bool isDischarging,
             int foregroundPid,
-            string displayMode)
+            string displayMode,
+            bool isOnAc = false)
         {
             lock (_lock)
             {
@@ -365,7 +408,8 @@ namespace ResourceAnalyzer.Services
                         BatteryPercent = batteryPercent,
                         PowerImpact = impact,
                         IsForeground = isFg,
-                        DisplayMode = displayMode
+                        DisplayMode = displayMode,
+                        IsOnAc = isOnAc
                     };
                     item.UpdateDisplayText();
                     result.Add(item);
@@ -418,8 +462,9 @@ namespace ResourceAnalyzer.Services
                     }
 
                     string tsStr = GetAttrOrElement(entry, ns, "LocalTimestamp") ?? GetAttrOrElement(entry, ns, "Timestamp") ?? string.Empty;
-                    if (DateTime.TryParse(tsStr, out var ts))
+                    if (DateTime.TryParse(tsStr, null, System.Globalization.DateTimeStyles.RoundtripKind, out var rawTs))
                     {
+                        DateTime ts = rawTs.Kind == DateTimeKind.Utc ? rawTs.ToLocalTime() : rawTs;
                         string? acVal = GetAttrOrElement(entry, ns, "Ac");
                         int ac = 0;
                         if (int.TryParse(acVal, out int parsedAc))
@@ -611,10 +656,11 @@ namespace ResourceAnalyzer.Services
                 foreach (var entry in recentUsage)
                 {
                     string localTsStr = GetAttrOrElement(entry, ns, "LocalTimestamp") ?? GetAttrOrElement(entry, ns, "Timestamp") ?? string.Empty;
-                    if (!DateTime.TryParse(localTsStr, out var timestamp))
+                    if (!DateTime.TryParse(localTsStr, null, System.Globalization.DateTimeStyles.RoundtripKind, out var rawTs))
                     {
                         continue;
                     }
+                    DateTime timestamp = rawTs.Kind == DateTimeKind.Utc ? rawTs.ToLocalTime() : rawTs;
 
                     if (timestamp < cutoff)
                     {
@@ -722,6 +768,14 @@ namespace ResourceAnalyzer.Services
         {
             lock (_lock)
             {
+                var today = DateTime.Today;
+                if (_cachedTodayDate != today)
+                {
+                    _cachedTodayDate = today;
+                    _cachedXmlContent = null;
+                    _lastReportTime = DateTime.MinValue;
+                }
+
                 if (_cachedXmlContent != null && (DateTime.UtcNow - _lastReportTime).TotalSeconds < 30)
                 {
                     return _cachedXmlContent;
@@ -743,7 +797,10 @@ namespace ResourceAnalyzer.Services
                     using var proc = Process.Start(psi);
                     if (proc != null)
                     {
-                        proc.WaitForExit(4000);
+                        if (!proc.WaitForExit(4000))
+                        {
+                            try { proc.Kill(); } catch { }
+                        }
                         if (File.Exists(tempFile))
                         {
                             _cachedXmlContent = File.ReadAllText(tempFile);

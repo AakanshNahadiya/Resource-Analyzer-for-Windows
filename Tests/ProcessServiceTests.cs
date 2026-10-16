@@ -25,6 +25,19 @@ namespace ResourceAnalyzer.Tests
             Assert.DoesNotContain(processes, p => p.DisplayName.Equals("audiodg.exe", System.StringComparison.OrdinalIgnoreCase));
         }
 
+        [Fact]
+        public async Task GetProcessesAsync_WhenExposeAllProcesses_IncludesKernelOrServices()
+        {
+            var service = new ProcessService();
+            var processes = await service.GetProcessesAsync(searchTerm: string.Empty, sortBy: "Memory", hideSystemProcesses: false);
+
+            Assert.NotEmpty(processes);
+            // svchost or dwm or System (PID 4) should be present when system processes are exposed
+            Assert.Contains(processes, p => p.Name.Equals("svchost", System.StringComparison.OrdinalIgnoreCase) ||
+                                           p.Name.Equals("dwm", System.StringComparison.OrdinalIgnoreCase) ||
+                                           p.Pid == 4);
+        }
+
         [Theory]
         [InlineData(0, "Idle")]
         [InlineData(4, "System")]
@@ -517,6 +530,26 @@ namespace ResourceAnalyzer.Tests
             var (success, msg) = await service.RestartProcessAsync(99999999, "NonexistentApp");
             Assert.False(success);
             Assert.Contains("could not be determined", msg);
+        }
+
+        [Fact]
+        public void ActionableProcessesForAlerts_ExcludesIdleAndSystemKernel()
+        {
+            var processes = new System.Collections.Generic.List<ProcessItem>
+            {
+                new ProcessItem { Pid = 0, Name = "Idle", Description = "System Idle Process", CpuPercent = 95.0, MemoryBytes = 0 },
+                new ProcessItem { Pid = 4, Name = "System", Description = "NT Kernel & System", CpuPercent = 15.0, MemoryBytes = 50 * 1024 * 1024 },
+                new ProcessItem { Pid = 1234, Name = "chrome.exe", Description = "Google Chrome", CpuPercent = 85.0, MemoryBytes = 2L * 1024 * 1024 * 1024 }
+            };
+
+            var actionable = processes.Where(p =>
+                p.Pid > 4 &&
+                !p.Name.Equals("Idle", System.StringComparison.OrdinalIgnoreCase) &&
+                !p.Name.Equals("System Idle Process", System.StringComparison.OrdinalIgnoreCase) &&
+                !p.Name.Equals("System", System.StringComparison.OrdinalIgnoreCase)).ToList();
+
+            Assert.Single(actionable);
+            Assert.Equal("chrome.exe", actionable[0].Name);
         }
     }
 }

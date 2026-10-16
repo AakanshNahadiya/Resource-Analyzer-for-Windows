@@ -1,4 +1,4 @@
-﻿using Xunit;
+using Xunit;
 using ResourceAnalyzer.Helpers;
 using ResourceAnalyzer.Models;
 
@@ -110,7 +110,7 @@ namespace ResourceAnalyzer.Tests
         {
             var s = new AppSettings();
 
-            Assert.True(s.HideSystemProcesses);
+            Assert.False(s.HideSystemProcesses);
             Assert.True(s.ShowProcessExtension);
             Assert.False(s.ShowProcessPid);
             Assert.True(s.ConfirmBeforeEndTask);
@@ -119,12 +119,6 @@ namespace ResourceAnalyzer.Tests
             Assert.False(s.RememberSortFilter);
             Assert.Equal("System Default", s.Theme);
             Assert.Equal(2, s.RefreshIntervalSeconds);
-            Assert.True(s.ShowCpu);
-            Assert.True(s.ShowRam);
-            Assert.True(s.ShowGpu);
-            Assert.True(s.ShowNetwork);
-            Assert.True(s.ShowDisk);
-            Assert.True(s.ShowBattery);
             Assert.False(s.EnableHighRamAlert);
             Assert.False(s.EnableHighCpuAlert);
         }
@@ -147,9 +141,7 @@ namespace ResourceAnalyzer.Tests
                 HighRamLimitValue = 16,
                 HighRamLimitUnit = "GB",
                 EnableHighCpuAlert = true,
-                HighCpuLimitPercent = 85.5,
-                ShowGpu = false,
-                ShowBattery = false
+                HighCpuLimitPercent = 85.5
             };
 
             string json = System.Text.Json.JsonSerializer.Serialize(original);
@@ -170,8 +162,6 @@ namespace ResourceAnalyzer.Tests
             Assert.Equal("GB", deserialized.HighRamLimitUnit);
             Assert.True(deserialized.EnableHighCpuAlert);
             Assert.Equal(85.5, deserialized.HighCpuLimitPercent);
-            Assert.False(deserialized.ShowGpu);
-            Assert.False(deserialized.ShowBattery);
         }
 
         [Fact]

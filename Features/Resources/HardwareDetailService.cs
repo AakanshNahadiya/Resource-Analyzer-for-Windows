@@ -568,77 +568,67 @@ namespace ResourceAnalyzer.Services
 
         private static readonly Dictionary<int, PhysicalDiskMetadata> _diskMetadataCache = new();
         private static readonly object _diskMetaLock = new();
+        private static bool _isDiskMetadataPopulating = false;
 
-        internal static PhysicalDiskMetadata GetPhysicalDiskMetadata(int diskIndex, string? usbLetter = null)
+        internal static void PopulatePhysicalDiskMetadataCache()
         {
-            lock (_diskMetaLock)
+            try
             {
-                if (diskIndex >= 0 && _diskMetadataCache.TryGetValue(diskIndex, out var cached))
+                using var searcher = new ManagementObjectSearcher("SELECT Index, Model, InterfaceType, MediaType, Size FROM Win32_DiskDrive");
+                foreach (ManagementObject disk in searcher.Get())
                 {
-                    return cached;
-                }
-
-                var meta = new PhysicalDiskMetadata
-                {
-                    Index = diskIndex,
-                    Model = "Physical Disk Drive",
-                    MediaType = "Solid State Drive (SSD)",
-                    BusType = "NVMe (PCIe)",
-                    IsInternal = true,
-                    HealthStatus = "Healthy",
-                    PartitionStyle = "GPT (GUID Partition Table - Modern UEFI)"
-                };
-
-                try
-                {
-                    using var searcher = new ManagementObjectSearcher("SELECT Index, Model, InterfaceType, MediaType, Size FROM Win32_DiskDrive");
-                    foreach (ManagementObject disk in searcher.Get())
+                    if (disk["Index"] != null && int.TryParse(disk["Index"]?.ToString(), out int idx))
                     {
-                        if (disk["Index"] != null && int.TryParse(disk["Index"]?.ToString(), out int idx))
+                        string model = disk["Model"]?.ToString()?.Trim() ?? "Disk Drive";
+                        string iface = disk["InterfaceType"]?.ToString()?.Trim() ?? "";
+                        string media = disk["MediaType"]?.ToString()?.Trim() ?? "";
+                        long size = 0;
+                        if (disk["Size"] != null) long.TryParse(disk["Size"]?.ToString(), out size);
+
+                        bool isInternal = !iface.Equals("USB", StringComparison.OrdinalIgnoreCase) &&
+                                          !media.Contains("Removable", StringComparison.OrdinalIgnoreCase);
+
+                        string mediaTypeStr;
+                        if (!isInternal)
                         {
-                            string model = disk["Model"]?.ToString()?.Trim() ?? "Disk Drive";
-                            string iface = disk["InterfaceType"]?.ToString()?.Trim() ?? "";
-                            string media = disk["MediaType"]?.ToString()?.Trim() ?? "";
-                            long size = 0;
-                            if (disk["Size"] != null) long.TryParse(disk["Size"]?.ToString(), out size);
+                            mediaTypeStr = "Removable Storage (USB Flash Drive)";
+                        }
+                        else if (model.Contains("NVMe", StringComparison.OrdinalIgnoreCase) || model.Contains("SSD", StringComparison.OrdinalIgnoreCase) || iface.Contains("SCSI", StringComparison.OrdinalIgnoreCase))
+                        {
+                            mediaTypeStr = "Solid State Drive (SSD)";
+                        }
+                        else
+                        {
+                            mediaTypeStr = "Hard Disk Drive (HDD)";
+                        }
 
-                            bool isInternal = !iface.Equals("USB", StringComparison.OrdinalIgnoreCase) &&
-                                              !media.Contains("Removable", StringComparison.OrdinalIgnoreCase);
+                        string busTypeStr = iface switch
+                        {
+                            "SCSI" => model.Contains("NVMe", StringComparison.OrdinalIgnoreCase) ? "NVMe (PCIe)" : "SCSI",
+                            "USB" => "USB",
+                            "IDE" => "SATA / IDE",
+                            _ => iface
+                        };
 
-                            string mediaTypeStr;
-                            if (!isInternal)
-                            {
-                                mediaTypeStr = "Removable Storage (USB Flash Drive)";
-                            }
-                            else if (model.Contains("NVMe", StringComparison.OrdinalIgnoreCase) || model.Contains("SSD", StringComparison.OrdinalIgnoreCase) || iface.Contains("SCSI", StringComparison.OrdinalIgnoreCase))
-                            {
-                                mediaTypeStr = "Solid State Drive (SSD)";
-                            }
-                            else
-                            {
-                                mediaTypeStr = "Hard Disk Drive (HDD)";
-                            }
+                        string liveStyle = QueryLivePartitionStyle(idx);
+                        string initialStyle = !string.IsNullOrEmpty(liveStyle)
+                            ? liveStyle
+                            : (idx == 0 ? "GPT (GUID Partition Table - Modern UEFI)" : "MBR (Master Boot Record - Legacy)");
 
-                            string busTypeStr = iface switch
-                            {
-                                "SCSI" => model.Contains("NVMe", StringComparison.OrdinalIgnoreCase) ? "NVMe (PCIe)" : "SCSI",
-                                "USB" => "USB",
-                                "IDE" => "SATA / IDE",
-                                _ => iface
-                            };
+                        var item = new PhysicalDiskMetadata
+                        {
+                            Index = idx,
+                            Model = model,
+                            MediaType = mediaTypeStr,
+                            BusType = busTypeStr,
+                            IsInternal = isInternal,
+                            HardwareSizeBytes = size,
+                            HealthStatus = "Healthy",
+                            PartitionStyle = initialStyle
+                        };
 
-                            var item = new PhysicalDiskMetadata
-                            {
-                                Index = idx,
-                                Model = model,
-                                MediaType = mediaTypeStr,
-                                BusType = busTypeStr,
-                                IsInternal = isInternal,
-                                HardwareSizeBytes = size,
-                                HealthStatus = "Healthy",
-                                PartitionStyle = idx == 0 ? "GPT (GUID Partition Table - Modern UEFI)" : "MBR (Master Boot Record - Legacy)"
-                            };
-
+                        if (string.IsNullOrEmpty(liveStyle))
+                        {
                             try
                             {
                                 using var pSearcher = new ManagementObjectSearcher(@"root\Microsoft\Windows\Storage", $"SELECT PartitionStyle FROM MSFT_Disk WHERE Number={idx}");
@@ -657,23 +647,129 @@ namespace ResourceAnalyzer.Services
                                 }
                             }
                             catch { }
+                        }
 
+                        lock (_diskMetaLock)
+                        {
                             _diskMetadataCache[idx] = item;
-                            if (idx == diskIndex) meta = item;
                         }
                     }
                 }
-                catch { }
+            }
+            catch { }
+        }
+
+        internal static string QueryLivePartitionStyle(int diskIndex)
+        {
+            if (diskIndex < 0) return string.Empty;
+            try
+            {
+                string devicePath = $@"\\.\PhysicalDrive{diskIndex}";
+                using var handle = NativeMethods.CreateFile(
+                    devicePath,
+                    0, // dwDesiredAccess = 0 (Query access without requiring admin elevation)
+                    1 | 2 | 4, // FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE
+                    IntPtr.Zero,
+                    3, // OPEN_EXISTING
+                    0,
+                    IntPtr.Zero);
+
+                if (!handle.IsInvalid)
+                {
+                    int bufferSize = 4096;
+                    IntPtr buffer = Marshal.AllocHGlobal(bufferSize);
+                    try
+                    {
+                        if (NativeMethods.DeviceIoControl(
+                            handle,
+                            NativeMethods.IOCTL_DISK_GET_DRIVE_LAYOUT_EX,
+                            IntPtr.Zero,
+                            0,
+                            buffer,
+                            (uint)bufferSize,
+                            out uint bytesReturned,
+                            IntPtr.Zero) && bytesReturned >= 4)
+                        {
+                            int partitionStyle = Marshal.ReadInt32(buffer);
+                            return partitionStyle switch
+                            {
+                                0 => "MBR (Master Boot Record - Legacy)",
+                                1 => "GPT (GUID Partition Table - Modern UEFI)",
+                                2 => "RAW (Unformatted or Uninitialized)",
+                                _ => string.Empty
+                            };
+                        }
+                    }
+                    finally
+                    {
+                        Marshal.FreeHGlobal(buffer);
+                    }
+                }
+            }
+            catch { }
+            return string.Empty;
+        }
+
+        internal static PhysicalDiskMetadata GetPhysicalDiskMetadata(int diskIndex, string? usbLetter = null)
+        {
+            lock (_diskMetaLock)
+            {
+                if (diskIndex >= 0 && _diskMetadataCache.TryGetValue(diskIndex, out var cached))
+                {
+                    // For external / removable USB drives, query live partition style so user conversions (e.g. MBR to GPT) reflect instantly
+                    if (!cached.IsInternal || usbLetter != null)
+                    {
+                        string liveStyle = QueryLivePartitionStyle(diskIndex);
+                        if (!string.IsNullOrEmpty(liveStyle))
+                        {
+                            cached.PartitionStyle = liveStyle;
+                        }
+                    }
+                    return cached;
+                }
+
+                if (!_isDiskMetadataPopulating)
+                {
+                    _isDiskMetadataPopulating = true;
+                    Task.Run(() =>
+                    {
+                        try
+                        {
+                            PopulatePhysicalDiskMetadataCache();
+                        }
+                        finally
+                        {
+                            _isDiskMetadataPopulating = false;
+                        }
+                    });
+                }
+
+                string fallbackStyle = QueryLivePartitionStyle(diskIndex);
+                if (string.IsNullOrEmpty(fallbackStyle))
+                {
+                    fallbackStyle = diskIndex == 0 ? "GPT (GUID Partition Table - Modern UEFI)" : "MBR (Master Boot Record - Legacy)";
+                }
+
+                var defaultMeta = new PhysicalDiskMetadata
+                {
+                    Index = diskIndex,
+                    Model = "Physical Disk Drive",
+                    MediaType = "Solid State Drive (SSD)",
+                    BusType = "NVMe (PCIe)",
+                    IsInternal = usbLetter == null,
+                    HealthStatus = "Healthy",
+                    PartitionStyle = fallbackStyle
+                };
 
                 if (usbLetter != null)
                 {
-                    meta.IsInternal = false;
-                    meta.MediaType = "Removable Storage (USB Flash Drive)";
-                    meta.BusType = "USB";
-                    meta.HealthStatus = "Healthy (Ready to Eject / Safely Remove)";
+                    defaultMeta.IsInternal = false;
+                    defaultMeta.MediaType = "Removable Storage (USB Flash Drive)";
+                    defaultMeta.BusType = "USB";
+                    defaultMeta.HealthStatus = "Healthy (Ready to Eject / Safely Remove)";
                 }
 
-                return meta;
+                return defaultMeta;
             }
         }
 
@@ -992,41 +1088,61 @@ namespace ResourceAnalyzer.Services
         private static Dictionary<string, string> QueryWifiTelemetry()
         {
             var dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            // 1. Modern Windows 10/11 WinRT profile (zero location icon)
             try
             {
-                var psi = new ProcessStartInfo
+                var profile = Windows.Networking.Connectivity.NetworkInformation.GetInternetConnectionProfile();
+                if (profile != null && profile.IsWlanConnectionProfile)
                 {
-                    FileName = "netsh.exe",
-                    Arguments = "wlan show interfaces",
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    RedirectStandardOutput = true
-                };
-
-                using var proc = Process.Start(psi);
-                if (proc != null)
-                {
-                    string output = proc.StandardOutput.ReadToEnd();
-                    proc.WaitForExit(1000);
-
-                    using var reader = new StringReader(output);
-                    string? line;
-                    while ((line = reader.ReadLine()) != null)
+                    if (!string.IsNullOrEmpty(profile.ProfileName))
                     {
-                        int colonIdx = line.IndexOf(':');
-                        if (colonIdx > 0 && colonIdx < line.Length - 1)
-                        {
-                            string key = line.Substring(0, colonIdx).Trim();
-                            string val = line.Substring(colonIdx + 1).Trim();
-                            if (!string.IsNullOrEmpty(key) && !string.IsNullOrEmpty(val))
-                            {
-                                dict[key] = val;
-                            }
-                        }
+                        dict["SSID"] = profile.ProfileName;
+                    }
+                    byte? bars = profile.GetSignalBars();
+                    if (bars.HasValue)
+                    {
+                        dict["Signal"] = $"{bars.Value * 20}% ({bars.Value} of 5 bars)";
+                    }
+                    var adapter = profile.NetworkAdapter;
+                    if (adapter != null)
+                    {
+                        ulong inSpeed = adapter.InboundMaxBitsPerSecond;
+                        if (inSpeed > 300_000_000) dict["Band"] = "5 GHz";
+                        else if (inSpeed > 0 && inSpeed <= 72_000_000) dict["Band"] = "2.4 GHz";
+                    }
+                    if (profile.NetworkSecuritySettings != null)
+                    {
+                        dict["Authentication"] = profile.NetworkSecuritySettings.NetworkAuthenticationType.ToString();
                     }
                 }
             }
             catch { }
+
+            // 2. Windows Network List Manager COM interface fallback (zero location icon)
+            if (!dict.ContainsKey("SSID"))
+            {
+                try
+                {
+                    var nlmType = Type.GetTypeFromCLSID(new Guid("DCB00C01-570F-4A9B-8D69-199FDBA5723B"));
+                    if (nlmType != null)
+                    {
+                        dynamic nlm = Activator.CreateInstance(nlmType)!;
+                        var networks = nlm.GetNetworks(1 /* NLM_ENUM_NETWORK_CONNECTED */);
+                        foreach (var net in networks)
+                        {
+                            string name = (string)net.GetName();
+                            if (!string.IsNullOrWhiteSpace(name))
+                            {
+                                dict["SSID"] = name;
+                                break;
+                            }
+                        }
+                    }
+                }
+                catch { }
+            }
+
             return dict;
         }
 
@@ -1403,6 +1519,40 @@ namespace ResourceAnalyzer.Services
 
         internal static string GetActivePowerPlan()
         {
+            // 1. Modern Windows 10/11 Dynamic Power Mode Overlay (Best Performance / Balanced / Best Power Efficiency)
+            try
+            {
+                bool isPluggedIn = true;
+                if (NativeMethods.GetSystemPowerStatus(out var status))
+                {
+                    isPluggedIn = status.ACLineStatus == 1;
+                }
+
+                using var key = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Control\Power\User\PowerSchemes");
+                if (key != null)
+                {
+                    string valName = isPluggedIn ? "ActiveOverlayAcPowerScheme" : "ActiveOverlayDcPowerScheme";
+                    string overlayGuid = key.GetValue(valName)?.ToString()?.Trim()?.ToLowerInvariant() ?? string.Empty;
+
+                    string mode = overlayGuid switch
+                    {
+                        "961cc777-2547-4f9d-8174-7d86181b8a7a" => "Best Power Efficiency",
+                        "3af9b67a-dd24-406a-a28a-fb59f23e4b77" => "Better Battery",
+                        "ded574b5-45a0-4f42-8737-46345c09c238" => "Best Performance",
+                        "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c" => "High Performance",
+                        "00000000-0000-0000-0000-000000000000" => "Balanced",
+                        _ => string.Empty
+                    };
+
+                    if (!string.IsNullOrEmpty(mode))
+                    {
+                        return mode;
+                    }
+                }
+            }
+            catch { }
+
+            // 2. Fallback: Classic Win32 Base Power Scheme
             try
             {
                 if (NativeMethods.PowerGetActiveScheme(IntPtr.Zero, out IntPtr pGuid) == 0 && pGuid != IntPtr.Zero)

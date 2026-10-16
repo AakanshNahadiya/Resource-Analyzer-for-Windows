@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading.Tasks;
 using Xunit;
 using Xunit.Abstractions;
@@ -162,6 +162,27 @@ namespace ResourceAnalyzer.Tests
             item.BatteryPercent = 4.2;
             Assert.True(item.HasPercent);
             Assert.True(propChangedFired);
+        }
+
+        [Fact]
+        public async Task DataUsageService_GetTodayTotalUsageAsync_ReturnsNonNegativeUsage()
+        {
+            var service = new DataUsageService();
+            var (recv, sent) = await service.GetTodayTotalUsageAsync();
+            _output.WriteLine($"Today Total Usage: Received={recv}, Sent={sent}");
+            Assert.True(recv >= 0);
+            Assert.True(sent >= 0);
+        }
+
+        [Fact]
+        public async Task DataUsageService_GetDataUsageAsync_Today_ReturnsNonNegativeTotals()
+        {
+            var service = new DataUsageService();
+            var (apps, recv, sent) = await service.GetDataUsageAsync("Today", currentNetworkOnly: false, searchTerm: string.Empty);
+            _output.WriteLine($"Today Apps Count: {apps.Count}, Received={recv}, Sent={sent}");
+            Assert.NotNull(apps);
+            Assert.True(recv >= 0);
+            Assert.True(sent >= 0);
         }
     }
 }

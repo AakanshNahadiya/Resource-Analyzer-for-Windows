@@ -1,4 +1,4 @@
-﻿using System.Threading.Tasks;
+using System.Threading.Tasks;
 using Xunit;
 using Xunit.Abstractions;
 using ResourceAnalyzer.Services;
@@ -195,6 +195,22 @@ namespace ResourceAnalyzer.Tests
             Assert.Contains("Drive Location: External (Removable USB Storage)", details);
             Assert.Contains("Safe Removal:", details);
             Assert.Contains("Bus Type: USB", details);
+        }
+
+        [Fact]
+        public void QueryLivePartitionStyle_InvalidDiskIndex_ReturnsEmptySafely()
+        {
+            string style = HardwareDetailService.QueryLivePartitionStyle(-1);
+            Assert.Empty(style);
+        }
+
+        [Fact]
+        public void GetPhysicalDiskMetadata_ReturnsValidMetadataInstance()
+        {
+            var meta = HardwareDetailService.GetPhysicalDiskMetadata(0);
+            Assert.NotNull(meta);
+            Assert.False(string.IsNullOrWhiteSpace(meta.Model));
+            Assert.False(string.IsNullOrWhiteSpace(meta.PartitionStyle));
         }
     }
 }

@@ -283,6 +283,31 @@ namespace ResourceAnalyzer
             }
         }
 
+        private void TriggerResourceAlert(string title, string msg)
+        {
+            // Play alert exclamation chime (user confirmed sound is fine)
+            try { System.Media.SystemSounds.Exclamation.Play(); } catch { }
+
+            // Check if application window is actively focused and visible on screen
+            bool isWindowActiveAndVisible = IsActive && Visibility == Visibility.Visible && WindowState != WindowState.Minimized;
+
+            if (isWindowActiveAndVisible || _trayIcon == null)
+            {
+                // App is active and focused on screen: speak directly to NVDA / LiveRegion, skip tray balloon
+                _speechService.Speak(msg, interrupt: true);
+                txtAnnouncement.Text = msg;
+            }
+            else
+            {
+                // App is minimized to system tray or in background:
+                // Show native Windows tray balloon tip. Windows Shell automatically displays the
+                // notification popup visually for sighted users and announces it to NVDA, JAWS,
+                // and Narrator via Windows OS accessibility.
+                // We skip _speechService.Speak here so NVDA announces the alert ONLY ONCE!
+                _trayIcon.ShowBalloonTip(title, msg);
+            }
+        }
+
         private void CheckResourceAlerts(List<ProcessItem> list)
         {
             var s = _settingsService.CurrentSettings;
@@ -297,9 +322,16 @@ namespace ResourceAnalyzer
             double cpuLimitPercent = s.HighCpuLimitPercent;
             var now = DateTime.UtcNow;
 
+            // Exclude PID 0 (System Idle Process) and PID 4 (System Kernel) - these are not actionable applications
+            var actionableProcesses = list.Where(p =>
+                p.Pid > 4 &&
+                !p.Name.Equals("Idle", StringComparison.OrdinalIgnoreCase) &&
+                !p.Name.Equals("System Idle Process", StringComparison.OrdinalIgnoreCase) &&
+                !p.Name.Equals("System", StringComparison.OrdinalIgnoreCase));
+
             // Group by process name so that multi-instance applications (like Chrome, Edge, etc.)
             // have their combined total resource usage evaluated against the limit.
-            var appGroups = list.GroupBy(p => p.Name, StringComparer.OrdinalIgnoreCase);
+            var appGroups = actionableProcesses.GroupBy(p => p.Name, StringComparer.OrdinalIgnoreCase).ToList();
 
             foreach (var group in appGroups)
             {
@@ -307,7 +339,8 @@ namespace ResourceAnalyzer
                 double totalCpuPercent = group.Sum(p => p.CpuPercent);
                 var first = group.First();
                 int count = group.Count();
-                string appTitle = count > 1 ? $"{first.DisplayName} ({count} instances)" : first.DisplayName;
+                string baseName = !string.IsNullOrWhiteSpace(first.DisplayName) ? first.DisplayName : (!string.IsNullOrWhiteSpace(first.Name) ? first.Name : group.Key);
+                string appTitle = count > 1 ? $"{baseName} ({count} instances)" : baseName;
 
                 // Check RAM
                 if (checkRam && totalRamBytes > ramLimitBytes)
@@ -319,28 +352,44 @@ namespace ResourceAnalyzer
                         string limitStr = $"{s.HighRamLimitValue} {s.HighRamLimitUnit}";
                         string usedStr = FormatHelper.FormatBytes(totalRamBytes);
                         string msg = $"{appTitle} is exceeding maximum RAM usage ({usedStr}, limit: {limitStr}).";
-
-                        try { System.Media.SystemSounds.Exclamation.Play(); } catch { }
-                        _trayIcon?.ShowBalloonTip("High RAM Usage Alert", msg);
-                        _speechService.Speak(msg, interrupt: true);
-                        txtAnnouncement.Text = msg;
+                        TriggerResourceAlert("High RAM Usage Alert", msg);
                     }
                 }
 
                 // Check CPU
+                string cpuKey = $"CPU_{group.Key}";
                 if (checkCpu && totalCpuPercent >= cpuLimitPercent)
                 {
-                    string cpuKey = $"CPU_{group.Key}";
-                    if (!_lastAlertTimes.TryGetValue(cpuKey, out var lastTime) || (now - lastTime).TotalSeconds >= 60)
-                    {
-                        _lastAlertTimes[cpuKey] = now;
-                        string msg = $"{appTitle} is exceeding maximum CPU usage ({totalCpuPercent:F1}%, limit: {cpuLimitPercent:F0}%).";
+                    _consecutiveCpuAlertHits.TryGetValue(cpuKey, out int hits);
+                    hits++;
+                    _consecutiveCpuAlertHits[cpuKey] = hits;
 
-                        try { System.Media.SystemSounds.Exclamation.Play(); } catch { }
-                        _trayIcon?.ShowBalloonTip("High CPU Usage Alert", msg);
-                        _speechService.Speak(msg, interrupt: true);
-                        txtAnnouncement.Text = msg;
+                    // Require at least 2 consecutive high CPU checks (~2 seconds) so brief transient launch bursts don't trigger false alarms
+                    if (hits >= 2)
+                    {
+                        if (!_lastAlertTimes.TryGetValue(cpuKey, out var lastTime) || (now - lastTime).TotalSeconds >= 60)
+                        {
+                            _lastAlertTimes[cpuKey] = now;
+                            string msg = $"{appTitle} is exceeding maximum CPU usage ({totalCpuPercent:F1}%, limit: {cpuLimitPercent:F0}%).";
+                            TriggerResourceAlert("High CPU Usage Alert", msg);
+                        }
                     }
+                }
+                else
+                {
+                    // Reset hit counter if CPU drops below limit
+                    _consecutiveCpuAlertHits.Remove(cpuKey);
+                }
+            }
+
+            // Prune stale CPU hit counters for terminated applications
+            if (_consecutiveCpuAlertHits.Count > 0)
+            {
+                var activeCpuKeys = new HashSet<string>(appGroups.Select(g => $"CPU_{g.Key}"), StringComparer.OrdinalIgnoreCase);
+                var stale = _consecutiveCpuAlertHits.Keys.Where(k => !activeCpuKeys.Contains(k)).ToList();
+                foreach (var k in stale)
+                {
+                    _consecutiveCpuAlertHits.Remove(k);
                 }
             }
         }
@@ -377,8 +426,7 @@ namespace ResourceAnalyzer
                         _settingsService.CurrentSettings.ConfirmBeforeEndTask = false;
                         if (cmbProcessManager != null)
                         {
-                            bool hideSys = _settingsService.CurrentSettings.HideSystemProcesses;
-                            cmbProcessManager.SelectedIndex = hideSys ? 1 : 3;
+                            cmbProcessManager.SelectedIndex = 1;
                         }
                         _settingsService.Save();
                     }
@@ -419,8 +467,7 @@ namespace ResourceAnalyzer
                     _settingsService.CurrentSettings.ConfirmBeforeEndTask = false;
                     if (cmbProcessManager != null)
                     {
-                        bool hideSys = _settingsService.CurrentSettings.HideSystemProcesses;
-                        cmbProcessManager.SelectedIndex = hideSys ? 1 : 3;
+                        cmbProcessManager.SelectedIndex = 1;
                     }
                     _settingsService.Save();
                 }
@@ -465,8 +512,7 @@ namespace ResourceAnalyzer
                         _settingsService.CurrentSettings.ConfirmBeforeEndTask = false;
                         if (cmbProcessManager != null)
                         {
-                            bool hideSys = _settingsService.CurrentSettings.HideSystemProcesses;
-                            cmbProcessManager.SelectedIndex = hideSys ? 1 : 3;
+                            cmbProcessManager.SelectedIndex = 1;
                         }
                         _settingsService.Save();
                     }
@@ -507,8 +553,7 @@ namespace ResourceAnalyzer
                     _settingsService.CurrentSettings.ConfirmBeforeEndTask = false;
                     if (cmbProcessManager != null)
                     {
-                        bool hideSys = _settingsService.CurrentSettings.HideSystemProcesses;
-                        cmbProcessManager.SelectedIndex = hideSys ? 1 : 3;
+                        cmbProcessManager.SelectedIndex = 1;
                     }
                     _settingsService.Save();
                 }

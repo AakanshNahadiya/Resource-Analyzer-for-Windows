@@ -22,9 +22,24 @@ namespace ResourceAnalyzer
             _ = RefreshBatteryUsageAsync(announce: false);
         }
 
+        private void UpdateBatteryControlsState()
+        {
+            bool sinceLastCharge = chkSinceLastCharge?.IsChecked == true;
+            if (cmbBatteryTimeRange != null)
+            {
+                cmbBatteryTimeRange.IsEnabled = !sinceLastCharge;
+                System.Windows.Automation.AutomationProperties.SetName(
+                    cmbBatteryTimeRange,
+                    sinceLastCharge
+                        ? "Filter Battery Usage by Time Period (Disabled: Overridden by Since Last Charge)"
+                        : "Filter Battery Usage by Time Period");
+            }
+        }
+
         private void ChkSinceLastCharge_Checked(object sender, RoutedEventArgs e)
         {
             if (_isUpdatingUI) return;
+            UpdateBatteryControlsState();
             _batteryUsageService.ResetAppEnergy();
             _ = RefreshBatteryUsageAsync(announce: true);
         }
@@ -32,6 +47,7 @@ namespace ResourceAnalyzer
         private void ChkSinceLastCharge_Unchecked(object sender, RoutedEventArgs e)
         {
             if (_isUpdatingUI) return;
+            UpdateBatteryControlsState();
             _batteryUsageService.ResetAppEnergy();
             _ = RefreshBatteryUsageAsync(announce: true);
         }
@@ -66,6 +82,7 @@ namespace ResourceAnalyzer
         {
             try
             {
+                UpdateBatteryControlsState();
                 string timeRange = cmbBatteryTimeRange?.SelectedIndex switch
                 {
                     0 => "Full",
@@ -184,7 +201,8 @@ namespace ResourceAnalyzer
                     liveState.DischargeRateMw,
                     liveState.IsDischarging,
                     fgPid,
-                    displayMode);
+                    displayMode,
+                    liveState.IsOnAc);
 
                 UpdateAppBatteryCollectionInPlace(updatedApps, isFullReset);
             }
@@ -238,7 +256,8 @@ namespace ResourceAnalyzer
                         incoming.BatteryPercent,
                         incoming.PowerImpact,
                         incoming.IsForeground,
-                        incoming.DisplayMode);
+                        incoming.DisplayMode,
+                        incoming.IsOnAc);
                 }
                 else
                 {

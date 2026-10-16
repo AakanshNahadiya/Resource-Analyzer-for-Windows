@@ -109,6 +109,7 @@ namespace ResourceAnalyzer.Helpers
         }
 
         public const uint IOCTL_STORAGE_GET_DEVICE_NUMBER = 0x002D1080;
+        public const uint IOCTL_DISK_GET_DRIVE_LAYOUT_EX = 0x00070050;
 
         [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Auto)]
         public static extern Microsoft.Win32.SafeHandles.SafeFileHandle CreateFile(
@@ -128,6 +129,18 @@ namespace ResourceAnalyzer.Helpers
             IntPtr lpInBuffer,
             uint nInBufferSize,
             out STORAGE_DEVICE_NUMBER lpOutBuffer,
+            uint nOutBufferSize,
+            out uint lpBytesReturned,
+            IntPtr lpOverlapped);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool DeviceIoControl(
+            Microsoft.Win32.SafeHandles.SafeFileHandle hDevice,
+            uint dwIoControlCode,
+            IntPtr lpInBuffer,
+            uint nInBufferSize,
+            IntPtr lpOutBuffer,
             uint nOutBufferSize,
             out uint lpBytesReturned,
             IntPtr lpOverlapped);

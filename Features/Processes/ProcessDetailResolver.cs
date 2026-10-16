@@ -73,12 +73,40 @@ namespace ResourceAnalyzer.Services
                 string? role = ExtractProcessRole(cmdLine, cleanName);
                 if (!string.IsNullOrEmpty(role))
                 {
+                    if (_commandLineRoleCache.Count > 300)
+                    {
+                        PruneDeadPidsFromRoleCache();
+                    }
                     _commandLineRoleCache[pid] = role;
                     return $"{role} ({appTag})";
                 }
             }
 
             return string.Empty;
+        }
+
+        private static void PruneDeadPidsFromRoleCache()
+        {
+            try
+            {
+                var keys = _commandLineRoleCache.Keys;
+                foreach (int pid in keys)
+                {
+                    try
+                    {
+                        using var p = Process.GetProcessById(pid);
+                        if (p.HasExited)
+                        {
+                            _commandLineRoleCache.TryRemove(pid, out _);
+                        }
+                    }
+                    catch
+                    {
+                        _commandLineRoleCache.TryRemove(pid, out _);
+                    }
+                }
+            }
+            catch { }
         }
 
         /// <summary>

@@ -450,33 +450,8 @@ namespace ResourceAnalyzer.Services
 
                 try
                 {
-                    bool taskkillSuccess = false;
-                    try
-                    {
-                        var psi = new ProcessStartInfo
-                        {
-                            FileName = "taskkill.exe",
-                            Arguments = $"/T /F /PID {pid}",
-                            CreateNoWindow = true,
-                            UseShellExecute = false,
-                            RedirectStandardError = true,
-                            RedirectStandardOutput = true
-                        };
-                        using var p = Process.Start(psi);
-                        if (p != null)
-                        {
-                            p.WaitForExit(3000);
-                            taskkillSuccess = (p.ExitCode == 0);
-                        }
-                    }
-                    catch { }
-
-                    if (!taskkillSuccess)
-                    {
-                        using var proc = Process.GetProcessById(pid);
-                        proc.Kill(true); // Terminate process and entire tree
-                    }
-
+                    using var proc = Process.GetProcessById(pid);
+                    proc.Kill(entireProcessTree: true); // Native .NET 10 process tree termination without spawning external taskkill.exe
                     return (true, $"Terminated process tree for {processName} (PID {pid}) and all child processes.");
                 }
                 catch (ArgumentException)
