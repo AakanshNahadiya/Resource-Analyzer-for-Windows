@@ -26,7 +26,7 @@ Resource Analyzer is an all-in-one solution for monitoring system resources, man
 * **100% Screen Reader Friendly:** Built and optimized from the ground up for NVDA, JAWS, and Windows Narrator.
 * **Solves Windows Data Usage:** Gives an instant breakdown of how much internet data each application has consumed.
 * **Real-Time Battery & Port Telemetry:** Tracks battery discharge logs, live per-app milliwatt drain, and active listening ports.
-* **Ultra-Lightweight:** Runs on only **18 MB to 35 MB of RAM** (compared to 150 MB+ on standard monitors).
+* **Ultra-Lightweight:** Runs on only **20 MB to 35 MB of RAM** (compared to 150 MB+ on standard monitors).
 
 Now it's time to set up Resource Analyzer step-by-step.
 
@@ -62,8 +62,10 @@ Use the <kbd>Down Arrow</kbd> and <kbd>Up Arrow</kbd> keys to move through your 
 
 * **CPU:** Speaks your overall load, logical core count, and processor model.
 * **RAM:** Automatically switches between MB and GB based on usage (e.g., `820 MB used` or `5.42 GB of 16.0 GB used`).
-* **Disk:** Shows the free and total capacity of your drive.
-* **Network:** Shows your active Wi-Fi or Ethernet adapter and real-time speeds.
+* **GPU:** Active graphics adapter name, driver date, dedicated VRAM, and total memory.
+* **Display:** Active resolution, refresh rate (Hz), DPI scaling factor, bit depth, and HDR status.
+* **Disk:** Shows the free and total capacity of your drive, along with live read/write speeds.
+* **Network:** Shows your active Wi-Fi or Ethernet adapter, SSID, signal strength, and real-time speeds.
 * **Battery:** Displays your battery percentage and charging status (automatically hidden on desktop PCs).
 
 ### Deep Technical Hardware Specifications
@@ -71,10 +73,11 @@ If you want deep technical specifications, press <kbd>Enter</kbd> on any hardwar
 
 * **CPU:** Base clock speed, physical cores, threads, L2/L3 cache, system uptime, and firmware virtualization status.
 * **RAM:** Memory clock speed (e.g. `3200 MHz`), slots used (e.g. `2 of 2 slots`), form factor (SODIMM/DIMM), hardware reserved memory, committed memory, cached memory, and individual module part numbers.
+* **GPU:** Graphics adapter, driver version, driver release date, dedicated VRAM, and display resolution.
+* **Display:** Monitor model, resolution, refresh rate (Hz), scale factor, bit depth, color space, and primary display flag.
 * **Disk:** Drive model (e.g. `NVMe Intel SSD`), interface type, partition count, and breakdown of all connected drives.
 * **Network:** Controller name, physical MAC address, Wi-Fi SSID, Wi-Fi standard (802.11ac/ax), radio band (5 GHz / 2.4 GHz), Wi-Fi channel, signal strength %, IP addresses, gateway, and DNS servers.
-* **GPU:** Graphics adapter, driver version, driver release date, dedicated VRAM, and display resolution.
-* **Battery:** Charge %, power source, battery device name, and battery chemistry.
+* **Battery:** Health %, wear level, design capacity, full charge capacity, charge cycles (cleanly omitted if unsupported), and chemistry.
 
 > [!TIP]
 > Inside the Technical Details dialog, use <kbd>Down Arrow</kbd> and <kbd>Up Arrow</kbd> to read each specification line-by-line. Press <kbd>Ctrl</kbd> + <kbd>C</kbd> (or <kbd>Tab</kbd> to **Copy to Clipboard**) to copy the full technical report, and press <kbd>Escape</kbd> to close.
@@ -93,7 +96,7 @@ Every running process is shown as a clean, single-line sentence. Multi-instance 
 ### Managing Processes:
 1. **Expand and Collapse Groups:**
    * On any grouped process, press <kbd>Right Arrow</kbd> to expand the group.
-   * Use <kbd>Down Arrow</kbd> to explore each individual child process with its Process ID (PID).
+   * Use <kbd>Down Arrow</kbd> to explore each individual child process. The app automatically identifies what each sub-process is doing (window titles, hosted Windows service names, or roles like `Web Content (Tab)` and `GPU Process`).
    * Press <kbd>Left Arrow</kbd> to collapse the group back.
    * Press <kbd>Ctrl</kbd> + <kbd>G</kbd> to toggle application grouping on or off.
 2. **Search for an App:**
@@ -104,11 +107,11 @@ Every running process is shown as a clean, single-line sentence. Multi-instance 
    * <kbd>Ctrl</kbd> + <kbd>M</kbd>: Sort by highest Memory (RAM).
    * <kbd>Ctrl</kbd> + <kbd>P</kbd>: Sort by highest CPU usage.
    * <kbd>Ctrl</kbd> + <kbd>N</kbd>: Sort alphabetically by Name.
-4. **End an Unresponsive Task:**
+4. **Task Actions:**
    * Select the process you want to close and press <kbd>Delete</kbd>.
-   * If confirmation is enabled, press <kbd>Enter</kbd> on **Yes**.
-   * Press <kbd>Shift</kbd> + <kbd>Delete</kbd> to end an entire process tree.
-   * You can also press <kbd>Shift</kbd> + <kbd>F10</kbd> (or the Application key) to open the context menu for **Open File Location** or **Search on Web**.
+   * Press <kbd>Shift</kbd> + <kbd>Delete</kbd> to end an entire parent-child process tree.
+   * Press <kbd>Ctrl</kbd> + <kbd>R</kbd> to restart a process with its original command-line arguments and working directory.
+   * Press <kbd>Shift</kbd> + <kbd>F10</kbd> (or the Application key) to open the context menu for **Restart Task**, **End Task**, **Open File Location**, or **Search on Web**.
 
 ---
 
@@ -133,7 +136,10 @@ Press <kbd>Ctrl</kbd> + <kbd>4</kbd> to switch to **Tab 4: Battery Usage** (on l
 
 1. **Filter by Time Range:** Choose **Full**, **Last Month**, **Last Week**, **Last 24 Hours**, or **Today**.
 2. **Since Last Charge:** Check the *"Since Last Charge"* box to calculate discharge energy and active time starting from the moment you unplugged your charger.
-3. **Accuracy Disclaimer:** A clear, non-technical explanation notes that individual app energy draw is estimated from processor and display activity. You can check *"Don't show again"* and press *"Dismiss"* to hide it.
+3. **Choose Display Mode:**
+   * **Combined (Default):** Shows percentage of battery consumed and estimated power draw in milliwatts (`mW`).
+   * **Percentage Only:** Shows clean percentage consumed per application.
+   * **Drain Rate:** Shows live estimated power draw in milliwatts (`mW`).
 4. **Dual Accessible Lists:**
    * **List 1 (Battery Sessions):** Shows historical battery discharge and charging sessions with start time, duration, energy consumed (mWh), and discharge %.
    * **List 2 (Application Battery Usage):** Live telemetry scanning running applications to show their energy impact, estimated power draw in milliwatts (mW), and percentage of battery consumed.
@@ -156,12 +162,13 @@ Press <kbd>Ctrl</kbd> + <kbd>5</kbd> to switch to **Tab 5: Network Ports**:
 
 ---
 
-## Step 7: Check Network Speed from Anywhere (<kbd>Ctrl</kbd> + <kbd>Win</kbd> + <kbd>I</kbd>)
+## Step 7: Check Network Speed and Daily Data from Anywhere
 
-You don't need to open Resource Analyzer every time you want to check your internet connection:
+You don't need to open Resource Analyzer every time you want to check your internet:
 
-* Press <kbd>Ctrl</kbd> + <kbd>Win</kbd> + <kbd>I</kbd> from **anywhere in Windows** (even while inside a web browser, editor, or full-screen game).
-* Your screen reader will immediately speak your live download and upload throughput without moving focus away from your work.
+* **Check Live Speed:** Press <kbd>Ctrl</kbd> + <kbd>Win</kbd> + <kbd>I</kbd> once from **anywhere in Windows**. Your screen reader immediately speaks your current download and upload speeds.
+* **Check Daily Data Usage:** Press <kbd>Ctrl</kbd> + <kbd>Win</kbd> + <kbd>I</kbd> **twice quickly** (within 300 ms). Your screen reader immediately speaks your total internet data consumed today.
+* **Show/Hide Window:** Press <kbd>Ctrl</kbd> + <kbd>Win</kbd> + <kbd>T</kbd> to bring Resource Analyzer to the foreground or minimize it.
 
 ---
 
@@ -174,23 +181,21 @@ Use <kbd>Tab</kbd> and <kbd>Arrow keys</kbd> to customize your options:
 1. **Process Manager Settings:**
    * Decide whether to hide Windows system processes, and whether to prompt for confirmation before ending tasks.
    * Choose how process names are spoken (showing/hiding `.exe` extensions and PIDs).
-   * Choose between grouped applications or a flat list.
 2. **Resource Overuse Alerts:**
    * Enable speech and notification alerts when an app exceeds your chosen limit.
    * Alert on High RAM, High CPU, or both with custom thresholds (e.g. 2 GB RAM or 80% CPU).
-3. **Visible Resources in Resource Monitor:**
-   * Choose which hardware items appear in the Resources tab.
-   * Pick presets (**All Resources**, **Essential**, **Minimal**) or use **Custom Selection** to individually toggle CPU, RAM, GPU, Network, Disk, or Battery.
-4. **Auto-Refresh Rate:**
+3. **Auto-Refresh Rate:**
    * Background update intervals: **1s**, **2s (Default)**, **3s**, **5s**, or **Paused** (manual <kbd>F5</kbd> only).
-5. **Appearance and Color Theme:**
+4. **Appearance and Color Theme:**
    * Select your visual theme: **System Default** (follows Windows dark/light mode), **Dark Theme**, **Light Theme**, or **High Contrast Black**.
-6. **Startup and System Tray:**
+5. **Startup and System Tray:**
    * Configure window closing behavior (minimize to system tray or exit completely).
    * Toggle starting automatically with Windows.
-7. **Windows System Tools:**
+6. **Windows System Tools:**
    * Open native **Windows Startup Apps Settings** (<kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>S</kbd>) directly.
    * Open native **Windows Services Manager** (`services.msc`) directly from an accessible button.
+7. **Application Updates:**
+   * Check for newer official releases with a single button. If an update is available, download and install it in one click.
 8. **Preferences and Reset:**
    * Choose whether to remember your process sort and filter preferences across restarts.
    * Press **Reset All Settings to Defaults** to restore original configurations anytime.
@@ -222,6 +227,7 @@ Use <kbd>Tab</kbd> and <kbd>Arrow keys</kbd> to customize your options:
 | <kbd>Enter</kbd> | View detailed technical hardware specifications (Resources tab) |
 | <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>C</kbd> | Copy complete plain-text System Diagnostic Snapshot to clipboard |
 | <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>A</kbd> | Restart Resource Analyzer as Administrator |
+| <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>S</kbd> | Open Windows Startup Apps Settings |
 | <kbd>Ctrl</kbd> + <kbd>F</kbd> | Search / filter processes, data usage, or network ports |
 | <kbd>Ctrl</kbd> + <kbd>M</kbd> | Sort processes by Memory (RAM) usage |
 | <kbd>Ctrl</kbd> + <kbd>P</kbd> | Sort processes by CPU usage / Sort ports by Port Number |
@@ -230,9 +236,10 @@ Use <kbd>Tab</kbd> and <kbd>Arrow keys</kbd> to customize your options:
 | <kbd>Ctrl</kbd> + <kbd>G</kbd> | Toggle application grouping on or off (Processes tab) |
 | <kbd>Right Arrow</kbd> | Expand grouped application to see sub-processes (Processes tab) |
 | <kbd>Left Arrow</kbd> | Collapse grouped application (Processes tab) |
+| <kbd>Ctrl</kbd> + <kbd>R</kbd> | Restart selected process |
 | <kbd>Delete</kbd> | End selected task or port owner process |
 | <kbd>Shift</kbd> + <kbd>Delete</kbd> | End entire process tree (Processes tab) |
-| <kbd>Ctrl</kbd> + <kbd>Win</kbd> + <kbd>I</kbd> | Global hotkey: Speak current network speed from anywhere |
+| <kbd>Ctrl</kbd> + <kbd>Win</kbd> + <kbd>I</kbd> | Single tap: Speak live network speed / Double tap: Speak today's data usage |
 | <kbd>Ctrl</kbd> + <kbd>Win</kbd> + <kbd>T</kbd> | Global hotkey: Show or restore Resource Analyzer window |
 
 ---
@@ -244,7 +251,4 @@ This is how you can easily monitor your PC resources, track your data usage, ins
 Finally, I will end here. If you have any questions, suggestions, ideas, or anything else, do let me know in the GitHub issues section!
 
 > **Disclaimer:** This application is created by using Google's Antigravity AI assistant. Some issues may occur.
-
-For now:  
-**Thank you for reading,**  
 **Have a great accessible experience!**
