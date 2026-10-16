@@ -247,8 +247,11 @@
                              Background="{DynamicResource WindowBackgroundBrush}" BorderThickness="0"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                              ScrollViewer.VerticalScrollBarVisibility="Auto"
-                             VirtualizingStackPanel.IsVirtualizing="True"
-                             VirtualizingStackPanel.VirtualizationMode="Recycling"
+                             VirtualizingPanel.IsVirtualizing="True"
+                             VirtualizingPanel.VirtualizationMode="Recycling"
+                             VirtualizingPanel.ScrollUnit="Item"
+                             VirtualizingPanel.CacheLength="2"
+                             VirtualizingPanel.CacheLengthUnit="Page"
                              KeyDown="LstProcesses_KeyDown"
                              MouseDoubleClick="LstProcesses_MouseDoubleClick"
                              AutomationProperties.Name="Running Processes">
@@ -256,6 +259,7 @@
                             <ContextMenu x:Name="ctxProcessMenu">
                                 <MenuItem Header="End Task (Delete)" Click="CtxEndTask_Click" InputGestureText="Del" AutomationProperties.Name="End Selected Task"/>
                                 <MenuItem Header="End Process Tree (Shift+Delete)" Click="CtxEndProcessTree_Click" InputGestureText="Shift+Del" AutomationProperties.Name="End Entire Process Tree"/>
+                                <MenuItem Header="Restart Task (Ctrl+R)" Click="CtxRestartTask_Click" InputGestureText="Ctrl+R" AutomationProperties.Name="Restart Selected Task"/>
                                 <MenuItem Header="Open File Location" Click="CtxOpenFileLocation_Click" AutomationProperties.Name="Open File Location in Explorer"/>
                                 <MenuItem Header="Search on Web" Click="CtxSearchWeb_Click" AutomationProperties.Name="Search Process Online"/>
                                 <Separator Background="{DynamicResource BorderBrush}"/>
@@ -390,10 +394,15 @@
                                 AutomationProperties.Name="Refresh Battery Sessions and Live Telemetry"/>
                     </WrapPanel>
 
-                    <!-- Summary line -->
-                    <TextBlock x:Name="txtBatterySummary" Grid.Row="1" Margin="0,0,0,8" Foreground="{DynamicResource AccentBrush}" FontWeight="SemiBold"
-                               Text="Loading battery energy usage..."
-                               AutomationProperties.Name="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+                    <!-- Summary and Health Info -->
+                    <StackPanel Grid.Row="1" Margin="0,0,0,8">
+                        <TextBlock x:Name="txtBatterySummary" Foreground="{DynamicResource AccentBrush}" FontWeight="SemiBold"
+                                   Text="Loading battery energy usage..." Margin="0,0,0,3"
+                                   AutomationProperties.Name="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+                        <TextBlock x:Name="txtBatteryHealthAndCycles" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12.5"
+                                   Text="Battery Health &amp; Cycles: Loading..."
+                                   AutomationProperties.Name="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+                    </StackPanel>
 
                     <!-- Disclaimer Banner -->
                     <Border x:Name="pnlBatteryDisclaimer" Grid.Row="2"
@@ -617,16 +626,14 @@
                     <StackPanel Margin="16" MaxWidth="620" HorizontalAlignment="Left">
                         <!-- Section 1: Process Filtering & Safety -->
                         <TextBlock Text="Process Manager Settings" FontWeight="Bold" FontSize="15" Foreground="{DynamicResource AccentBrush}" Margin="0,0,0,4"/>
-                        <TextBlock Text="Process visibility and end task safety options:" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,8"/>
+                        <TextBlock Text="Process end task confirmation and safety options:" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,8"/>
                         <ComboBox x:Name="cmbProcessManager" Width="460" Height="30" HorizontalAlignment="Left"
                                   SelectedIndex="0"
                                   SelectionChanged="CmbProcessManager_SelectionChanged"
                                   Background="{DynamicResource InputBackgroundBrush}" Foreground="{DynamicResource InputForegroundBrush}" BorderBrush="{DynamicResource InputBorderBrush}"
                                   AutomationProperties.Name="Process Manager Options">
-                            <ComboBoxItem Content="Hide system processes, Prompt before ending task (Recommended)"/>
-                            <ComboBoxItem Content="Hide system processes, End task immediately (No prompt)"/>
-                            <ComboBoxItem Content="Show all processes, Prompt before ending task"/>
-                            <ComboBoxItem Content="Show all processes, End task immediately (No prompt)"/>
+                            <ComboBoxItem Content="Prompt before ending task (Recommended)"/>
+                            <ComboBoxItem Content="End task immediately (No prompt)"/>
                         </ComboBox>
 
                         <TextBlock Text="Process Naming &amp; Speech Details:" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,12,0,8"/>
@@ -680,30 +687,7 @@
                             <TextBlock Text=" %" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"/>
                         </StackPanel>
 
-                        <Separator Background="{DynamicResource BorderBrush}" Margin="0,16"/>
 
-                        <!-- Section 3: Visible Resources in Tab 1 -->
-                        <TextBlock Text="Visible Resources in Resource Monitor" FontWeight="Bold" FontSize="15" Foreground="{DynamicResource AccentBrush}" Margin="0,0,0,4"/>
-                        <TextBlock Text="Select which computer resources appear in the Resources tab:" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,8"/>
-                        <ComboBox x:Name="cmbVisibleResources" Width="460" Height="30" HorizontalAlignment="Left"
-                                  SelectionChanged="CmbVisibleResources_SelectionChanged"
-                                  Background="{DynamicResource InputBackgroundBrush}" Foreground="{DynamicResource InputForegroundBrush}" BorderBrush="{DynamicResource InputBorderBrush}"
-                                  AutomationProperties.Name="Visible Resources Preset">
-                            <ComboBoxItem Content="All Resources (CPU, RAM, GPU, Network, Disk, Battery) (Default)"/>
-                            <ComboBoxItem Content="Essential Resources (CPU, RAM, Network, Disk)"/>
-                            <ComboBoxItem Content="Minimal Resources (CPU and RAM only)"/>
-                            <ComboBoxItem Content="Custom Selection..."/>
-                        </ComboBox>
-
-                        <StackPanel x:Name="panelCustomResources" Margin="24,6,0,0" Visibility="Collapsed">
-                            <CheckBox x:Name="chkShowCpu" Content="CPU (Processor utilization and cores)" IsChecked="True" Checked="ResourceVisibilityChanged" Unchecked="ResourceVisibilityChanged"/>
-                            <CheckBox x:Name="chkShowRam" Content="RAM (Memory usage with dynamic MB / GB auto-switching)" IsChecked="True" Checked="ResourceVisibilityChanged" Unchecked="ResourceVisibilityChanged"/>
-                            <CheckBox x:Name="chkShowGpu" Content="GPU (Graphics utilization and adapter name)" IsChecked="True" Checked="ResourceVisibilityChanged" Unchecked="ResourceVisibilityChanged"/>
-                            <CheckBox x:Name="chkShowDisplay" Content="Display (Resolution, refresh rate, scaling, and monitor model)" IsChecked="True" Checked="ResourceVisibilityChanged" Unchecked="ResourceVisibilityChanged"/>
-                            <CheckBox x:Name="chkShowNetwork" Content="Network (Download and upload throughput)" IsChecked="True" Checked="ResourceVisibilityChanged" Unchecked="ResourceVisibilityChanged"/>
-                            <CheckBox x:Name="chkShowDisk" Content="Disk (Drive free space and total size)" IsChecked="True" Checked="ResourceVisibilityChanged" Unchecked="ResourceVisibilityChanged"/>
-                            <CheckBox x:Name="chkShowBattery" Content="Battery (Charge percentage and status, auto-hides on desktop PCs)" IsChecked="True" Checked="ResourceVisibilityChanged" Unchecked="ResourceVisibilityChanged"/>
-                        </StackPanel>
 
                         <Separator Background="{DynamicResource BorderBrush}" Margin="0,16"/>
 
@@ -799,7 +783,7 @@
 
                         <!-- Section 7: Application Updates -->
                         <TextBlock Text="Application Updates &amp; Version" FontWeight="Bold" FontSize="15" Foreground="{DynamicResource AccentBrush}" Margin="0,0,0,4"/>
-                        <TextBlock x:Name="txtCurrentVersion" Text="Current Version: v1.0.4" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,10"/>
+                        <TextBlock x:Name="txtCurrentVersion" Text="Current Version: v1.0.5" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,10"/>
 
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                             <Button x:Name="btnCheckForUpdates" Content="Check for Updates" Width="180" Height="30" Margin="0,0,10,0"

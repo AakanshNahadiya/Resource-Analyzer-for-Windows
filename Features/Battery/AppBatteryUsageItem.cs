@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 
@@ -14,6 +14,7 @@ namespace ResourceAnalyzer.Models
         private double _batteryPercent;
         private string _powerImpact = "Low";
         private bool _isForeground;
+        private bool _isOnAc;
         private string _displayMode = "Combined";
         private string _displayText = string.Empty;
 
@@ -132,6 +133,20 @@ namespace ResourceAnalyzer.Models
             }
         }
 
+        public bool IsOnAc
+        {
+            get => _isOnAc;
+            set
+            {
+                if (_isOnAc != value)
+                {
+                    _isOnAc = value;
+                    OnPropertyChanged();
+                    UpdateDisplayText();
+                }
+            }
+        }
+
         public string DisplayMode
         {
             get => _displayMode;
@@ -165,7 +180,8 @@ namespace ResourceAnalyzer.Models
             double batteryPercent,
             string powerImpact,
             bool isForeground,
-            string displayMode)
+            string displayMode,
+            bool isOnAc = false)
         {
             bool powerChanged = _estimatedPowerMw != estimatedPowerMw;
             bool energyChanged = Math.Abs(_energyConsumedMwh - energyConsumedMwh) > 0.01;
@@ -173,8 +189,9 @@ namespace ResourceAnalyzer.Models
             bool impactChanged = _powerImpact != powerImpact;
             bool fgChanged = _isForeground != isForeground;
             bool modeChanged = _displayMode != displayMode;
+            bool acChanged = _isOnAc != isOnAc;
 
-            if (powerChanged || energyChanged || percentChanged || impactChanged || fgChanged || modeChanged)
+            if (powerChanged || energyChanged || percentChanged || impactChanged || fgChanged || modeChanged || acChanged)
             {
                 _estimatedPowerMw = estimatedPowerMw;
                 _energyConsumedMwh = energyConsumedMwh;
@@ -182,6 +199,7 @@ namespace ResourceAnalyzer.Models
                 _powerImpact = powerImpact;
                 _isForeground = isForeground;
                 _displayMode = displayMode;
+                _isOnAc = isOnAc;
 
                 if (powerChanged) OnPropertyChanged(nameof(EstimatedPowerMw));
                 if (energyChanged) OnPropertyChanged(nameof(EnergyConsumedMwh));
@@ -193,6 +211,7 @@ namespace ResourceAnalyzer.Models
                 if (impactChanged) OnPropertyChanged(nameof(PowerImpact));
                 if (fgChanged) OnPropertyChanged(nameof(IsForeground));
                 if (modeChanged) OnPropertyChanged(nameof(DisplayMode));
+                if (acChanged) OnPropertyChanged(nameof(IsOnAc));
 
                 UpdateDisplayText();
             }
@@ -207,16 +226,22 @@ namespace ResourceAnalyzer.Models
             switch (_displayMode)
             {
                 case "Percentage":
-                    DisplayText = $"{name}: {pctStr} of battery used ({_energyConsumedMwh:N1} mWh){fgText}";
+                    string acTag = _isOnAc ? " (Plugged In / On Charger)" : "";
+                    DisplayText = $"{name}: {pctStr} of battery used ({_energyConsumedMwh:N1} mWh){acTag}{fgText}";
                     break;
 
                 case "DrainRate":
-                    DisplayText = $"{name}: {_estimatedPowerMw:N0} mW - {_powerImpact} Impact{fgText}";
+                    DisplayText = _isOnAc
+                        ? $"{name}: 0 mW (Plugged In / On Charger){fgText}"
+                        : $"{name}: {_estimatedPowerMw:N0} mW - {_powerImpact} Impact{fgText}";
                     break;
 
                 case "Combined":
                 default:
-                    DisplayText = $"{name}: {pctStr} of battery used ({_energyConsumedMwh:N1} mWh) - Live: {_estimatedPowerMw:N0} mW ({_powerImpact}){fgText}";
+                    string liveRateStr = _isOnAc
+                        ? "Live: 0 mW (Plugged In / On Charger)"
+                        : $"Live: {_estimatedPowerMw:N0} mW ({_powerImpact})";
+                    DisplayText = $"{name}: {pctStr} of battery used ({_energyConsumedMwh:N1} mWh) - {liveRateStr}{fgText}";
                     break;
             }
         }

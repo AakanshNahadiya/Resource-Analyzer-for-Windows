@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -25,6 +25,10 @@ namespace ResourceAnalyzer.Services
             {
                 var now = DateTimeOffset.Now;
                 var startOfDay = new DateTimeOffset(DateTime.Today);
+                if (startOfDay > now)
+                {
+                    startOfDay = now;
+                }
 
                 var states = new NetworkUsageStates
                 {

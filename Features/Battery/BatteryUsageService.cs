@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -19,6 +19,8 @@ namespace ResourceAnalyzer.Services
 
         DateTime? GetLastAcDisconnectTime();
 
+        Task<BatteryHealthInfo> GetBatteryHealthAsync();
+
         void AccumulateAppEnergy(
             IEnumerable<ProcessItem> processes,
             int currentDischargeRateMw,
@@ -31,9 +33,51 @@ namespace ResourceAnalyzer.Services
             int currentDischargeRateMw,
             bool isDischarging,
             int foregroundPid,
-            string displayMode);
+            string displayMode,
+            bool isOnAc = false);
 
         void ResetAppEnergy();
+
+        void InvalidateCache();
+    }
+
+    public class BatteryHealthInfo
+    {
+        public bool HasBattery { get; set; }
+        public int? CycleCount { get; set; }
+        public int RatedMaxCycles { get; set; } = 1000;
+        public long DesignCapacityMwh { get; set; }
+        public long FullChargeCapacityMwh { get; set; }
+        public double? HealthPercent => DesignCapacityMwh > 0 && FullChargeCapacityMwh > 0
+            ? Math.Min(100.0, (double)FullChargeCapacityMwh / DesignCapacityMwh * 100.0)
+            : null;
+        public string Chemistry { get; set; } = string.Empty;
+        public string Manufacturer { get; set; } = string.Empty;
+
+        public string FormatSummaryText()
+        {
+            if (!HasBattery) return "No battery detected (Desktop PC or AC only).";
+
+            var parts = new List<string>();
+
+            if (HealthPercent.HasValue)
+            {
+                parts.Add($"Health: {HealthPercent.Value:F1}% ({FullChargeCapacityMwh:N0} / {DesignCapacityMwh:N0} mWh)");
+            }
+
+            if (CycleCount.HasValue && CycleCount.Value > 0)
+            {
+                double pct = Math.Min(100.0, (CycleCount.Value / (double)RatedMaxCycles) * 100.0);
+                parts.Add($"Charge Cycles: {CycleCount.Value:N0} of {RatedMaxCycles:N0} ({pct:F0}% used)");
+            }
+
+            if (!string.IsNullOrWhiteSpace(Chemistry) && !Chemistry.Equals("Unknown", StringComparison.OrdinalIgnoreCase))
+            {
+                parts.Add($"Chemistry: {Chemistry}");
+            }
+
+            return string.Join(" | ", parts);
+        }
     }
 
     public class AppEnergyRecord
@@ -53,12 +97,22 @@ namespace ResourceAnalyzer.Services
     {
         private string? _cachedXmlContent;
         private DateTime _lastReportTime = DateTime.MinValue;
+        private DateTime _cachedTodayDate = DateTime.Today;
         private readonly object _lock = new();
 
         private static bool? _lastKnownAcOnline;
         private static DateTime? _liveLastAcDisconnectTime;
 
         private readonly Dictionary<string, AppEnergyRecord> _appEnergyRecords = new(StringComparer.OrdinalIgnoreCase);
+
+        public void InvalidateCache()
+        {
+            lock (_lock)
+            {
+                _cachedXmlContent = null;
+                _lastReportTime = DateTime.MinValue;
+            }
+        }
 
         public async Task<(List<BatteryUsageItem> Sessions, long TotalDischargeMwh, double TotalDischargePercent, TimeSpan ActiveDuration, TimeSpan StandbyDuration, bool HasBattery, DateTime? LastAcDisconnectTime)> GetBatteryUsageAsync(string timeRange, bool sinceLastCharge = false)
         {
@@ -68,6 +122,32 @@ namespace ResourceAnalyzer.Services
                 DateTime? liveDisconnect = _liveLastAcDisconnectTime;
                 DateTime? disconnectTime = liveDisconnect ?? GetLastAcDisconnectTime(xmlContent);
                 return ParseBatteryReportXml(xmlContent, timeRange, null, sinceLastCharge, disconnectTime);
+            });
+        }
+
+        public async Task<BatteryHealthInfo> GetBatteryHealthAsync()
+        {
+            return await Task.Run(() =>
+            {
+                string? xmlContent = GetBatteryReportXml();
+                var health = ParseBatteryHealth(xmlContent);
+
+                if (health.HasBattery && (!health.CycleCount.HasValue || health.CycleCount.Value == 0))
+                {
+                    int? wmiCycles = QueryWmiCycleCount();
+                    if (wmiCycles.HasValue && wmiCycles.Value > 0)
+                    {
+                        health.CycleCount = wmiCycles;
+                    }
+                }
+
+                var live = GetLiveBatteryState();
+                if (!live.HasBattery && !health.HasBattery)
+                {
+                    health.HasBattery = false;
+                }
+
+                return health;
             });
         }
 
@@ -174,22 +254,54 @@ namespace ResourceAnalyzer.Services
 
             lock (_lock)
             {
+                var today = DateTime.Today;
+                if (_cachedTodayDate != today)
+                {
+                    _cachedTodayDate = today;
+                    _appEnergyRecords.Clear();
+                }
+
                 var procList = processes.Where(p => !p.IsGroupHeader && p.Pid > 4).ToList();
                 if (procList.Count == 0) return;
+
+                var appGroups = procList.GroupBy(p => p.Name, StringComparer.OrdinalIgnoreCase).ToList();
+
+                // If laptop is plugged into AC power (not discharging), do not accumulate battery discharge mWh
+                if (!isDischarging)
+                {
+                    foreach (var g in appGroups)
+                    {
+                        string appName = g.Key;
+                        string displayName = g.FirstOrDefault(p => !string.IsNullOrEmpty(p.DisplayName))?.DisplayName ?? appName;
+                        if (!_appEnergyRecords.TryGetValue(appName, out var rec))
+                        {
+                            rec = new AppEnergyRecord
+                            {
+                                ProcessName = appName,
+                                DisplayName = displayName,
+                                Pid = g.First().Pid,
+                                FirstSeen = DateTime.Now
+                            };
+                            _appEnergyRecords[appName] = rec;
+                        }
+                        rec.LastPowerMw = 0;
+                        rec.LastIsForeground = g.Any(p => foregroundPid > 0 && p.Pid == foregroundPid);
+                        rec.LastCpuPercent = g.Sum(p => p.CpuPercent);
+                        rec.LastSeen = DateTime.Now;
+                        if (!string.IsNullOrEmpty(displayName))
+                        {
+                            rec.DisplayName = displayName;
+                        }
+                    }
+                    return;
+                }
 
                 double totalCpu = procList.Sum(p => p.CpuPercent);
 
                 // System discharge / power budget in mW
-                int systemPowerMw;
-                if (isDischarging && currentDischargeRateMw > 0)
-                {
-                    systemPowerMw = currentDischargeRateMw;
-                }
-                else
-                {
-                    // Baseline power consumption estimate based on CPU load (idle ~8W up to ~35W)
-                    systemPowerMw = Math.Min(35000, 8000 + (int)(totalCpu * 200));
-                }
+                int systemPowerMw = currentDischargeRateMw > 0
+                    ? currentDischargeRateMw
+                    : Math.Min(35000, 8000 + (int)(totalCpu * 200));
 
                 // Dynamic software power pool scales with actual system CPU activity:
                 // Total system power draw includes platform baseline (screen backlight, Wi-Fi, motherboard, DRAM).
@@ -197,9 +309,6 @@ namespace ResourceAnalyzer.Services
                 // Under heavy load (100% CPU), software dynamic consumption accounts for up to 60% of total discharge.
                 double cpuActivityRatio = Math.Clamp(totalCpu / 100.0, 0.0, 1.0);
                 double dynamicPoolMw = Math.Min(systemPowerMw * 0.60, 350.0 + (cpuActivityRatio * (systemPowerMw * 0.55)));
-
-                // Group by application name (e.g. all 15 instances of msedge.exe into one application)
-                var appGroups = procList.GroupBy(p => p.Name, StringComparer.OrdinalIgnoreCase).ToList();
 
                 foreach (var g in appGroups)
                 {
@@ -255,7 +364,8 @@ namespace ResourceAnalyzer.Services
             int currentDischargeRateMw,
             bool isDischarging,
             int foregroundPid,
-            string displayMode)
+            string displayMode,
+            bool isOnAc = false)
         {
             lock (_lock)
             {
@@ -298,7 +408,8 @@ namespace ResourceAnalyzer.Services
                         BatteryPercent = batteryPercent,
                         PowerImpact = impact,
                         IsForeground = isFg,
-                        DisplayMode = displayMode
+                        DisplayMode = displayMode,
+                        IsOnAc = isOnAc
                     };
                     item.UpdateDisplayText();
                     result.Add(item);
@@ -351,8 +462,9 @@ namespace ResourceAnalyzer.Services
                     }
 
                     string tsStr = GetAttrOrElement(entry, ns, "LocalTimestamp") ?? GetAttrOrElement(entry, ns, "Timestamp") ?? string.Empty;
-                    if (DateTime.TryParse(tsStr, out var ts))
+                    if (DateTime.TryParse(tsStr, null, System.Globalization.DateTimeStyles.RoundtripKind, out var rawTs))
                     {
+                        DateTime ts = rawTs.Kind == DateTimeKind.Utc ? rawTs.ToLocalTime() : rawTs;
                         string? acVal = GetAttrOrElement(entry, ns, "Ac");
                         int ac = 0;
                         if (int.TryParse(acVal, out int parsedAc))
@@ -389,6 +501,91 @@ namespace ResourceAnalyzer.Services
             {
                 return null;
             }
+        }
+
+        public static BatteryHealthInfo ParseBatteryHealth(string? xmlContent)
+        {
+            var info = new BatteryHealthInfo();
+            if (string.IsNullOrWhiteSpace(xmlContent)) return info;
+
+            try
+            {
+                var doc = XDocument.Parse(xmlContent);
+                var ns = doc.Root?.Name.Namespace ?? XNamespace.None;
+                var batteries = doc.Root?.Element(ns + "Batteries")?.Elements(ns + "Battery").ToList();
+                if (batteries == null || batteries.Count == 0) return info;
+
+                info.HasBattery = true;
+                long totalDesign = 0;
+                long totalFcc = 0;
+                int? maxCycles = null;
+                string chem = string.Empty;
+                string mfr = string.Empty;
+
+                foreach (var b in batteries)
+                {
+                    string? desVal = GetAttrOrElement(b, ns, "DesignCapacity");
+                    if (long.TryParse(desVal, out long des) && des > 0)
+                    {
+                        totalDesign += des;
+                    }
+
+                    string? fccVal = GetAttrOrElement(b, ns, "FullChargeCapacity");
+                    if (long.TryParse(fccVal, out long fcc) && fcc > 0)
+                    {
+                        totalFcc += fcc;
+                    }
+
+                    string? cycVal = GetAttrOrElement(b, ns, "CycleCount");
+                    if (int.TryParse(cycVal, out int cyc) && cyc > 0)
+                    {
+                        maxCycles = Math.Max(maxCycles ?? 0, cyc);
+                    }
+
+                    if (string.IsNullOrEmpty(chem))
+                    {
+                        chem = GetAttrOrElement(b, ns, "Chemistry") ?? string.Empty;
+                    }
+                    if (string.IsNullOrEmpty(mfr))
+                    {
+                        mfr = GetAttrOrElement(b, ns, "Manufacturer") ?? string.Empty;
+                    }
+                }
+
+                info.DesignCapacityMwh = totalDesign;
+                info.FullChargeCapacityMwh = totalFcc;
+                info.CycleCount = maxCycles;
+                info.Chemistry = chem;
+                info.Manufacturer = mfr;
+            }
+            catch { }
+
+            return info;
+        }
+
+        public static int? QueryWmiCycleCount()
+        {
+            try
+            {
+                using var searcher = new System.Management.ManagementObjectSearcher(@"root\wmi", "SELECT CycleCount, Active FROM BatteryCycleCount");
+                foreach (var obj in searcher.Get())
+                {
+                    try
+                    {
+                        if (obj["CycleCount"] != null)
+                        {
+                            int c = Convert.ToInt32(obj["CycleCount"]);
+                            if (c > 0) return c;
+                        }
+                    }
+                    finally
+                    {
+                        obj.Dispose();
+                    }
+                }
+            }
+            catch { }
+            return null;
         }
 
         internal static (List<BatteryUsageItem> Sessions, long TotalDischargeMwh, double TotalDischargePercent, TimeSpan ActiveDuration, TimeSpan StandbyDuration, bool HasBattery, DateTime? LastAcDisconnectTime) ParseBatteryReportXml(
@@ -459,10 +656,11 @@ namespace ResourceAnalyzer.Services
                 foreach (var entry in recentUsage)
                 {
                     string localTsStr = GetAttrOrElement(entry, ns, "LocalTimestamp") ?? GetAttrOrElement(entry, ns, "Timestamp") ?? string.Empty;
-                    if (!DateTime.TryParse(localTsStr, out var timestamp))
+                    if (!DateTime.TryParse(localTsStr, null, System.Globalization.DateTimeStyles.RoundtripKind, out var rawTs))
                     {
                         continue;
                     }
+                    DateTime timestamp = rawTs.Kind == DateTimeKind.Utc ? rawTs.ToLocalTime() : rawTs;
 
                     if (timestamp < cutoff)
                     {
@@ -570,6 +768,14 @@ namespace ResourceAnalyzer.Services
         {
             lock (_lock)
             {
+                var today = DateTime.Today;
+                if (_cachedTodayDate != today)
+                {
+                    _cachedTodayDate = today;
+                    _cachedXmlContent = null;
+                    _lastReportTime = DateTime.MinValue;
+                }
+
                 if (_cachedXmlContent != null && (DateTime.UtcNow - _lastReportTime).TotalSeconds < 30)
                 {
                     return _cachedXmlContent;
@@ -591,7 +797,10 @@ namespace ResourceAnalyzer.Services
                     using var proc = Process.Start(psi);
                     if (proc != null)
                     {
-                        proc.WaitForExit(4000);
+                        if (!proc.WaitForExit(4000))
+                        {
+                            try { proc.Kill(); } catch { }
+                        }
                         if (File.Exists(tempFile))
                         {
                             _cachedXmlContent = File.ReadAllText(tempFile);

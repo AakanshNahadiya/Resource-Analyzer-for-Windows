@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
@@ -67,11 +67,15 @@ namespace ResourceAnalyzer.Models
         {
             get
             {
-                string exeName = ShowExtension && !Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
-                    ? $"{Name}.exe"
+                string cleanName = Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+                    ? Name[..^4]
                     : Name;
 
-                if (!string.IsNullOrWhiteSpace(_description) && !_description.Equals(Name, StringComparison.OrdinalIgnoreCase))
+                string exeName = ShowExtension ? $"{cleanName}.exe" : cleanName;
+
+                if (!string.IsNullOrWhiteSpace(_description) &&
+                    !_description.Equals(cleanName, StringComparison.OrdinalIgnoreCase) &&
+                    !_description.Equals(exeName, StringComparison.OrdinalIgnoreCase))
                 {
                     return $"{_description} ({exeName})";
                 }
@@ -119,6 +123,21 @@ namespace ResourceAnalyzer.Models
         public bool IsExpanded { get; set; }
         public string GroupName { get; set; } = string.Empty;
         public List<int> GroupChildPids { get; set; } = new();
+
+        private string _subProcessDetail = string.Empty;
+        public string SubProcessDetail
+        {
+            get => _subProcessDetail;
+            set
+            {
+                if (_subProcessDetail != value)
+                {
+                    _subProcessDetail = value;
+                    OnPropertyChanged();
+                    UpdateDisplayText();
+                }
+            }
+        }
 
         public string ItemKey
         {
@@ -265,7 +284,25 @@ namespace ResourceAnalyzer.Models
             }
             else if (IsGroupChild)
             {
-                DisplayText = $"  {prefix}{name} (PID: {Pid}) - RAM: {MemoryFormatted}, CPU: {cpuStr}";
+                string label = !string.IsNullOrWhiteSpace(_subProcessDetail) ? _subProcessDetail : name;
+                if (!ShowExtension)
+                {
+                    if (label.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                    {
+                        label = label[..^4];
+                    }
+                    label = label.Replace(".exe)", ")", StringComparison.OrdinalIgnoreCase);
+                }
+                else
+                {
+                    string clean = Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? Name[..^4] : Name;
+                    if (!string.IsNullOrEmpty(clean) && label.EndsWith($"({clean})", StringComparison.OrdinalIgnoreCase))
+                    {
+                        label = label[..^1] + ".exe)";
+                    }
+                }
+                string pidStr = ShowPid ? $" (PID: {Pid})" : string.Empty;
+                DisplayText = $"  {prefix}{label}{pidStr} - RAM: {MemoryFormatted}, CPU: {cpuStr}";
             }
             else
             {

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -333,6 +333,19 @@ namespace ResourceAnalyzer.Services
 
             var entry = (pName, fName, pPath, DateTime.Now);
             _processCache[pid] = entry;
+
+            if (_processCache.Count > 150)
+            {
+                var now = DateTime.Now;
+                foreach (var kvp in _processCache)
+                {
+                    if ((now - kvp.Value.CachedAt).TotalSeconds > 60)
+                    {
+                        _processCache.TryRemove(kvp.Key, out _);
+                    }
+                }
+            }
+
             return (pName, fName, pPath);
         }
     }

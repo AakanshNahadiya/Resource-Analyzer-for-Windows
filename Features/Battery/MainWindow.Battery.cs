@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -22,9 +22,24 @@ namespace ResourceAnalyzer
             _ = RefreshBatteryUsageAsync(announce: false);
         }
 
+        private void UpdateBatteryControlsState()
+        {
+            bool sinceLastCharge = chkSinceLastCharge?.IsChecked == true;
+            if (cmbBatteryTimeRange != null)
+            {
+                cmbBatteryTimeRange.IsEnabled = !sinceLastCharge;
+                System.Windows.Automation.AutomationProperties.SetName(
+                    cmbBatteryTimeRange,
+                    sinceLastCharge
+                        ? "Filter Battery Usage by Time Period (Disabled: Overridden by Since Last Charge)"
+                        : "Filter Battery Usage by Time Period");
+            }
+        }
+
         private void ChkSinceLastCharge_Checked(object sender, RoutedEventArgs e)
         {
             if (_isUpdatingUI) return;
+            UpdateBatteryControlsState();
             _batteryUsageService.ResetAppEnergy();
             _ = RefreshBatteryUsageAsync(announce: true);
         }
@@ -32,6 +47,7 @@ namespace ResourceAnalyzer
         private void ChkSinceLastCharge_Unchecked(object sender, RoutedEventArgs e)
         {
             if (_isUpdatingUI) return;
+            UpdateBatteryControlsState();
             _batteryUsageService.ResetAppEnergy();
             _ = RefreshBatteryUsageAsync(announce: true);
         }
@@ -66,6 +82,7 @@ namespace ResourceAnalyzer
         {
             try
             {
+                UpdateBatteryControlsState();
                 string timeRange = cmbBatteryTimeRange?.SelectedIndex switch
                 {
                     0 => "Full",
@@ -84,6 +101,7 @@ namespace ResourceAnalyzer
                 {
                     string noBatt = "No battery detected (Desktop PC or AC only).";
                     txtBatterySummary.Text = noBatt;
+                    txtBatteryHealthAndCycles.Visibility = Visibility.Collapsed;
                     _batteryItems.Clear();
                     _appBatteryItems.Clear();
                     _appBatteryMap.Clear();
@@ -107,6 +125,17 @@ namespace ResourceAnalyzer
 
                 string summary = $"Showing {sessions.Count} battery sessions{filterDesc}. Total Discharge: {totalDischarge:N0} mWh ({totalDischargePct:F1}%). Active: {activeStr}, Standby: {standbyStr}.";
                 txtBatterySummary.Text = summary;
+
+                var health = await _batteryUsageService.GetBatteryHealthAsync();
+                if (health.HasBattery)
+                {
+                    txtBatteryHealthAndCycles.Text = health.FormatSummaryText();
+                    txtBatteryHealthAndCycles.Visibility = Visibility.Visible;
+                }
+                else
+                {
+                    txtBatteryHealthAndCycles.Visibility = Visibility.Collapsed;
+                }
 
                 _batteryItems.Clear();
                 foreach (var s in sessions)
@@ -172,7 +201,8 @@ namespace ResourceAnalyzer
                     liveState.DischargeRateMw,
                     liveState.IsDischarging,
                     fgPid,
-                    displayMode);
+                    displayMode,
+                    liveState.IsOnAc);
 
                 UpdateAppBatteryCollectionInPlace(updatedApps, isFullReset);
             }
@@ -226,7 +256,8 @@ namespace ResourceAnalyzer
                         incoming.BatteryPercent,
                         incoming.PowerImpact,
                         incoming.IsForeground,
-                        incoming.DisplayMode);
+                        incoming.DisplayMode,
+                        incoming.IsOnAc);
                 }
                 else
                 {

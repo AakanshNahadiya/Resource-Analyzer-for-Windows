@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.IO;
 using System.Windows;
@@ -20,15 +20,8 @@ namespace ResourceAnalyzer
             {
                 var s = _settingsService.CurrentSettings;
 
-                // Process Manager Combo
-                if (s.HideSystemProcesses)
-                {
-                    cmbProcessManager.SelectedIndex = s.ConfirmBeforeEndTask ? 0 : 1;
-                }
-                else
-                {
-                    cmbProcessManager.SelectedIndex = s.ConfirmBeforeEndTask ? 2 : 3;
-                }
+                // Process Manager Combo (Prompt before ending task: Yes / No)
+                cmbProcessManager.SelectedIndex = s.ConfirmBeforeEndTask ? 0 : 1;
 
                 // Process Naming & Speech Format Combo
                 if (cmbProcessFormat != null)
@@ -75,31 +68,6 @@ namespace ResourceAnalyzer
                 cmbHighRamUnit.SelectedIndex = s.HighRamLimitUnit.Equals("GB", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
                 txtHighCpuPercent.Text = s.HighCpuLimitPercent > 0 ? s.HighCpuLimitPercent.ToString("0.##") : string.Empty;
 
-                // Visible Resources Preset Combo & Checkboxes
-                chkShowCpu.IsChecked = s.ShowCpu;
-                chkShowRam.IsChecked = s.ShowRam;
-                chkShowGpu.IsChecked = s.ShowGpu;
-                chkShowDisplay.IsChecked = s.ShowDisplay;
-                chkShowNetwork.IsChecked = s.ShowNetwork;
-                chkShowDisk.IsChecked = s.ShowDisk;
-                chkShowBattery.IsChecked = s.ShowBattery;
-
-                if (s.ShowCpu && s.ShowRam && s.ShowGpu && s.ShowDisplay && s.ShowNetwork && s.ShowDisk && s.ShowBattery)
-                {
-                    cmbVisibleResources.SelectedIndex = 0; // All Resources
-                }
-                else if (s.ShowCpu && s.ShowRam && !s.ShowGpu && s.ShowDisplay && s.ShowNetwork && s.ShowDisk && !s.ShowBattery)
-                {
-                    cmbVisibleResources.SelectedIndex = 1; // Essential Resources
-                }
-                else if (s.ShowCpu && s.ShowRam && !s.ShowGpu && !s.ShowDisplay && !s.ShowNetwork && !s.ShowDisk && !s.ShowBattery)
-                {
-                    cmbVisibleResources.SelectedIndex = 2; // Minimal Resources
-                }
-                else
-                {
-                    cmbVisibleResources.SelectedIndex = 3; // Custom Selection...
-                }
 
                 // Auto-refresh combo
                 cmbRefreshInterval.SelectedIndex = s.RefreshIntervalSeconds switch
@@ -195,12 +163,6 @@ namespace ResourceAnalyzer
                     : Visibility.Collapsed;
             }
 
-            if (panelCustomResources != null)
-            {
-                panelCustomResources.Visibility = (cmbVisibleResources?.SelectedIndex == 3)
-                    ? Visibility.Visible
-                    : Visibility.Collapsed;
-            }
         }
 
         private void ApplySettingsToRuntime()
@@ -226,25 +188,8 @@ namespace ResourceAnalyzer
             if (cmbProcessManager.SelectedIndex < 0) return;
 
             var s = _settingsService.CurrentSettings;
-            switch (cmbProcessManager.SelectedIndex)
-            {
-                case 0:
-                    s.HideSystemProcesses = true;
-                    s.ConfirmBeforeEndTask = true;
-                    break;
-                case 1:
-                    s.HideSystemProcesses = true;
-                    s.ConfirmBeforeEndTask = false;
-                    break;
-                case 2:
-                    s.HideSystemProcesses = false;
-                    s.ConfirmBeforeEndTask = true;
-                    break;
-                case 3:
-                    s.HideSystemProcesses = false;
-                    s.ConfirmBeforeEndTask = false;
-                    break;
-            }
+            s.ConfirmBeforeEndTask = (cmbProcessManager.SelectedIndex == 0);
+            s.HideSystemProcesses = false; // Always expose all processes
 
             SaveSettingsFromUI(silent: true);
             if (tabProcesses.IsSelected)
@@ -303,66 +248,6 @@ namespace ResourceAnalyzer
             SaveSettingsFromUI(silent: true);
         }
 
-        private void CmbVisibleResources_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        {
-            UpdateAlertPanelsVisibility();
-            if (_isUpdatingUI) return;
-            if (cmbVisibleResources.SelectedIndex < 0) return;
-
-            var s = _settingsService.CurrentSettings;
-            switch (cmbVisibleResources.SelectedIndex)
-            {
-                case 0: // All Resources
-                    s.ShowCpu = true;
-                    s.ShowRam = true;
-                    s.ShowGpu = true;
-                    s.ShowNetwork = true;
-                    s.ShowDisk = true;
-                    s.ShowBattery = true;
-                    break;
-                case 1: // Essential Resources
-                    s.ShowCpu = true;
-                    s.ShowRam = true;
-                    s.ShowGpu = false;
-                    s.ShowNetwork = true;
-                    s.ShowDisk = true;
-                    s.ShowBattery = false;
-                    break;
-                case 2: // Minimal Resources
-                    s.ShowCpu = true;
-                    s.ShowRam = true;
-                    s.ShowGpu = false;
-                    s.ShowNetwork = false;
-                    s.ShowDisk = false;
-                    s.ShowBattery = false;
-                    break;
-                case 3: // Custom
-                    break;
-            }
-
-            if (cmbVisibleResources.SelectedIndex != 3)
-            {
-                _isUpdatingUI = true;
-                try
-                {
-                    chkShowCpu.IsChecked = s.ShowCpu;
-                    chkShowRam.IsChecked = s.ShowRam;
-                    chkShowGpu.IsChecked = s.ShowGpu;
-                    chkShowDisplay.IsChecked = s.ShowDisplay;
-                    chkShowNetwork.IsChecked = s.ShowNetwork;
-                    chkShowDisk.IsChecked = s.ShowDisk;
-                    chkShowBattery.IsChecked = s.ShowBattery;
-                }
-                finally
-                {
-                    _isUpdatingUI = false;
-                }
-            }
-
-            SaveSettingsFromUI(silent: true);
-            BuildResourceItemList();
-            _ = RefreshResourcesAsync();
-        }
 
         private void CmbStartupTray_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
@@ -416,13 +301,6 @@ namespace ResourceAnalyzer
             SaveSettingsFromUI(silent: true);
         }
 
-        private void ResourceVisibilityChanged(object sender, RoutedEventArgs e)
-        {
-            if (_isUpdatingUI) return;
-            SaveSettingsFromUI(silent: true);
-            BuildResourceItemList();
-            _ = RefreshResourcesAsync();
-        }
 
         private void CmbRefreshInterval_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
@@ -461,6 +339,20 @@ namespace ResourceAnalyzer
 
         private void BtnResetDefaults_Click(object sender, RoutedEventArgs e)
         {
+            var result = MessageBox.Show(
+                this,
+                "Are you sure? All of your settings values will be reset to default.",
+                "Reset All Settings to Defaults",
+                MessageBoxButton.OKCancel,
+                MessageBoxImage.Warning);
+
+            if (result != MessageBoxResult.OK)
+            {
+                _speechService.Speak("Settings reset was canceled.", interrupt: true);
+                txtAnnouncement.Text = "Settings reset canceled.";
+                return;
+            }
+
             _settingsService.ResetToDefaults();
             _isUpdatingUI = true;
             try
@@ -487,27 +379,11 @@ namespace ResourceAnalyzer
             var s = _settingsService.CurrentSettings;
 
             // Process manager options
+            // Process manager options (Prompt before ending task)
             if (cmbProcessManager != null && cmbProcessManager.SelectedIndex >= 0)
             {
-                switch (cmbProcessManager.SelectedIndex)
-                {
-                    case 0:
-                        s.HideSystemProcesses = true;
-                        s.ConfirmBeforeEndTask = true;
-                        break;
-                    case 1:
-                        s.HideSystemProcesses = true;
-                        s.ConfirmBeforeEndTask = false;
-                        break;
-                    case 2:
-                        s.HideSystemProcesses = false;
-                        s.ConfirmBeforeEndTask = true;
-                        break;
-                    case 3:
-                        s.HideSystemProcesses = false;
-                        s.ConfirmBeforeEndTask = false;
-                        break;
-                }
+                s.ConfirmBeforeEndTask = (cmbProcessManager.SelectedIndex == 0);
+                s.HideSystemProcesses = false;
             }
 
             // Process format options
@@ -536,35 +412,6 @@ namespace ResourceAnalyzer
 
             UpdateGroupToggleButtonText();
 
-            // Visible resources
-            if (cmbVisibleResources != null && cmbVisibleResources.SelectedIndex >= 0)
-            {
-                if (cmbVisibleResources.SelectedIndex == 3)
-                {
-                    s.ShowCpu = chkShowCpu.IsChecked == true;
-                    s.ShowRam = chkShowRam.IsChecked == true;
-                    s.ShowGpu = chkShowGpu.IsChecked == true;
-                    s.ShowDisplay = chkShowDisplay.IsChecked == true;
-                    s.ShowNetwork = chkShowNetwork.IsChecked == true;
-                    s.ShowDisk = chkShowDisk.IsChecked == true;
-                    s.ShowBattery = chkShowBattery.IsChecked == true;
-                }
-                else
-                {
-                    switch (cmbVisibleResources.SelectedIndex)
-                    {
-                        case 0:
-                            s.ShowCpu = true; s.ShowRam = true; s.ShowGpu = true; s.ShowDisplay = true; s.ShowNetwork = true; s.ShowDisk = true; s.ShowBattery = true;
-                            break;
-                        case 1:
-                            s.ShowCpu = true; s.ShowRam = true; s.ShowGpu = false; s.ShowDisplay = true; s.ShowNetwork = true; s.ShowDisk = true; s.ShowBattery = false;
-                            break;
-                        case 2:
-                            s.ShowCpu = true; s.ShowRam = true; s.ShowGpu = false; s.ShowDisplay = false; s.ShowNetwork = false; s.ShowDisk = false; s.ShowBattery = false;
-                            break;
-                    }
-                }
-            }
 
             // Resource Alerts
             if (cmbAlerts != null && cmbAlerts.SelectedIndex >= 0)
@@ -744,19 +591,24 @@ namespace ResourceAnalyzer
             }
 
             var result = MessageBox.Show(
+                this,
                 "Restart Resource Analyzer for Windows with Administrator privileges?\n\nThis will allow you to end protected processes and access advanced system telemetry.",
                 "Restart as Administrator",
-                MessageBoxButton.YesNo,
+                MessageBoxButton.OKCancel,
                 MessageBoxImage.Question);
 
-            if (result == MessageBoxResult.Yes)
+            if (result != MessageBoxResult.OK)
             {
-                bool success = ElevationHelper.RestartAsAdmin($"--tab {tabMain.SelectedIndex}");
-                if (!success)
-                {
-                    _speechService.Speak("Administrator elevation was canceled.", interrupt: true);
-                    txtAnnouncement.Text = "Administrator elevation canceled.";
-                }
+                _speechService.Speak("Administrator elevation was canceled.", interrupt: true);
+                txtAnnouncement.Text = "Administrator elevation canceled.";
+                return;
+            }
+
+            bool success = ElevationHelper.RestartAsAdmin($"--tab {tabMain.SelectedIndex}");
+            if (!success)
+            {
+                _speechService.Speak("Administrator elevation was canceled.", interrupt: true);
+                txtAnnouncement.Text = "Administrator elevation canceled.";
             }
         }
 

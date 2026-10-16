@@ -1,6 +1,6 @@
 ; Script generated for Resource Analyzer for Windows
 #define MyAppName "Resource Analyzer for Windows"
-#define MyAppVersion "1.0.4"
+#define MyAppVersion "1.0.5"
 #define MyAppPublisher "Accessible Tools"
 #define MyAppExeName "ResourceAnalyzer.exe"
 
@@ -16,16 +16,14 @@ DirExistsWarning=no
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 OutputDir=Output
-OutputBaseFilename=ResourceAnalyzer_Setup_v1.0.4
+OutputBaseFilename=ResourceAnalyzer_Setup_v1.0.5
 SetupIconFile=..\Resources\app.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
-SetupMutex=ResourceAnalyzerSetup_Mutex
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
 ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=lowest
-
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
@@ -51,7 +49,7 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Explorer\StartupA
 Type: filesandordirs; Name: "{app}"
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent shellexec
 
 [Code]
 function KillRunningApp(): Boolean;
@@ -60,22 +58,34 @@ var
   i: Integer;
 begin
   Result := True;
-  // Automatically terminate any running instance (standard taskkill + PowerShell fallback)
-  Exec('taskkill.exe', '/F /IM ResourceAnalyzer.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  Exec('powershell.exe', '-NoProfile -Command "Stop-Process -Name ResourceAnalyzer -Force -ErrorAction SilentlyContinue"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-
-  // Allow up to 800ms for Windows to release file locks and mutex
-  for i := 1 to 8 do
+  // If the app is currently running, terminate it cleanly and quickly via native taskkill
+  if CheckForMutexes('ResourceAnalyzer_SingleInstance_Mutex') then
   begin
-    if not CheckForMutexes('ResourceAnalyzer_SingleInstance_Mutex') then
-      Break;
-    Sleep(100);
+    Exec('taskkill.exe', '/F /IM ResourceAnalyzer.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    for i := 1 to 5 do
+    begin
+      if not CheckForMutexes('ResourceAnalyzer_SingleInstance_Mutex') then
+        Exit;
+      Sleep(50);
+    end;
+
+    // Fallback if taskkill was blocked
+    if CheckForMutexes('ResourceAnalyzer_SingleInstance_Mutex') then
+    begin
+      Exec('powershell.exe', '-NoProfile -Command "Stop-Process -Name ResourceAnalyzer -Force -ErrorAction SilentlyContinue"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+      for i := 1 to 5 do
+      begin
+        if not CheckForMutexes('ResourceAnalyzer_SingleInstance_Mutex') then
+          Break;
+        Sleep(50);
+      end;
+    end;
   end;
 end;
 
 function InitializeSetup(): Boolean;
 begin
-  // Terminate any running instance before installing or updating automatically
+  // Terminate any running instance immediately on setup startup to release file locks without popups
   KillRunningApp();
   Result := True;
 end;

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading.Tasks;
@@ -18,15 +18,13 @@ namespace ResourceAnalyzer
             _resourceItems.Clear();
             _resourceMap.Clear();
 
-            var settings = _settingsService.CurrentSettings;
-
-            if (settings.ShowCpu) AddResourceItem("cpu", "CPU");
-            if (settings.ShowRam) AddResourceItem("ram", "RAM");
-            if (settings.ShowGpu) AddResourceItem("gpu", "GPU");
-            if (settings.ShowDisplay) AddResourceItem("display", "Display");
-            if (settings.ShowNetwork) AddResourceItem("network", "Network");
-            if (settings.ShowDisk) AddResourceItem("disk", "Disk 0 (Internal SSD)");
-            if (settings.ShowBattery && _monitorService.HasBattery) AddResourceItem("battery", "Battery");
+            AddResourceItem("cpu", "CPU");
+            AddResourceItem("ram", "RAM");
+            AddResourceItem("gpu", "GPU");
+            AddResourceItem("display", "Display");
+            AddResourceItem("network", "Network");
+            AddResourceItem("disk", "Disk 0 (Internal SSD)");
+            if (_monitorService.HasBattery) AddResourceItem("battery", "Battery");
 
             if (_resourceItems.Count > 0 && lstResources.SelectedIndex < 0)
             {
@@ -69,9 +67,8 @@ namespace ResourceAnalyzer
                             }
                         }
                     }
-                    else if (_settingsService.CurrentSettings.ShowDisk &&
-                             (kvp.Key.StartsWith("disk_", StringComparison.OrdinalIgnoreCase) ||
-                              kvp.Key.StartsWith("usb_", StringComparison.OrdinalIgnoreCase)))
+                    else if (kvp.Key.StartsWith("disk_", StringComparison.OrdinalIgnoreCase) ||
+                             kvp.Key.StartsWith("usb_", StringComparison.OrdinalIgnoreCase))
                     {
                         string itemName = kvp.Key;
                         int colonIdx = kvp.Value.Summary.IndexOf(':');
@@ -173,6 +170,7 @@ namespace ResourceAnalyzer
                         Owner = this
                     };
                     dlg.ShowDialog();
+                    TrimProcessMemory();
                 }
             }
             catch (Exception ex)

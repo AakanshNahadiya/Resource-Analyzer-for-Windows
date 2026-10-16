@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
@@ -56,6 +56,7 @@ namespace ResourceAnalyzer
 
         private readonly Dictionary<string, ResourceItem> _resourceMap = new();
         private readonly Dictionary<string, DateTime> _lastAlertTimes = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, int> _consecutiveCpuAlertHits = new(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> _expandedGroups = new(StringComparer.OrdinalIgnoreCase);
 
         private string _currentSort = "Memory";
@@ -103,16 +104,15 @@ namespace ResourceAnalyzer
 
             InitTrayIcon(hwnd);
             InitHotkey(hwnd);
+            Microsoft.Win32.SystemEvents.TimeChanged += OnSystemTimeChanged;
 
             _themeService.ApplyTheme(_settingsService.CurrentSettings.Theme);
             LoadSettingsIntoUI();
             ApplySettingsToRuntime();
 
-            // Prewarm hardware static specs in background to make technical dialogs open instantly
-            HardwareDetailService.PrewarmHardwareCache();
 
-            // Prewarm today's data usage cache in background for instant hotkey response
-            _ = UpdateTodayDataUsageCacheAsync();
+            // Prewarm today's data usage cache in background for instant hotkey response (deferred by 1.5s)
+            _ = Task.Delay(1500).ContinueWith(_ => _ = UpdateTodayDataUsageCacheAsync(), TaskScheduler.Default);
 
             // Build initial resource items
             BuildResourceItemList();
@@ -170,8 +170,11 @@ namespace ResourceAnalyzer
                 }
             }
 
-            await RefreshAllAsync(announce: false);
-            TrimProcessMemory();
+            _ = RefreshAllAsync(announce: false);
+            if (startMinimized)
+            {
+                TrimProcessMemory();
+            }
         }
 
         private void Window_Loaded(object sender, RoutedEventArgs e)
@@ -191,6 +194,15 @@ namespace ResourceAnalyzer
                 }
 
                 InitializeApp(startMinimized, targetTabIndex);
+            }
+            else
+            {
+                string[] args = Environment.GetCommandLineArgs();
+                bool startMinimized = args.Any(a => a.Equals("--minimized", StringComparison.OrdinalIgnoreCase));
+                if (!startMinimized)
+                {
+                    FocusCurrentTabContent();
+                }
             }
         }
 
@@ -244,18 +256,41 @@ namespace ResourceAnalyzer
         private int _networkSpeedHotkeyTriggerId = 0;
         private long _cachedTodayDataUsageBytes = 0;
         private DateTime _lastDataUsageCacheTime = DateTime.MinValue;
+        private DateTime _cachedTodayDate = DateTime.MinValue;
+        private DateTime _cachedBatteryDate = DateTime.Today;
+
+        private void OnSystemTimeChanged(object? sender, EventArgs e)
+        {
+            try
+            {
+                // System clock, date rollover, or timezone changed: invalidate and immediately refresh today's data usage
+                _cachedTodayDataUsageBytes = 0;
+                _cachedTodayDate = DateTime.MinValue;
+                _lastDataUsageCacheTime = DateTime.MinValue;
+                _ = UpdateTodayDataUsageCacheAsync();
+
+                // System clock / date rollover: invalidate Tab 4 battery cache and refresh if active
+                _cachedBatteryDate = DateTime.Today;
+                _batteryUsageService.InvalidateCache();
+                _batteryUsageService.ResetAppEnergy();
+                if (tabBatteryUsage.IsSelected)
+                {
+                    _ = RefreshBatteryUsageAsync(announce: false);
+                }
+            }
+            catch { }
+        }
 
         private async Task UpdateTodayDataUsageCacheAsync()
         {
             try
             {
+                var today = DateTime.Today;
                 var (recv, sent) = await _dataUsageService.GetTodayTotalUsageAsync();
                 long total = recv + sent;
-                if (total > 0)
-                {
-                    _cachedTodayDataUsageBytes = total;
-                    _lastDataUsageCacheTime = DateTime.UtcNow;
-                }
+                _cachedTodayDataUsageBytes = total;
+                _cachedTodayDate = today;
+                _lastDataUsageCacheTime = DateTime.UtcNow;
             }
             catch (Exception ex)
             {
@@ -277,14 +312,19 @@ namespace ResourceAnalyzer
                 try
                 {
                     string msg;
-                    if (_cachedTodayDataUsageBytes > 0)
+                    // Cache is valid only if anchored to today's local date and sampled recently (< 60s)
+                    bool isCacheValid = _cachedTodayDate == DateTime.Today && (DateTime.UtcNow - _lastDataUsageCacheTime).TotalSeconds < 60;
+                    if (isCacheValid)
                     {
                         msg = $"Data used today: {FormatHelper.FormatBytes(_cachedTodayDataUsageBytes)}.";
                     }
                     else
                     {
+                        var today = DateTime.Today;
                         var (inBytes, outBytes) = await _dataUsageService.GetTodayTotalUsageAsync();
                         _cachedTodayDataUsageBytes = inBytes + outBytes;
+                        _cachedTodayDate = today;
+                        _lastDataUsageCacheTime = DateTime.UtcNow;
                         msg = $"Data used today: {FormatHelper.FormatBytes(_cachedTodayDataUsageBytes)}.";
                     }
                     _speechService.Speak(msg, interrupt: true);
@@ -451,8 +491,10 @@ namespace ResourceAnalyzer
             {
                 if (listBox.SelectedIndex < 0) listBox.SelectedIndex = 0;
                 listBox.ScrollIntoView(listBox.SelectedItem);
+                listBox.UpdateLayout();
 
-                var container = listBox.ItemContainerGenerator.ContainerFromItem(listBox.SelectedItem) as ListBoxItem;
+                var container = (listBox.ItemContainerGenerator.ContainerFromItem(listBox.SelectedItem)
+                    ?? listBox.ItemContainerGenerator.ContainerFromIndex(listBox.SelectedIndex)) as ListBoxItem;
                 if (container != null)
                 {
                     container.Focus();
@@ -472,6 +514,7 @@ namespace ResourceAnalyzer
         private void ExitApplication()
         {
             _isExplicitExit = true;
+            try { Microsoft.Win32.SystemEvents.TimeChanged -= OnSystemTimeChanged; } catch { }
             _trayIcon?.Dispose();
             _hotkeyService?.Dispose();
             _themeService?.Dispose();
@@ -490,8 +533,11 @@ namespace ResourceAnalyzer
             }
             else
             {
+                try { Microsoft.Win32.SystemEvents.TimeChanged -= OnSystemTimeChanged; } catch { }
                 _trayIcon?.Dispose();
                 _hotkeyService?.Dispose();
+                _themeService?.Dispose();
+                System.Windows.Application.Current.Shutdown();
             }
         }
 
@@ -557,8 +603,9 @@ namespace ResourceAnalyzer
             // Sample physical disk throughput in background so live disk read/write speeds stay current
             HardwareDetailService.SampleAllDiskSpeeds();
 
-            // Silently refresh today's data usage cache every 15 seconds in background
-            if ((DateTime.UtcNow - _lastDataUsageCacheTime).TotalSeconds >= 15)
+            // Silently refresh today's data usage cache every 15 seconds in background,
+            // or immediately if midnight has passed or the local calendar date rolled over
+            if (_cachedTodayDate != DateTime.Today || (DateTime.UtcNow - _lastDataUsageCacheTime).TotalSeconds >= 15)
             {
                 _ = UpdateTodayDataUsageCacheAsync();
             }
@@ -608,6 +655,15 @@ namespace ResourceAnalyzer
             else if (tabBatteryUsage.IsSelected)
             {
                 await RefreshAppBatteryUsageAsync();
+
+                // Silently refresh battery sessions & summary every 60 seconds (or immediately on midnight rollover)
+                int currentInterval = Math.Max(1, _settingsService.CurrentSettings.RefreshIntervalSeconds);
+                int ticksPer60Sec = Math.Max(1, 60 / currentInterval);
+                if (_timerTickCount % ticksPer60Sec == 0 || _cachedBatteryDate != DateTime.Today)
+                {
+                    _cachedBatteryDate = DateTime.Today;
+                    _ = RefreshBatteryUsageAsync(announce: false);
+                }
             }
             else if (tabNetworkPorts.IsSelected)
             {
@@ -619,7 +675,7 @@ namespace ResourceAnalyzer
             bool overuseAlertsEnabled = (settings.EnableHighRamAlert && settings.HighRamLimitValue > 0) || (settings.EnableHighCpuAlert && settings.HighCpuLimitPercent > 0);
             if (overuseAlertsEnabled && (!tabProcesses.IsSelected || !string.IsNullOrEmpty(txtSearch.Text)))
             {
-                if (_timerTickCount % 2 == 0)
+                if (_timerTickCount > 0 && _timerTickCount % 2 == 0)
                 {
                     try
                     {
@@ -634,7 +690,7 @@ namespace ResourceAnalyzer
             }
 
             // Periodic memory trimming (every 10 seconds / 5 ticks) to keep working set tightly bounded (~25-35 MB)
-            if (_timerTickCount % 5 == 0)
+            if (_timerTickCount > 0 && _timerTickCount % 5 == 0)
             {
                 TrimProcessMemory();
             }

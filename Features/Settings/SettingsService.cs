@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Text.Json;
 using Microsoft.Win32;
@@ -55,19 +55,8 @@ namespace ResourceAnalyzer.Services
                     if (loaded != null)
                     {
                         CurrentSettings = loaded;
-                        // Auto-heal if previously saved with all false due to init race
-                        if (!CurrentSettings.ShowCpu && !CurrentSettings.ShowRam && !CurrentSettings.ShowGpu && !CurrentSettings.ShowDisplay && !CurrentSettings.ShowNetwork && !CurrentSettings.ShowDisk)
-                        {
-                            CurrentSettings.ShowCpu = true;
-                            CurrentSettings.ShowRam = true;
-                            CurrentSettings.ShowGpu = true;
-                            CurrentSettings.ShowDisplay = true;
-                            CurrentSettings.ShowNetwork = true;
-                            CurrentSettings.ShowDisk = true;
-                            CurrentSettings.ShowBattery = true;
-                            CurrentSettings.MinimizeToTray = true;
-                            CurrentSettings.ConfirmBeforeEndTask = true;
-                        }
+                        // Always expose all processes
+                        CurrentSettings.HideSystemProcesses = false;
                     }
                 }
             }
@@ -164,15 +153,8 @@ namespace ResourceAnalyzer.Models
     public class AppSettings
     {
         public bool ConfirmBeforeEndTask { get; set; } = true;
-        public bool ShowCpu { get; set; } = true;
-        public bool ShowRam { get; set; } = true;
-        public bool ShowGpu { get; set; } = true;
-        public bool ShowDisplay { get; set; } = true;
-        public bool ShowNetwork { get; set; } = true;
-        public bool ShowDisk { get; set; } = true;
-        public bool ShowBattery { get; set; } = true;
 
-        public bool HideSystemProcesses { get; set; } = true;
+        public bool HideSystemProcesses { get; set; } = false;
         public bool ShowProcessExtension { get; set; } = true;
         public bool ShowProcessPid { get; set; } = false;
         public bool GroupProcesses { get; set; } = true;

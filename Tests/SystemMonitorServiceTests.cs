@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading.Tasks;
 using Xunit;
 using ResourceAnalyzer.Services;
@@ -140,6 +140,16 @@ There is 1 interface on the system:
 
             Assert.True(metrics.ContainsKey("disk"));
             Assert.StartsWith("Disk 0 (Internal ", metrics["disk"].Summary);
+        }
+
+        [Fact]
+        public void QueryWifiTelemetryFast_ReturnsConsistentResults()
+        {
+            var (ssid, band, signal) = SystemMonitorService.QueryWifiTelemetryFast();
+            if (ssid != null)
+            {
+                Assert.False(string.IsNullOrWhiteSpace(ssid));
+            }
         }
     }
 }

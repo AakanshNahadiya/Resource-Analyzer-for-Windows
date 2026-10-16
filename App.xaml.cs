@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading;
@@ -71,6 +71,7 @@ namespace ResourceAnalyzer
                         {
                             signalHandle.Set();
                             signalHandle.Dispose();
+                            Thread.Sleep(100);
                         }
                     }
                     catch (Exception ex)

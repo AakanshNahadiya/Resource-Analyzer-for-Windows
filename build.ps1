@@ -5,6 +5,7 @@ Write-Host "==========================================" -ForegroundColor Cyan
 
 # 1. Publish Self-Contained Executable
 Write-Host "`n[1/3] Publishing self-contained executable..." -ForegroundColor Yellow
+Stop-Process -Name ResourceAnalyzer -Force -ErrorAction SilentlyContinue
 if (Test-Path "./publish") {
     Remove-Item -Path "./publish/*" -Recurse -Force -ErrorAction SilentlyContinue
 }
@@ -24,13 +25,37 @@ Copy-Item "Resources/app.ico" "./publish/Resources/" -Force
 
 # Remove any foreign language satellite resource folders (leaves English intact)
 Get-ChildItem -Path "./publish" -Directory | Where-Object { $_.Name -match '^[a-z]{2}(-[A-Za-z]+)?$' } | Remove-Item -Recurse -Force
-# Remove unused Windows Forms designer DLLs and optional debug/XPS components
-Remove-Item -Path "./publish/System.Windows.Forms.Design*.dll" -Force -ErrorAction SilentlyContinue
-Remove-Item -Path "./publish/mscordbi.dll" -Force -ErrorAction SilentlyContinue
-Remove-Item -Path "./publish/Microsoft.DiaSymReader.Native.amd64.dll" -Force -ErrorAction SilentlyContinue
-Remove-Item -Path "./publish/System.Windows.Controls.Ribbon.dll" -Force -ErrorAction SilentlyContinue
-Remove-Item -Path "./publish/ReachFramework.dll" -Force -ErrorAction SilentlyContinue
-Remove-Item -Path "./publish/PresentationUI.dll" -Force -ErrorAction SilentlyContinue
+# Remove unused Windows Desktop / WPF runtime assemblies to optimize installer size (~13.3 MB savings)
+$unusedAssemblies = @(
+    "System.Windows.Forms.Design*.dll",
+    "mscordbi.dll",
+    "mscordaccore*.dll",
+    "Microsoft.DiaSymReader.Native.amd64.dll",
+    "System.Reflection.Metadata.dll",
+    "System.Windows.Controls.Ribbon.dll",
+    "ReachFramework.dll",
+    "PresentationUI.dll",
+    "System.Printing.dll",
+    "System.Data.Common.dll",
+    "System.Data.dll",
+    "System.Data.DataSetExtensions.dll",
+    "PresentationFramework-SystemData.dll",
+    "System.Private.DataContractSerialization.dll",
+    "System.ServiceModel.Web.dll",
+    "System.Net.WebSockets*.dll",
+    "System.Security.Cryptography.Pkcs.dll",
+    "System.Security.Cryptography.Xml.dll",
+    "System.Threading.Tasks.Dataflow.dll",
+    "System.Security.Permissions.dll",
+    "PresentationFramework.Luna.dll",
+    "PresentationFramework.Royale.dll",
+    "PresentationFramework.Classic.dll",
+    "PresentationFramework.Aero.dll",
+    "PresentationFramework.AeroLite.dll"
+)
+foreach ($pattern in $unusedAssemblies) {
+    Remove-Item -Path "./publish/$pattern" -Force -ErrorAction SilentlyContinue
+}
 
 # 3. Compile Inno Setup Installer
 Write-Host "`n[3/3] Compiling accessible setup installer..." -ForegroundColor Yellow
@@ -43,9 +68,13 @@ if (Test-Path $isccPath) {
     & $isccPath "Installer\setup.iss"
     if ($LASTEXITCODE -eq 0) {
         Write-Host "`n==========================================" -ForegroundColor Green
-        Write-Host " Build & Installer Successful!" -ForegroundColor Green
         $setupFile = (Get-ChildItem "./Installer/Output/*.exe" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1)
         Write-Host " Setup Installer: ./Installer/Output/$($setupFile.Name)" -ForegroundColor Green
+        $targetDir = "C:\Users\Aakansh\Music\Output"
+        if (Test-Path $targetDir) {
+            Copy-Item $setupFile.FullName -Destination $targetDir -Force
+            Write-Host " Output Folder: $targetDir\$($setupFile.Name)" -ForegroundColor Green
+        }
         Write-Host "==========================================" -ForegroundColor Green
     }
 } else {

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 using ResourceAnalyzer.Services;
 using Xunit;
@@ -267,6 +267,76 @@ namespace ResourceAnalyzer.Tests
                 Assert.NotEmpty(result.Sessions);
                 Assert.True(result.Sessions.Count > 0);
             }
+        }
+
+        [Fact]
+        public void ParseBatteryHealth_WithCycleCountAndCapacity_CalculatesHealthAndCyclesCorrectly()
+        {
+            string xml = @"<?xml version=""1.0"" encoding=""utf-8""?>
+<BatteryReport xmlns=""http://schemas.microsoft.com/battery/2012"">
+  <Batteries>
+    <Battery>
+      <Manufacturer>LGC-LGC</Manufacturer>
+      <Chemistry>LION</Chemistry>
+      <DesignCapacity>52000</DesignCapacity>
+      <FullChargeCapacity>46800</FullChargeCapacity>
+      <CycleCount>365</CycleCount>
+    </Battery>
+  </Batteries>
+</BatteryReport>";
+
+            var health = BatteryUsageService.ParseBatteryHealth(xml);
+
+            Assert.True(health.HasBattery);
+            Assert.Equal(365, health.CycleCount);
+            Assert.Equal(52000, health.DesignCapacityMwh);
+            Assert.Equal(46800, health.FullChargeCapacityMwh);
+            Assert.Equal(90.0, health.HealthPercent!.Value, 1);
+            Assert.Equal("LION", health.Chemistry);
+
+            string text = health.FormatSummaryText();
+            Assert.Contains("Health: 90.0%", text);
+            Assert.Contains("365 of 1,000", text);
+            Assert.Contains("36% used", text);
+        }
+
+        [Fact]
+        public void ParseBatteryHealth_WhenCycleCountMissing_ReportsNotReportedByHardware()
+        {
+            string xml = @"<?xml version=""1.0"" encoding=""utf-8""?>
+<BatteryReport xmlns=""http://schemas.microsoft.com/battery/2012"">
+  <Batteries>
+    <Battery>
+      <DesignCapacity>50000</DesignCapacity>
+      <FullChargeCapacity>40000</FullChargeCapacity>
+      <CycleCount>0</CycleCount>
+    </Battery>
+  </Batteries>
+</BatteryReport>";
+
+            var health = BatteryUsageService.ParseBatteryHealth(xml);
+
+            Assert.True(health.HasBattery);
+            Assert.Null(health.CycleCount);
+            string text = health.FormatSummaryText();
+            Assert.DoesNotContain("Charge Cycles", text);
+            Assert.Contains("Health: 80.0%", text);
+        }
+
+        [Fact]
+        public void ParseBatteryHealth_WhenNoBattery_ReportsNoBatteryDetected()
+        {
+            var health = BatteryUsageService.ParseBatteryHealth(null);
+            Assert.False(health.HasBattery);
+            Assert.Equal("No battery detected (Desktop PC or AC only).", health.FormatSummaryText());
+        }
+
+        [Fact]
+        public async Task GetBatteryHealthAsync_RunsWithoutException()
+        {
+            var service = new BatteryUsageService();
+            var health = await service.GetBatteryHealthAsync();
+            Assert.NotNull(health);
         }
     }
 }

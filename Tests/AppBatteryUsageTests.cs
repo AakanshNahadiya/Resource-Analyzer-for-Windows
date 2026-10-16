@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using ResourceAnalyzer.Models;
@@ -161,6 +161,39 @@ namespace ResourceAnalyzer.Tests
             item.DisplayMode = "Combined";
             item.UpdateDisplayText();
             Assert.Equal("Google Chrome (chrome.exe): 42.5% of battery used (2,450.3 mWh) - Live: 1,820 mW (High)", item.DisplayText);
+        }
+
+        [Fact]
+        public void AppBatteryUsageItem_OnAcPower_FormatsPluggedInCorrectly()
+        {
+            var item = new AppBatteryUsageItem
+            {
+                Pid = 1234,
+                ProcessName = "chrome.exe",
+                DisplayName = "Google Chrome (chrome.exe)",
+                BatteryPercent = 0.0,
+                EnergyConsumedMwh = 0.0,
+                EstimatedPowerMw = 0,
+                PowerImpact = "Very Low",
+                IsForeground = true,
+                DisplayMode = "Combined",
+                IsOnAc = true
+            };
+
+            // 1. Combined Mode on AC
+            item.DisplayMode = "Combined";
+            item.UpdateDisplayText();
+            Assert.Equal("Google Chrome (chrome.exe): 0.0% of battery used (0.0 mWh) - Live: 0 mW (Plugged In / On Charger) [Active Window]", item.DisplayText);
+
+            // 2. Drain Rate Only Mode on AC
+            item.DisplayMode = "DrainRate";
+            item.UpdateDisplayText();
+            Assert.Equal("Google Chrome (chrome.exe): 0 mW (Plugged In / On Charger) [Active Window]", item.DisplayText);
+
+            // 3. Percentage Only Mode on AC
+            item.DisplayMode = "Percentage";
+            item.UpdateDisplayText();
+            Assert.Equal("Google Chrome (chrome.exe): 0.0% of battery used (0.0 mWh) (Plugged In / On Charger) [Active Window]", item.DisplayText);
         }
 
         [Fact]

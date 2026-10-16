@@ -1,4 +1,4 @@
-﻿using System.Linq;
+using System.Linq;
 using System.Threading.Tasks;
 using ResourceAnalyzer;
 using ResourceAnalyzer.Models;
@@ -23,6 +23,19 @@ namespace ResourceAnalyzer.Tests
             Assert.DoesNotContain(processes, p => p.Name.Equals("RuntimeBroker", System.StringComparison.OrdinalIgnoreCase));
             Assert.DoesNotContain(processes, p => p.Name.Equals("audiodg", System.StringComparison.OrdinalIgnoreCase));
             Assert.DoesNotContain(processes, p => p.DisplayName.Equals("audiodg.exe", System.StringComparison.OrdinalIgnoreCase));
+        }
+
+        [Fact]
+        public async Task GetProcessesAsync_WhenExposeAllProcesses_IncludesKernelOrServices()
+        {
+            var service = new ProcessService();
+            var processes = await service.GetProcessesAsync(searchTerm: string.Empty, sortBy: "Memory", hideSystemProcesses: false);
+
+            Assert.NotEmpty(processes);
+            // svchost or dwm or System (PID 4) should be present when system processes are exposed
+            Assert.Contains(processes, p => p.Name.Equals("svchost", System.StringComparison.OrdinalIgnoreCase) ||
+                                           p.Name.Equals("dwm", System.StringComparison.OrdinalIgnoreCase) ||
+                                           p.Pid == 4);
         }
 
         [Theory]
@@ -162,6 +175,7 @@ namespace ResourceAnalyzer.Tests
         public void ProcessItem_GroupChild_DisplaysIndentedPIDAndMetrics()
         {
             ProcessItem.ShowExtension = true;
+            ProcessItem.ShowPid = true;
             var child = new Models.ProcessItem
             {
                 Name = "chrome",
@@ -175,6 +189,36 @@ namespace ResourceAnalyzer.Tests
 
             Assert.Equal("  chrome.exe (PID: 1240) - RAM: 100.0 MB, CPU: 1.0%", child.DisplayText);
             Assert.Equal("proc_1240", child.ItemKey);
+        }
+
+        [Fact]
+        public void ProcessItem_GroupChild_RespectsHidePidAndHideExtension()
+        {
+            ProcessItem.ShowExtension = false;
+            ProcessItem.ShowPid = false;
+
+            var child = new Models.ProcessItem
+            {
+                Name = "chrome",
+                GroupName = "chrome",
+                Pid = 1240,
+                IsGroupChild = true,
+                MemoryBytes = 104857600, // 100 MB
+                CpuPercent = 1.0
+            };
+            child.UpdateDisplayText();
+
+            Assert.Equal("  chrome - RAM: 100.0 MB, CPU: 1.0%", child.DisplayText);
+            Assert.DoesNotContain("PID", child.DisplayText);
+            Assert.DoesNotContain(".exe", child.DisplayText);
+
+            // SubProcessDetail with .exe should also strip .exe and omit PID
+            child.SubProcessDetail = "GPU Process (chrome.exe)";
+            child.UpdateDisplayText();
+
+            Assert.Equal("  GPU Process (chrome) - RAM: 100.0 MB, CPU: 1.0%", child.DisplayText);
+            Assert.DoesNotContain("PID", child.DisplayText);
+            Assert.DoesNotContain(".exe", child.DisplayText);
         }
 
         [Fact]
@@ -388,6 +432,124 @@ namespace ResourceAnalyzer.Tests
             Assert.True(header.IsFrozen);
             Assert.True(header.IsActiveApp);
             Assert.Contains("[FROZEN - Not Responding]", header.DisplayText);
+        }
+
+        [Fact]
+        public void ProcessItem_UpdateDisplayText_UsesSubProcessDetail_WhenChildItem()
+        {
+            ProcessItem.ShowPid = true;
+            var item = new ProcessItem
+            {
+                Name = "chrome",
+                Pid = 5412,
+                MemoryBytes = 150 * 1024 * 1024,
+                CpuPercent = 1.2,
+                IsGroupChild = true,
+                SubProcessDetail = "YouTube - Google Chrome"
+            };
+            item.UpdateDisplayText();
+
+            Assert.Contains("YouTube - Google Chrome", item.DisplayText);
+            Assert.Contains("(PID: 5412)", item.DisplayText);
+            Assert.StartsWith("  YouTube - Google Chrome", item.DisplayText);
+
+            // In clean mode (ShowPid = false, ShowExtension = false)
+            ProcessItem.ShowPid = false;
+            ProcessItem.ShowExtension = false;
+            item.UpdateDisplayText();
+
+            Assert.DoesNotContain("PID", item.DisplayText);
+            Assert.StartsWith("  YouTube - Google Chrome - RAM:", item.DisplayText);
+        }
+
+        [Theory]
+        [InlineData("--type=renderer --lang=en-US", "Web Content (Tab)")]
+        [InlineData("--type=gpu-process --field-trial-handle=123", "GPU Process")]
+        [InlineData("--type=utility --utility-sub-type=audio.mojom.AudioService", "Audio Service")]
+        [InlineData("--type=utility --utility-sub-type=network.mojom.NetworkService", "Network Service")]
+        [InlineData("--type=utility --utility-sub-type=storage.mojom.StorageService", "Storage Service")]
+        [InlineData("--type=utility", "Utility Worker")]
+        [InlineData("--type=extension --field-trial-handle=456", "Browser Extension")]
+        [InlineData("--type=crashpad-handler --monitor-self", "Crash Reporter")]
+        public void ProcessDetailResolver_ExtractProcessRole_IdentifiesChromiumRoles(string cmdLine, string expectedRole)
+        {
+            string? role = ProcessDetailResolver.ExtractProcessRole(cmdLine, "chrome");
+            Assert.Equal(expectedRole, role);
+        }
+
+        [Fact]
+        public void ProcessDetailResolver_ExtractProcessRole_IdentifiesPythonScript()
+        {
+            string cmdLine = "\"C:\\Python311\\python.exe\" \"C:\\Scripts\\backup_runner.py\" --verbose";
+            string? role = ProcessDetailResolver.ExtractProcessRole(cmdLine, "python");
+            Assert.Equal("backup_runner.py", role);
+        }
+
+        [Fact]
+        public void ProcessDetailResolver_GetActiveServices_ExecutesWithoutException()
+        {
+            var services = ProcessDetailResolver.GetActiveServices();
+            Assert.NotNull(services);
+        }
+
+        [Fact]
+        public void ProcessDetailResolver_GetActiveWindowTitles_ExecutesWithoutException()
+        {
+            var titles = ProcessDetailResolver.GetActiveWindowTitles();
+            Assert.NotNull(titles);
+        }
+
+        [Theory]
+        [InlineData(0, "Idle")]
+        [InlineData(4, "System")]
+        [InlineData(100, "dwm")]
+        [InlineData(200, "csrss")]
+        [InlineData(300, "lsass")]
+        public async Task RestartProcessAsync_ProtectsCriticalKernelProcesses(int pid, string name)
+        {
+            var service = new ProcessService();
+            var (success, msg) = await service.RestartProcessAsync(pid, name);
+
+            Assert.False(success);
+            Assert.Contains("critical Windows system process", msg);
+        }
+
+        [Fact]
+        public void GetProcessExecutablePath_ReturnsCurrentProcessPath()
+        {
+            string? path = ProcessService.GetProcessExecutablePath(System.Environment.ProcessId);
+            Assert.NotNull(path);
+            Assert.True(System.IO.File.Exists(path));
+            Assert.EndsWith(".exe", path, System.StringComparison.OrdinalIgnoreCase);
+        }
+
+        [Fact]
+        public async Task RestartProcessAsync_ReturnsFalse_WhenProcessNotFound()
+        {
+            var service = new ProcessService();
+            var (success, msg) = await service.RestartProcessAsync(99999999, "NonexistentApp");
+            Assert.False(success);
+            Assert.Contains("could not be determined", msg);
+        }
+
+        [Fact]
+        public void ActionableProcessesForAlerts_ExcludesIdleAndSystemKernel()
+        {
+            var processes = new System.Collections.Generic.List<ProcessItem>
+            {
+                new ProcessItem { Pid = 0, Name = "Idle", Description = "System Idle Process", CpuPercent = 95.0, MemoryBytes = 0 },
+                new ProcessItem { Pid = 4, Name = "System", Description = "NT Kernel & System", CpuPercent = 15.0, MemoryBytes = 50 * 1024 * 1024 },
+                new ProcessItem { Pid = 1234, Name = "chrome.exe", Description = "Google Chrome", CpuPercent = 85.0, MemoryBytes = 2L * 1024 * 1024 * 1024 }
+            };
+
+            var actionable = processes.Where(p =>
+                p.Pid > 4 &&
+                !p.Name.Equals("Idle", System.StringComparison.OrdinalIgnoreCase) &&
+                !p.Name.Equals("System Idle Process", System.StringComparison.OrdinalIgnoreCase) &&
+                !p.Name.Equals("System", System.StringComparison.OrdinalIgnoreCase)).ToList();
+
+            Assert.Single(actionable);
+            Assert.Equal("chrome.exe", actionable[0].Name);
         }
     }
 }

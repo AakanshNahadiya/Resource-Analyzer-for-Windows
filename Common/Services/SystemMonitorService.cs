@@ -1,10 +1,11 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net.NetworkInformation;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Win32;
@@ -171,28 +172,81 @@ namespace ResourceAnalyzer.Services
             });
         }
 
+        private PerformanceCounter? _cpuUtilityCounter;
+        private bool _isCpuUtilityCounterFailed = false;
+        private double _smoothedCpuPercent = -1.0;
+
         private (string Summary, string Details, double Percent) SampleCpu()
         {
-            double cpuPercent = 0.0;
-            if (NativeMethods.GetSystemTimes(out long idleTime, out long kernelTime, out long userTime))
-            {
-                if (!_isFirstCpuSample)
-                {
-                    long idleDelta = idleTime - _prevIdleTime;
-                    long kernelDelta = kernelTime - _prevKernelTime;
-                    long userDelta = userTime - _prevUserTime;
+            double rawCpuPercent = -1.0;
 
-                    long totalTime = kernelDelta + userDelta;
-                    if (totalTime > 0)
+            // 1. Primary: Frequency-aware % Processor Utility (Task Manager parity)
+            if (!_isCpuUtilityCounterFailed)
+            {
+                try
+                {
+                    if (_cpuUtilityCounter == null)
                     {
-                        cpuPercent = Math.Clamp((double)(totalTime - idleDelta) * 100.0 / totalTime, 0.0, 100.0);
+                        _cpuUtilityCounter = new PerformanceCounter("Processor Information", "% Processor Utility", "_Total");
+                        _cpuUtilityCounter.NextValue(); // Prime first reading
+                    }
+                    else
+                    {
+                        float val = _cpuUtilityCounter.NextValue();
+                        if (val >= 0)
+                        {
+                            rawCpuPercent = Math.Clamp((double)val, 0.0, 100.0);
+                        }
                     }
                 }
-                _prevIdleTime = idleTime;
-                _prevKernelTime = kernelTime;
-                _prevUserTime = userTime;
-                _isFirstCpuSample = false;
+                catch
+                {
+                    _isCpuUtilityCounterFailed = true;
+                    _cpuUtilityCounter?.Dispose();
+                    _cpuUtilityCounter = null;
+                }
             }
+
+            // 2. Fallback: Classic GetSystemTimes (% Processor Time)
+            if (rawCpuPercent < 0)
+            {
+                if (NativeMethods.GetSystemTimes(out long idleTime, out long kernelTime, out long userTime))
+                {
+                    if (!_isFirstCpuSample)
+                    {
+                        long idleDelta = idleTime - _prevIdleTime;
+                        long kernelDelta = kernelTime - _prevKernelTime;
+                        long userDelta = userTime - _prevUserTime;
+
+                        long totalTime = kernelDelta + userDelta;
+                        if (totalTime > 0)
+                        {
+                            rawCpuPercent = Math.Clamp((double)(totalTime - idleDelta) * 100.0 / totalTime, 0.0, 100.0);
+                        }
+                    }
+                    _prevIdleTime = idleTime;
+                    _prevKernelTime = kernelTime;
+                    _prevUserTime = userTime;
+                    _isFirstCpuSample = false;
+                }
+            }
+
+            if (rawCpuPercent < 0)
+            {
+                rawCpuPercent = 0.0;
+            }
+
+            // 3. Smooth instantaneous micro-bursts using a low-pass filter (EMA)
+            if (_smoothedCpuPercent < 0)
+            {
+                _smoothedCpuPercent = rawCpuPercent;
+            }
+            else
+            {
+                _smoothedCpuPercent = (_smoothedCpuPercent * 0.35) + (rawCpuPercent * 0.65);
+            }
+
+            double cpuPercent = Math.Clamp(_smoothedCpuPercent, 0.0, 100.0);
 
             int coreCount = Environment.ProcessorCount;
             string summary = $"CPU: {cpuPercent:F0}% ({coreCount} logical cores)";
@@ -372,26 +426,14 @@ namespace ResourceAnalyzer.Services
                 // Wi-Fi Telemetry Cache (SSID, Band, Signal Strength)
                 if (_lastIsWireless)
                 {
-                    if (_lastWifiQueryTime == DateTime.MinValue)
-                    {
-                        try
-                        {
-                            string raw = QueryWifiInterfacesRaw();
-                            var (ssid, band, signal) = ParseWifiInterfacesOutput(raw);
-                            _cachedWifiInfo = FormatWifiSummaryTag(ssid, band, signal);
-                        }
-                        catch { }
-                        _lastWifiQueryTime = DateTime.UtcNow;
-                    }
-                    else if ((DateTime.UtcNow - _lastWifiQueryTime).TotalSeconds >= 5 && !_isWifiQueryInProgress)
+                    if ((_lastWifiQueryTime == DateTime.MinValue || (DateTime.UtcNow - _lastWifiQueryTime).TotalSeconds >= 5) && !_isWifiQueryInProgress)
                     {
                         _isWifiQueryInProgress = true;
                         Task.Run(() =>
                         {
                             try
                             {
-                                string raw = QueryWifiInterfacesRaw();
-                                var (ssid, band, signal) = ParseWifiInterfacesOutput(raw);
+                                var (ssid, band, signal) = QueryWifiTelemetryFast();
                                 _cachedWifiInfo = FormatWifiSummaryTag(ssid, band, signal);
                             }
                             catch { }
@@ -448,30 +490,58 @@ namespace ResourceAnalyzer.Services
             return (summary, details, -1.0);
         }
 
-        public static string QueryWifiInterfacesRaw()
+        public static (string? Ssid, string? Band, string? Signal) QueryWifiTelemetryFast()
         {
+            // 1. Try modern Windows 10/11 WinRT ConnectionProfile (zero location icon)
             try
             {
-                var psi = new ProcessStartInfo
+                var profile = Windows.Networking.Connectivity.NetworkInformation.GetInternetConnectionProfile();
+                if (profile != null && profile.IsWlanConnectionProfile)
                 {
-                    FileName = "netsh.exe",
-                    Arguments = "wlan show interfaces",
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    RedirectStandardOutput = true
-                };
+                    string ssid = profile.ProfileName;
+                    byte? bars = profile.GetSignalBars();
+                    string? signal = bars.HasValue ? $"{bars.Value * 20}%" : null;
 
-                using var proc = Process.Start(psi);
-                if (proc != null)
-                {
-                    string output = proc.StandardOutput.ReadToEnd();
-                    proc.WaitForExit(1000);
-                    return output;
+                    string? band = null;
+                    var adapter = profile.NetworkAdapter;
+                    if (adapter != null)
+                    {
+                        ulong inSpeed = adapter.InboundMaxBitsPerSecond;
+                        if (inSpeed > 300_000_000) band = "5 GHz";
+                        else if (inSpeed > 0 && inSpeed <= 72_000_000) band = "2.4 GHz";
+                    }
+
+                    if (!string.IsNullOrEmpty(ssid))
+                    {
+                        return (ssid, band, signal);
+                    }
                 }
             }
             catch { }
-            return string.Empty;
+
+            // 2. Try Windows Network List Manager COM interface (zero location icon)
+            try
+            {
+                var nlmType = Type.GetTypeFromCLSID(new Guid("DCB00C01-570F-4A9B-8D69-199FDBA5723B"));
+                if (nlmType != null)
+                {
+                    dynamic nlm = Activator.CreateInstance(nlmType)!;
+                    var networks = nlm.GetNetworks(1 /* NLM_ENUM_NETWORK_CONNECTED */);
+                    foreach (var net in networks)
+                    {
+                        string name = (string)net.GetName();
+                        if (!string.IsNullOrWhiteSpace(name))
+                        {
+                            return (name, null, null);
+                        }
+                    }
+                }
+            }
+            catch { }
+
+            return (null, null, null);
         }
+
 
         public static (string? Ssid, string? Band, string? Signal) ParseWifiInterfacesOutput(string output)
         {
