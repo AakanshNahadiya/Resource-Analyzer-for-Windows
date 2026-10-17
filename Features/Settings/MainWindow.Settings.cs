@@ -113,26 +113,6 @@ namespace ResourceAnalyzer
                     _ => 0
                 };
 
-                // Battery app display mode
-                if (cmbBatteryAppDisplayMode != null)
-                {
-                    cmbBatteryAppDisplayMode.SelectedIndex = s.BatteryAppDisplayMode switch
-                    {
-                        "Percentage" => 1,
-                        "DrainRate" => 2,
-                        _ => 0
-                    };
-                }
-
-                if (pnlBatteryDisclaimer != null)
-                {
-                    pnlBatteryDisclaimer.Visibility = s.HideBatteryDisclaimer ? Visibility.Collapsed : Visibility.Visible;
-                }
-                if (chkDoNotShowBatteryDisclaimer != null)
-                {
-                    chkDoNotShowBatteryDisclaimer.IsChecked = s.HideBatteryDisclaimer;
-                }
-
                 if (s.RememberSortFilter && !string.IsNullOrWhiteSpace(s.SortBy))
                 {
                     _currentSort = s.SortBy;
@@ -519,17 +499,6 @@ namespace ResourceAnalyzer
                 };
             }
 
-            // Battery app display mode
-            if (cmbBatteryAppDisplayMode != null && cmbBatteryAppDisplayMode.SelectedIndex >= 0)
-            {
-                s.BatteryAppDisplayMode = cmbBatteryAppDisplayMode.SelectedIndex switch
-                {
-                    1 => "Percentage",
-                    2 => "DrainRate",
-                    _ => "Combined"
-                };
-            }
-
             _settingsService.Save();
 
             if (!silent)
@@ -537,39 +506,6 @@ namespace ResourceAnalyzer
                 _speechService.Speak("Settings saved.", interrupt: true);
                 txtAnnouncement.Text = "Settings saved.";
             }
-        }
-
-        private void CmbBatteryAppDisplayMode_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        {
-            if (_isUpdatingUI) return;
-            if (cmbBatteryAppDisplayMode == null || cmbBatteryAppDisplayMode.SelectedIndex < 0) return;
-
-            string mode = cmbBatteryAppDisplayMode.SelectedIndex switch
-            {
-                1 => "Percentage",
-                2 => "DrainRate",
-                _ => "Combined"
-            };
-
-            _settingsService.CurrentSettings.BatteryAppDisplayMode = mode;
-            SaveSettingsFromUI(silent: true);
-
-            foreach (var item in _appBatteryItems)
-            {
-                item.DisplayMode = mode;
-                item.UpdateDisplayText();
-            }
-
-            string announcement = mode switch
-            {
-                "Percentage" => "Battery app display set to Percentage Only.",
-                "DrainRate" => "Battery app display set to Live Drain Rate Only.",
-                _ => "Battery app display set to Combined Percentage and Live Drain Rate."
-            };
-            _speechService.Speak(announcement, interrupt: true);
-            txtAnnouncement.Text = announcement;
-
-            _ = RefreshAppBatteryUsageAsync(isFullReset: true);
         }
 
         #endregion

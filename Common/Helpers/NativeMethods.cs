@@ -88,6 +88,41 @@ namespace ResourceAnalyzer.Helpers
 
         #region Kernel32
 
+        #region Process & DLL Security Hardening (Microsoft SDL / CWE-427)
+
+        public const uint LOAD_LIBRARY_SEARCH_DEFAULT_DIRS = 0x00001000;
+        public const uint LOAD_LIBRARY_SEARCH_APPLICATION_DIR = 0x00000200;
+        public const uint LOAD_LIBRARY_SEARCH_SYSTEM32 = 0x00000800;
+        public const uint LOAD_LIBRARY_SEARCH_USER_DIRS = 0x00000400;
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool SetDefaultDllDirectories(uint DirectoryFlags);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool SetDllDirectory(string lpPathName);
+
+        /// <summary>
+        /// Hardens process against DLL preloading and hijacking attacks (CWE-427)
+        /// in accordance with Microsoft Security Development Lifecycle guidelines.
+        /// Removes the Current Working Directory (CWD) from the DLL search order.
+        /// </summary>
+        public static void InitializeProcessSecurity()
+        {
+            try
+            {
+                SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
+                SetDllDirectory(string.Empty);
+            }
+            catch
+            {
+                // Graceful fallback on non-standard Windows builds
+            }
+        }
+
+        #endregion
+
         [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static extern bool GlobalMemoryStatusEx(ref MEMORYSTATUSEX lpBuffer);
@@ -163,6 +198,113 @@ namespace ResourceAnalyzer.Helpers
             }
             catch { }
             return -1;
+        }
+
+        public const uint IOCTL_STORAGE_QUERY_PROPERTY = 0x002D1400;
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct STORAGE_PROPERTY_QUERY
+        {
+            public uint PropertyId;
+            public uint QueryType;
+            [MarshalAs(UnmanagedType.ByValArray, SizeConst = 1)]
+            public byte[] AdditionalParameters;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct DEVICE_SEEK_PENALTY_DESCRIPTOR
+        {
+            public uint Version;
+            public uint Size;
+            [MarshalAs(UnmanagedType.I1)]
+            public bool IncursSeekPenalty;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct DEVICE_TRIM_DESCRIPTOR
+        {
+            public uint Version;
+            public uint Size;
+            [MarshalAs(UnmanagedType.I1)]
+            public bool TrimEnabled;
+        }
+
+        public static bool? QueryDiskSeekPenalty(int diskIndex)
+        {
+            if (diskIndex < 0) return null;
+            try
+            {
+                string path = $@"\\.\PhysicalDrive{diskIndex}";
+                using var handle = CreateFile(path, 0, 1 | 2 | 4, IntPtr.Zero, 3, 0, IntPtr.Zero);
+                if (!handle.IsInvalid)
+                {
+                    var query = new STORAGE_PROPERTY_QUERY
+                    {
+                        PropertyId = 7, // StorageDeviceSeekPenaltyProperty
+                        QueryType = 0,  // PropertyStandardQuery
+                        AdditionalParameters = new byte[1]
+                    };
+                    int qSize = Marshal.SizeOf(typeof(STORAGE_PROPERTY_QUERY));
+                    IntPtr inBuf = Marshal.AllocHGlobal(qSize);
+                    Marshal.StructureToPtr(query, inBuf, false);
+                    int outSize = Marshal.SizeOf(typeof(DEVICE_SEEK_PENALTY_DESCRIPTOR));
+                    IntPtr outBuf = Marshal.AllocHGlobal(outSize);
+                    try
+                    {
+                        if (DeviceIoControl(handle, IOCTL_STORAGE_QUERY_PROPERTY, inBuf, (uint)qSize, outBuf, (uint)outSize, out _, IntPtr.Zero))
+                        {
+                            var desc = Marshal.PtrToStructure<DEVICE_SEEK_PENALTY_DESCRIPTOR>(outBuf);
+                            return desc.IncursSeekPenalty;
+                        }
+                    }
+                    finally
+                    {
+                        Marshal.FreeHGlobal(inBuf);
+                        Marshal.FreeHGlobal(outBuf);
+                    }
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        public static bool? QueryDiskTrimSupport(int diskIndex)
+        {
+            if (diskIndex < 0) return null;
+            try
+            {
+                string path = $@"\\.\PhysicalDrive{diskIndex}";
+                using var handle = CreateFile(path, 0, 1 | 2 | 4, IntPtr.Zero, 3, 0, IntPtr.Zero);
+                if (!handle.IsInvalid)
+                {
+                    var query = new STORAGE_PROPERTY_QUERY
+                    {
+                        PropertyId = 8, // StorageDeviceTrimProperty
+                        QueryType = 0,  // PropertyStandardQuery
+                        AdditionalParameters = new byte[1]
+                    };
+                    int qSize = Marshal.SizeOf(typeof(STORAGE_PROPERTY_QUERY));
+                    IntPtr inBuf = Marshal.AllocHGlobal(qSize);
+                    Marshal.StructureToPtr(query, inBuf, false);
+                    int outSize = Marshal.SizeOf(typeof(DEVICE_TRIM_DESCRIPTOR));
+                    IntPtr outBuf = Marshal.AllocHGlobal(outSize);
+                    try
+                    {
+                        if (DeviceIoControl(handle, IOCTL_STORAGE_QUERY_PROPERTY, inBuf, (uint)qSize, outBuf, (uint)outSize, out _, IntPtr.Zero))
+                        {
+                            var desc = Marshal.PtrToStructure<DEVICE_TRIM_DESCRIPTOR>(outBuf);
+                            return desc.TrimEnabled;
+                        }
+                    }
+                    finally
+                    {
+                        Marshal.FreeHGlobal(inBuf);
+                        Marshal.FreeHGlobal(outBuf);
+                    }
+                }
+            }
+            catch { }
+            return null;
         }
 
         public const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
@@ -362,6 +504,18 @@ namespace ResourceAnalyzer.Helpers
         #region Powrprof
 
         public const int SystemBatteryState = 5;
+        public const int ProcessorInformation = 11;
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct PROCESSOR_POWER_INFORMATION
+        {
+            public uint Number;
+            public uint MaxMhz;
+            public uint CurrentMhz;
+            public uint MhzLimit;
+            public uint MaxIdleState;
+            public uint CurrentIdleState;
+        }
 
         [DllImport("powrprof.dll", SetLastError = true)]
         public static extern uint CallNtPowerInformation(
@@ -370,6 +524,41 @@ namespace ResourceAnalyzer.Helpers
             uint nInputBufferSize,
             out SYSTEM_BATTERY_STATE lpOutputBuffer,
             uint nOutputBufferSize);
+
+        [DllImport("powrprof.dll", EntryPoint = "CallNtPowerInformation", SetLastError = true)]
+        public static extern uint CallNtPowerInformationRaw(
+            int informationLevel,
+            IntPtr lpInputBuffer,
+            uint nInputBufferSize,
+            IntPtr lpOutputBuffer,
+            uint nOutputBufferSize);
+
+        public static (uint MaxMhz, uint CurrentMhz, uint MhzLimit)? GetProcessorPowerLimits()
+        {
+            try
+            {
+                int procCount = Environment.ProcessorCount;
+                if (procCount <= 0) procCount = 1;
+                int structSize = Marshal.SizeOf(typeof(PROCESSOR_POWER_INFORMATION));
+                int totalSize = procCount * structSize;
+                IntPtr buffer = Marshal.AllocHGlobal(totalSize);
+                try
+                {
+                    uint ret = CallNtPowerInformationRaw(ProcessorInformation, IntPtr.Zero, 0, buffer, (uint)totalSize);
+                    if (ret == 0)
+                    {
+                        var info = Marshal.PtrToStructure<PROCESSOR_POWER_INFORMATION>(buffer);
+                        return (info.MaxMhz, info.CurrentMhz, info.MhzLimit);
+                    }
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(buffer);
+                }
+            }
+            catch { }
+            return null;
+        }
 
         [DllImport("powrprof.dll", SetLastError = true)]
         public static extern uint PowerGetActiveScheme(IntPtr UserRootPowerKey, out IntPtr ActivePolicyGuid);
@@ -448,6 +637,129 @@ namespace ResourceAnalyzer.Helpers
         [DllImport("user32.dll")]
         public static extern uint GetDpiForSystem();
 
+        public const uint QDC_ONLY_ACTIVE_PATHS = 0x00000002;
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct LUID
+        {
+            public uint LowPart;
+            public int HighPart;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct DISPLAYCONFIG_DEVICE_INFO_HEADER
+        {
+            public uint type;
+            public uint size;
+            public LUID adapterId;
+            public uint id;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO
+        {
+            public DISPLAYCONFIG_DEVICE_INFO_HEADER header;
+            public uint value;
+            public uint colorEncoding;
+            public uint bitsPerColorChannel;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct DISPLAYCONFIG_PATH_SOURCE_INFO
+        {
+            public LUID adapterId;
+            public uint id;
+            public uint modeInfoIdx;
+            public uint statusFlags;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct DISPLAYCONFIG_PATH_TARGET_INFO
+        {
+            public LUID adapterId;
+            public uint id;
+            public uint modeInfoIdx;
+            public uint outputTechnology;
+            public uint rotation;
+            public uint scaling;
+            public uint refreshRateNumerator;
+            public uint refreshRateDenominator;
+            public uint scanLineOrdering;
+            [MarshalAs(UnmanagedType.Bool)]
+            public bool targetAvailable;
+            public uint statusFlags;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct DISPLAYCONFIG_PATH_INFO
+        {
+            public DISPLAYCONFIG_PATH_SOURCE_INFO sourceInfo;
+            public DISPLAYCONFIG_PATH_TARGET_INFO targetInfo;
+            public uint flags;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct DISPLAYCONFIG_MODE_INFO
+        {
+            public uint infoType;
+            public uint id;
+            public LUID adapterId;
+            [MarshalAs(UnmanagedType.ByValArray, SizeConst = 64)]
+            public byte[] modeInfo;
+        }
+
+        [DllImport("user32.dll")]
+        public static extern int GetDisplayConfigBufferSizes(
+            uint flags,
+            out uint numPathArrayElements,
+            out uint numModeInfoArrayElements);
+
+        [DllImport("user32.dll")]
+        public static extern int QueryDisplayConfig(
+            uint flags,
+            ref uint numPathArrayElements,
+            [Out] DISPLAYCONFIG_PATH_INFO[] pathInfoArray,
+            ref uint numModeInfoArrayElements,
+            [Out] DISPLAYCONFIG_MODE_INFO[] modeInfoArray,
+            IntPtr currentTopologyId);
+
+        [DllImport("user32.dll")]
+        public static extern int DisplayConfigGetDeviceInfo(
+            ref DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO requestPacket);
+
+        public static (bool Supported, bool Enabled, uint BitsPerChannel)? QueryDisplayHdrStatus()
+        {
+            try
+            {
+                int err = GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, out uint pathCount, out uint modeCount);
+                if (err == 0 && pathCount > 0)
+                {
+                    var paths = new DISPLAYCONFIG_PATH_INFO[pathCount];
+                    var modes = new DISPLAYCONFIG_MODE_INFO[modeCount];
+                    err = QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS, ref pathCount, paths, ref modeCount, modes, IntPtr.Zero);
+                    if (err == 0)
+                    {
+                        for (int i = 0; i < pathCount; i++)
+                        {
+                            var packet = new DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO();
+                            packet.header.type = 9; // DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO
+                            packet.header.size = (uint)Marshal.SizeOf(typeof(DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO));
+                            packet.header.adapterId = paths[i].targetInfo.adapterId;
+                            packet.header.id = paths[i].targetInfo.id;
+                            if (DisplayConfigGetDeviceInfo(ref packet) == 0)
+                            {
+                                bool supported = (packet.value & 0x1) != 0;
+                                bool enabled = (packet.value & 0x2) != 0;
+                                return (supported, enabled, packet.bitsPerColorChannel);
+                            }
+                        }
+                    }
+                }
+            }
+            catch { }
+            return null;
+        }
+
         #endregion
 
         #region Iphlpapi
@@ -476,6 +788,96 @@ namespace ResourceAnalyzer.Helpers
             int ulAf,
             int tableClass,
             uint reserved = 0);
+
+        #endregion
+
+        #region Wlanapi
+
+        [DllImport("wlanapi.dll", SetLastError = true)]
+        public static extern uint WlanOpenHandle(
+            uint dwClientVersion,
+            IntPtr pReserved,
+            out uint pdwNegotiatedVersion,
+            out IntPtr phClientHandle);
+
+        [DllImport("wlanapi.dll", SetLastError = true)]
+        public static extern uint WlanCloseHandle(
+            IntPtr hClientHandle,
+            IntPtr pReserved);
+
+        [DllImport("wlanapi.dll", SetLastError = true)]
+        public static extern uint WlanEnumInterfaces(
+            IntPtr hClientHandle,
+            IntPtr pReserved,
+            out IntPtr ppInterfaceList);
+
+        [DllImport("wlanapi.dll", SetLastError = true)]
+        public static extern uint WlanQueryInterface(
+            IntPtr hClientHandle,
+            ref Guid pInterfaceGuid,
+            int opCode,
+            IntPtr pReserved,
+            out uint pdwDataSize,
+            out IntPtr ppData,
+            out int pWlanOpcodeValueType);
+
+        [DllImport("wlanapi.dll", SetLastError = true)]
+        public static extern void WlanFreeMemory(IntPtr pMemory);
+
+        public static string? QueryActiveWifiBand()
+        {
+            try
+            {
+                if (WlanOpenHandle(2, IntPtr.Zero, out _, out IntPtr handle) == 0)
+                {
+                    try
+                    {
+                        if (WlanEnumInterfaces(handle, IntPtr.Zero, out IntPtr ifList) == 0)
+                        {
+                            try
+                            {
+                                int count = Marshal.ReadInt32(ifList);
+                                if (count > 0)
+                                {
+                                    byte[] guidBytes = new byte[16];
+                                    Marshal.Copy(new IntPtr(ifList.ToInt64() + 8), guidBytes, 0, 16);
+                                    Guid guid = new Guid(guidBytes);
+
+                                    // OpCode 8 = wlan_intf_opcode_channel_number
+                                    if (WlanQueryInterface(handle, ref guid, 8, IntPtr.Zero, out _, out IntPtr data, out _) == 0)
+                                    {
+                                        try
+                                        {
+                                            int channel = Marshal.ReadInt32(data);
+                                            if (channel is >= 1 and <= 14)
+                                                return "2.4 GHz";
+                                            if (channel is >= 32 and <= 177)
+                                                return "5 GHz";
+                                            if (channel > 177)
+                                                return "6 GHz";
+                                        }
+                                        finally
+                                        {
+                                            WlanFreeMemory(data);
+                                        }
+                                    }
+                                }
+                            }
+                            finally
+                            {
+                                WlanFreeMemory(ifList);
+                            }
+                        }
+                    }
+                    finally
+                    {
+                        WlanCloseHandle(handle, IntPtr.Zero);
+                    }
+                }
+            }
+            catch { }
+            return null;
+        }
 
         #endregion
     }

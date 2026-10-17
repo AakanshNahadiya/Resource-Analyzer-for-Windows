@@ -134,7 +134,7 @@
 
             <!-- TAB 1: System Resources -->
             <TabItem x:Name="tabResources" Header="1. Resources"
-                     AutomationProperties.Name="System Resources Tab (1 of 6)">
+                     AutomationProperties.Name="System Resources Tab (1 of 5)">
                 <Grid Margin="10">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -169,7 +169,7 @@
 
             <!-- TAB 2: Process Manager -->
             <TabItem x:Name="tabProcesses" Header="2. Processes"
-                     AutomationProperties.Name="Process Manager Tab (2 of 6)">
+                     AutomationProperties.Name="Process Manager Tab (2 of 5)">
                 <Grid Margin="10">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -284,7 +284,7 @@
 
             <!-- TAB 3: Data Usage -->
             <TabItem x:Name="tabDataUsage" Header="3. Data Usage"
-                     AutomationProperties.Name="Data Usage Tab (3 of 6)">
+                     AutomationProperties.Name="Data Usage Tab (3 of 5)">
                 <Grid Margin="10">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -356,174 +356,9 @@
                 </Grid>
             </TabItem>
 
-            <!-- TAB 4: Battery Usage -->
-            <TabItem x:Name="tabBatteryUsage" Header="4. Battery Usage"
-                     AutomationProperties.Name="Battery Usage Tab (4 of 6)">
-                <Grid Margin="10">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                    </Grid.RowDefinitions>
-
-                    <!-- Filter Controls -->
-                    <WrapPanel Grid.Row="0" Margin="0,0,0,8" VerticalAlignment="Center">
-                        <TextBlock Text="Period: " VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,4,0"/>
-                        <ComboBox x:Name="cmbBatteryTimeRange" Width="180" Height="28" Margin="0,0,12,0"
-                                  SelectedIndex="0" TabIndex="1"
-                                  SelectionChanged="CmbBatteryTimeRange_SelectionChanged"
-                                  Background="{DynamicResource InputBackgroundBrush}" Foreground="{DynamicResource InputForegroundBrush}" BorderBrush="{DynamicResource InputBorderBrush}"
-                                  AutomationProperties.Name="Filter Battery Usage by Time Period">
-                            <ComboBoxItem Content="Full (All Recorded)"/>
-                            <ComboBoxItem Content="Last Month (30 Days)"/>
-                            <ComboBoxItem Content="Last Week (7 Days)"/>
-                            <ComboBoxItem Content="Last 24 Hours"/>
-                            <ComboBoxItem Content="Today"/>
-                        </ComboBox>
-
-                        <CheckBox x:Name="chkSinceLastCharge" Content="Since Last Charge" Margin="0,0,16,0" VerticalAlignment="Center"
-                                  TabIndex="2"
-                                  Checked="ChkSinceLastCharge_Checked" Unchecked="ChkSinceLastCharge_Unchecked"
-                                  AutomationProperties.Name="Filter Battery Usage Since Last Disconnected from Charger"/>
-
-                        <Button x:Name="btnRefreshBattery" Content="Refresh (F5)" Height="28" Padding="8,2"
-                                TabIndex="3"
-                                Background="{DynamicResource SurfaceBackgroundBrush}" Foreground="{DynamicResource TextPrimaryBrush}" BorderBrush="{DynamicResource BorderBrush}"
-                                Click="BtnRefreshBattery_Click"
-                                AutomationProperties.Name="Refresh Battery Sessions and Live Telemetry"/>
-                    </WrapPanel>
-
-                    <!-- Summary and Health Info -->
-                    <StackPanel Grid.Row="1" Margin="0,0,0,8">
-                        <TextBlock x:Name="txtBatterySummary" Foreground="{DynamicResource AccentBrush}" FontWeight="SemiBold"
-                                   Text="Loading battery energy usage..." Margin="0,0,0,3"
-                                   AutomationProperties.Name="{Binding Text, RelativeSource={RelativeSource Self}}"/>
-                        <TextBlock x:Name="txtBatteryHealthAndCycles" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12.5"
-                                   Text="Battery Health &amp; Cycles: Loading..."
-                                   AutomationProperties.Name="{Binding Text, RelativeSource={RelativeSource Self}}"/>
-                    </StackPanel>
-
-                    <!-- Disclaimer Banner -->
-                    <Border x:Name="pnlBatteryDisclaimer" Grid.Row="2"
-                            Margin="0,0,0,8" Padding="10,8" CornerRadius="4"
-                            Background="{DynamicResource SurfaceBackgroundBrush}"
-                            BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
-                        <DockPanel LastChildFill="True">
-                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,0,0">
-                                <CheckBox x:Name="chkDoNotShowBatteryDisclaimer" Content="Don't show again" VerticalAlignment="Center" Margin="0,0,8,0"
-                                          TabIndex="5"
-                                          Foreground="{DynamicResource TextSecondaryBrush}"
-                                          AutomationProperties.Name="Do not show battery accuracy disclaimer again"
-                                          AutomationProperties.HelpText="Check to hide this disclaimer on future launches"/>
-                                <Button x:Name="btnDismissBatteryDisclaimer" Content="Dismiss" Height="26" Padding="10,2"
-                                        TabIndex="6"
-                                        Background="{DynamicResource SurfaceBackgroundBrush}" Foreground="{DynamicResource TextPrimaryBrush}" BorderBrush="{DynamicResource BorderBrush}"
-                                        Click="BtnDismissBatteryDisclaimer_Click"
-                                        AutomationProperties.Name="Dismiss battery accuracy disclaimer"
-                                        AutomationProperties.HelpText="Dismisses this disclaimer banner"/>
-                            </StackPanel>
-                            <TextBlock x:Name="txtBatteryDisclaimer"
-                                       Focusable="True"
-                                       KeyboardNavigation.IsTabStop="True"
-                                       KeyboardNavigation.TabIndex="4"
-                                       FocusVisualStyle="{StaticResource BannerTextFocusVisual}"
-                                       TextWrapping="Wrap" VerticalAlignment="Center"
-                                       Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12"
-                                       AutomationProperties.Name="Note on Accuracy: Per-app battery usage is an estimate based on processor and screen activity. Because apps share system resources and hardware components, measurements may not be 100% exact.">
-                                <Run FontWeight="SemiBold" Foreground="{DynamicResource AccentBrush}">Note on Accuracy:</Run>
-                                <Run>Per-app battery usage is an estimate based on processor and screen activity. Because apps share system resources and hardware components, measurements may not be 100% exact.</Run>
-                            </TextBlock>
-                        </DockPanel>
-                    </Border>
-
-                    <!-- Side-by-Side Dual Lists: List 1 = Sessions (Left), List 2 = Per-App Live Usage (Right) -->
-                    <Grid Grid.Row="3">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" MinWidth="250"/>
-                            <ColumnDefinition Width="10"/>
-                            <ColumnDefinition Width="*" MinWidth="250"/>
-                        </Grid.ColumnDefinitions>
-
-                        <!-- List 1: Battery Usage Sessions (Left) -->
-                        <DockPanel Grid.Column="0">
-                            <TextBlock DockPanel.Dock="Top" Text="1. Battery Usage Sessions (Discharge &amp; Charging Log):"
-                                       FontWeight="SemiBold" Foreground="{DynamicResource AccentBrush}" Margin="0,0,0,4"
-                                       AutomationProperties.Name="Battery Usage Sessions Header (Left)"/>
-                            <ListBox x:Name="lstBatteryUsage"
-                                     TabIndex="7"
-                                     KeyboardNavigation.TabNavigation="Once"
-                                     Background="{DynamicResource WindowBackgroundBrush}" BorderThickness="1" BorderBrush="{DynamicResource BorderBrush}"
-                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                                     ScrollViewer.VerticalScrollBarVisibility="Auto"
-                                     VirtualizingStackPanel.IsVirtualizing="True"
-                                     VirtualizingStackPanel.VirtualizationMode="Recycling"
-                                     KeyDown="LstBatteryUsage_KeyDown"
-                                     AutomationProperties.Name="Battery Sessions (List 1)">
-                                <ListBox.ItemTemplate>
-                                    <DataTemplate>
-                                        <StackPanel Margin="0,2">
-                                            <TextBlock Text="{Binding DisplayText}" TextWrapping="Wrap"
-                                                       AutomationProperties.Name="{Binding DisplayText}"/>
-                                            <local:SilentProgressBar Minimum="0" Maximum="100" Value="{Binding DrainPercent}" Height="5" Margin="0,4,0,2"
-                                                                     Visibility="{Binding HasPercent, Converter={StaticResource BoolToVisConverter}}"
-                                                                     Foreground="{DynamicResource AccentBrush}" Background="{DynamicResource ProgressBarBackgroundBrush}"
-                                                                     BorderThickness="0" Focusable="False" IsHitTestVisible="False"/>
-                                        </StackPanel>
-                                    </DataTemplate>
-                                </ListBox.ItemTemplate>
-                            </ListBox>
-                        </DockPanel>
-
-                        <!-- Splitter / Separator -->
-                        <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Center" Background="{DynamicResource BorderBrush}" Focusable="False"/>
-
-                        <!-- List 2: Application Battery Usage (Right, Real-Time Live Telemetry) -->
-                        <DockPanel Grid.Column="2">
-                            <DockPanel DockPanel.Dock="Top" Margin="0,0,0,4">
-                                <TextBlock DockPanel.Dock="Left" Text="2. Application Battery Usage (Live Telemetry):"
-                                           FontWeight="SemiBold" Foreground="{DynamicResource AccentBrush}"
-                                           AutomationProperties.Name="Application Battery Usage Header (Right)"/>
-                                <TextBlock DockPanel.Dock="Right" Text="Live Scan" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="11" VerticalAlignment="Center"/>
-                            </DockPanel>
-                            <ListBox x:Name="lstAppBatteryUsage"
-                                     TabIndex="8"
-                                     KeyboardNavigation.TabNavigation="Once"
-                                     Background="{DynamicResource WindowBackgroundBrush}" BorderThickness="1" BorderBrush="{DynamicResource BorderBrush}"
-                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                                     ScrollViewer.VerticalScrollBarVisibility="Auto"
-                                     VirtualizingStackPanel.IsVirtualizing="True"
-                                     VirtualizingStackPanel.VirtualizationMode="Recycling"
-                                     KeyDown="LstAppBatteryUsage_KeyDown"
-                                     AutomationProperties.Name="App Battery Usage (List 2)">
-                                <ListBox.ContextMenu>
-                                    <ContextMenu>
-                                        <MenuItem Header="End Task (Delete)" Click="CtxAppBatteryEndTask_Click" InputGestureText="Del" AutomationProperties.Name="End Selected Application Task"/>
-                                        <Separator Background="{DynamicResource BorderBrush}"/>
-                                        <MenuItem Header="Copy Details (Ctrl+C)" Click="CtxAppBatteryCopy_Click" InputGestureText="Ctrl+C" AutomationProperties.Name="Copy App Battery Usage Details"/>
-                                    </ContextMenu>
-                                </ListBox.ContextMenu>
-                                <ListBox.ItemTemplate>
-                                    <DataTemplate>
-                                        <StackPanel Margin="0,2">
-                                            <TextBlock Text="{Binding DisplayText}" TextWrapping="Wrap"
-                                                       AutomationProperties.Name="{Binding DisplayText}"/>
-                                            <local:SilentProgressBar Minimum="0" Maximum="100" Value="{Binding BatteryPercent}" Height="5" Margin="0,4,0,2"
-                                                                     Visibility="{Binding HasPercent, Converter={StaticResource BoolToVisConverter}}"
-                                                                     Foreground="{DynamicResource AccentBrush}" Background="{DynamicResource ProgressBarBackgroundBrush}"
-                                                                     BorderThickness="0" Focusable="False" IsHitTestVisible="False"/>
-                                        </StackPanel>
-                                    </DataTemplate>
-                                </ListBox.ItemTemplate>
-                            </ListBox>
-                        </DockPanel>
-                    </Grid>
-                </Grid>
-            </TabItem>
-
-            <!-- TAB 5: Network Ports -->
-            <TabItem x:Name="tabNetworkPorts" Header="5. Network Ports"
-                     AutomationProperties.Name="Network Ports Tab (5 of 6)">
+            <!-- TAB 4: Network Ports -->
+            <TabItem x:Name="tabNetworkPorts" Header="4. Network Ports"
+                     AutomationProperties.Name="Network Ports Tab (4 of 5)">
                 <Grid Margin="10">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -619,9 +454,9 @@
                 </Grid>
             </TabItem>
 
-            <!-- TAB 6: Settings -->
-            <TabItem x:Name="tabSettings" Header="6. Settings"
-                     AutomationProperties.Name="Settings Tab (6 of 6)">
+            <!-- TAB 5: Settings -->
+            <TabItem x:Name="tabSettings" Header="5. Settings"
+                     AutomationProperties.Name="Settings Tab (5 of 5)">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel Margin="16" MaxWidth="620" HorizontalAlignment="Left">
                         <!-- Section 1: Process Filtering & Safety -->
@@ -707,21 +542,6 @@
 
                         <Separator Background="{DynamicResource BorderBrush}" Margin="0,16"/>
 
-                        <!-- Section: Battery App Usage Display Format -->
-                        <TextBlock Text="Battery App Usage Display Mode" FontWeight="Bold" FontSize="15" Foreground="{DynamicResource AccentBrush}" Margin="0,0,0,4"/>
-                        <TextBlock Text="Choose how application battery consumption is displayed in Tab 4:" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,8"/>
-                        <ComboBox x:Name="cmbBatteryAppDisplayMode" Width="460" Height="30" HorizontalAlignment="Left"
-                                  SelectedIndex="0"
-                                  SelectionChanged="CmbBatteryAppDisplayMode_SelectionChanged"
-                                  Background="{DynamicResource InputBackgroundBrush}" Foreground="{DynamicResource InputForegroundBrush}" BorderBrush="{DynamicResource InputBorderBrush}"
-                                  AutomationProperties.Name="Battery App Usage Display Mode">
-                            <ComboBoxItem Content="Combined: Battery % used and live drain rate (Recommended)"/>
-                            <ComboBoxItem Content="Percentage Only (e.g. 41.2% of battery used)"/>
-                            <ComboBoxItem Content="Live Drain Rate Only (e.g. 1,820 mW - High Power Impact)"/>
-                        </ComboBox>
-
-                        <Separator Background="{DynamicResource BorderBrush}" Margin="0,16"/>
-
                         <!-- Section 5: Appearance and Color Theme -->
                         <TextBlock Text="Appearance and Color Theme" FontWeight="Bold" FontSize="15" Foreground="{DynamicResource AccentBrush}" Margin="0,0,0,4"/>
                         <TextBlock Text="Choose visual theme (supports automatic matching with Windows):" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,8"/>
@@ -783,7 +603,7 @@
 
                         <!-- Section 7: Application Updates -->
                         <TextBlock Text="Application Updates &amp; Version" FontWeight="Bold" FontSize="15" Foreground="{DynamicResource AccentBrush}" Margin="0,0,0,4"/>
-                        <TextBlock x:Name="txtCurrentVersion" Text="Current Version: v1.0.5" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,10"/>
+                        <TextBlock x:Name="txtCurrentVersion" Text="Current Version: v1.0.6" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,10"/>
 
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                             <Button x:Name="btnCheckForUpdates" Content="Check for Updates" Width="180" Height="30" Margin="0,0,10,0"

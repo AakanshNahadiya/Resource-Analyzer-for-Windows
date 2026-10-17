@@ -1,16 +1,16 @@
 # Resource Analyzer for Windows
 
-> A lightweight, screen-reader-first system monitor, process manager, network data usage tracker, battery telemetry analyzer, and port scanner designed specifically for Windows.
+> A lightweight, screen-reader-first system monitor, process manager, network data usage tracker, and port scanner designed specifically for Windows.
 
 ---
 
 I was struggling to use the default Windows Task Manager with a screen reader. The complicated tables made it frustrating to check basic things like CPU and RAM usage.
 
-Also, finding out which app is eating your internet data or draining your laptop battery in Windows is one of the most frustrating problems. The default Windows settings pages are slow, buried, and confusing with screen readers.
+Also, finding out which app is eating your internet data in Windows is one of the most frustrating problems. The default Windows settings pages are slow, buried, and confusing with screen readers.
 
 This is why I have created a tool called **Resource Analyzer for Windows**.
 
-This tool gives you a clean, single-line overview of your computer health, processes, network data usage, battery sessions, and active network ports without cluttered tables.
+This tool gives you a clean, single-line overview of your computer health, processes, network data usage, and active network ports without cluttered tables.
 
 In this guide, I'm going to show you how you can use this tool step-by-step.
 
@@ -20,12 +20,12 @@ Now let's understand what Resource Analyzer is.
 
 ## What is Resource Analyzer?
 
-Resource Analyzer is an all-in-one solution for monitoring system resources, managing processes, tracking network data usage, inspecting battery energy drain, and auditing open network ports.
+Resource Analyzer is an all-in-one solution for monitoring system resources, managing processes, tracking network data usage, and auditing open network ports.
 
 * **No Cluttered Tables:** Speaks everything as simple, natural single-line sentences.
 * **100% Screen Reader Friendly:** Built and optimized from the ground up for NVDA, JAWS, and Windows Narrator.
 * **Solves Windows Data Usage:** Gives an instant breakdown of how much internet data each application has consumed.
-* **Real-Time Battery & Port Telemetry:** Tracks battery discharge logs, live per-app milliwatt drain, and active listening ports.
+* **Real-Time Network & Port Telemetry:** Tracks per-app data usage, network throughput, and active listening ports.
 * **Ultra-Lightweight:** Runs on only **20 MB to 35 MB of RAM** (compared to 150 MB+ on standard monitors).
 
 Now it's time to set up Resource Analyzer step-by-step.
@@ -43,7 +43,7 @@ Now it's time to set up Resource Analyzer step-by-step.
 
 ## Step 1: Download and Install Resource Analyzer
 
-1. Locate the setup file: `ResourceAnalyzer_Setup_v1.0.5.exe`.
+1. Locate the setup file: `ResourceAnalyzer_Setup_v1.0.6.exe`.
 2. Press <kbd>Enter</kbd> on the setup file to open the installation wizard.
 3. Press <kbd>Enter</kbd> on the **Next** button.
 4. Use the <kbd>Tab</kbd> key to review installation options:
@@ -130,26 +130,11 @@ Press <kbd>Ctrl</kbd> + <kbd>3</kbd> to switch to **Tab 3: Data Usage**:
 
 ---
 
-## Step 5: Monitor Battery Sessions & App Energy Drain
 
-Press <kbd>Ctrl</kbd> + <kbd>4</kbd> to switch to **Tab 4: Battery Usage** (on laptops and battery-equipped tablets):
 
-1. **Filter by Time Range:** Choose **Full**, **Last Month**, **Last Week**, **Last 24 Hours**, or **Today**.
-2. **Since Last Charge:** Check the *"Since Last Charge"* box to calculate discharge energy and active time starting from the moment you unplugged your charger.
-3. **Choose Display Mode:**
-   * **Combined (Default):** Shows percentage of battery consumed and estimated power draw in milliwatts (`mW`).
-   * **Percentage Only:** Shows clean percentage consumed per application.
-   * **Drain Rate:** Shows live estimated power draw in milliwatts (`mW`).
-4. **Dual Accessible Lists:**
-   * **List 1 (Battery Sessions):** Shows historical battery discharge and charging sessions with start time, duration, energy consumed (mWh), and discharge %.
-   * **List 2 (Application Battery Usage):** Live telemetry scanning running applications to show their energy impact, estimated power draw in milliwatts (mW), and percentage of battery consumed.
-   * Press <kbd>Tab</kbd> to move between List 1 and List 2. Inside List 2, press <kbd>Delete</kbd> to end any high-drain app.
+## Step 5: Scan Open Network Ports
 
----
-
-## Step 6: Scan Open Network Ports
-
-Press <kbd>Ctrl</kbd> + <kbd>5</kbd> to switch to **Tab 5: Network Ports**:
+Press <kbd>Ctrl</kbd> + <kbd>4</kbd> to switch to **Tab 4: Network Ports**:
 
 1. **Filter by Protocol:** Filter between **All Protocols**, **TCP Only**, or **UDP Only**.
 2. **Filter by State:** Filter between **All States**, **Listening Only**, or **Established Only**.
@@ -162,7 +147,7 @@ Press <kbd>Ctrl</kbd> + <kbd>5</kbd> to switch to **Tab 5: Network Ports**:
 
 ---
 
-## Step 7: Check Network Speed and Daily Data from Anywhere
+## Step 6: Check Network Speed and Daily Data from Anywhere
 
 You don't need to open Resource Analyzer every time you want to check your internet:
 
@@ -172,9 +157,9 @@ You don't need to open Resource Analyzer every time you want to check your inter
 
 ---
 
-## Step 8: Configure Your Settings
+## Step 7: Configure Your Settings
 
-Press <kbd>Ctrl</kbd> + <kbd>6</kbd> to reach **Tab 6: Settings**.
+Press <kbd>Ctrl</kbd> + <kbd>5</kbd> to reach **Tab 5: Settings**.
 
 Use <kbd>Tab</kbd> and <kbd>Arrow keys</kbd> to customize your options:
 
@@ -219,9 +204,8 @@ Use <kbd>Tab</kbd> and <kbd>Arrow keys</kbd> to customize your options:
 | <kbd>Ctrl</kbd> + <kbd>1</kbd> | Switch to Tab 1 (Resources) |
 | <kbd>Ctrl</kbd> + <kbd>2</kbd> | Switch to Tab 2 (Processes) |
 | <kbd>Ctrl</kbd> + <kbd>3</kbd> | Switch to Tab 3 (Data Usage) |
-| <kbd>Ctrl</kbd> + <kbd>4</kbd> | Switch to Tab 4 (Battery Usage) |
-| <kbd>Ctrl</kbd> + <kbd>5</kbd> | Switch to Tab 5 (Network Ports) |
-| <kbd>Ctrl</kbd> + <kbd>6</kbd> | Switch to Tab 6 (Settings) |
+| <kbd>Ctrl</kbd> + <kbd>4</kbd> | Switch to Tab 4 (Network Ports) |
+| <kbd>Ctrl</kbd> + <kbd>5</kbd> | Switch to Tab 5 (Settings) |
 | <kbd>F1</kbd> or <kbd>Shift</kbd> + <kbd>/</kbd> | Open Keyboard Shortcuts Help dialog |
 | <kbd>F5</kbd> | Refresh current tab data immediately |
 | <kbd>Enter</kbd> | View detailed technical hardware specifications (Resources tab) |
@@ -246,7 +230,7 @@ Use <kbd>Tab</kbd> and <kbd>Arrow keys</kbd> to customize your options:
 
 ## In the End
 
-This is how you can easily monitor your PC resources, track your data usage, inspect battery drain, audit network ports, and manage processes with a screen reader.
+This is how you can easily monitor your PC resources, track your data usage, audit network ports, and manage processes with a screen reader.
 
 Finally, I will end here. If you have any questions, suggestions, ideas, or anything else, do let me know in the GitHub issues section!
 

@@ -90,13 +90,6 @@ namespace ResourceAnalyzer.Tests
         }
 
         [Fact]
-        public void AppSettings_HideBatteryDisclaimer_DefaultsToFalse()
-        {
-            var settings = new AppSettings();
-            Assert.False(settings.HideBatteryDisclaimer);
-        }
-
-        [Fact]
         public void ProcessItem_HasCpuPercent_BehavesCorrectly()
         {
             var proc = new ProcessItem { Pid = 1234, Name = "TestApp" };
@@ -133,38 +126,6 @@ namespace ResourceAnalyzer.Tests
         }
 
         [Fact]
-        public void BatteryUsageItem_HasPercent_BehavesCorrectly()
-        {
-            var item = new BatteryUsageItem { DrainPercent = 10.0, IsCharging = false };
-            Assert.True(item.HasPercent);
-
-            item.IsCharging = true;
-            Assert.False(item.HasPercent);
-
-            item.IsCharging = false;
-            item.DrainPercent = 0.2;
-            Assert.False(item.HasPercent);
-        }
-
-        [Fact]
-        public void AppBatteryUsageItem_HasPercent_BehavesCorrectly()
-        {
-            var item = new AppBatteryUsageItem { ProcessName = "Test" };
-            item.BatteryPercent = 0.1;
-            Assert.False(item.HasPercent);
-
-            bool propChangedFired = false;
-            item.PropertyChanged += (s, e) =>
-            {
-                if (e.PropertyName == nameof(AppBatteryUsageItem.HasPercent)) propChangedFired = true;
-            };
-
-            item.BatteryPercent = 4.2;
-            Assert.True(item.HasPercent);
-            Assert.True(propChangedFired);
-        }
-
-        [Fact]
         public async Task DataUsageService_GetTodayTotalUsageAsync_ReturnsNonNegativeUsage()
         {
             var service = new DataUsageService();
@@ -183,6 +144,38 @@ namespace ResourceAnalyzer.Tests
             Assert.NotNull(apps);
             Assert.True(recv >= 0);
             Assert.True(sent >= 0);
+        }
+
+        [Fact]
+        public void InitializeProcessSecurity_DoesNotThrow()
+        {
+            // Verifies that DLL preloading protection runs safely without exception
+            NativeMethods.InitializeProcessSecurity();
+        }
+
+        [Theory]
+        [InlineData("")]
+        [InlineData("   ")]
+        [InlineData("notepad.txt")]
+        [InlineData("calc.bat")]
+        [InlineData("C:\\nonexistent\\setup.exe")]
+        public void LaunchInstaller_InvalidOrNonExePath_ReturnsFalse(string path)
+        {
+            var service = new UpdateService();
+            bool result = service.LaunchInstaller(path);
+            Assert.False(result);
+        }
+
+        [Theory]
+        [InlineData("http://example.com/test.exe")]
+        [InlineData("ftp://example.com/test.exe")]
+        [InlineData("file:///C:/test.exe")]
+        [InlineData("javascript:alert(1)")]
+        public async Task DownloadInstallerAsync_NonHttpsUrl_ReturnsNull(string url)
+        {
+            var service = new UpdateService();
+            string? result = await service.DownloadInstallerAsync(url);
+            Assert.Null(result);
         }
     }
 }

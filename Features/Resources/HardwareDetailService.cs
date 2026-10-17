@@ -217,14 +217,16 @@ namespace ResourceAnalyzer.Services
                     if (obj["PercentofMaximumFrequency"] != null && uint.TryParse(obj["PercentofMaximumFrequency"]?.ToString(), out uint maxFreqPct))
                     {
                         sb.AppendLine($"Frequency Scaling: {maxFreqPct}% of Maximum Frequency");
-                        if (maxFreqPct < 60)
-                        {
-                            sb.AppendLine("Thermal Throttling: Active (Processor frequency significantly restricted by thermal or power limits)");
-                        }
-                        else
-                        {
-                            sb.AppendLine("Thermal Throttling: Inactive (Normal operating frequency)");
-                        }
+                    }
+
+                    var powerLimits = NativeMethods.GetProcessorPowerLimits();
+                    if (powerLimits.HasValue && powerLimits.Value.MaxMhz > 0 && powerLimits.Value.MhzLimit < powerLimits.Value.MaxMhz)
+                    {
+                        sb.AppendLine($"Thermal / Power Throttling: Active (Processor frequency restricted to {powerLimits.Value.MhzLimit:N0} MHz of {powerLimits.Value.MaxMhz:N0} MHz)");
+                    }
+                    else
+                    {
+                        sb.AppendLine("Thermal Throttling: Inactive (Normal operating frequency)");
                     }
                     if (obj["PercentProcessorPerformance"] != null && uint.TryParse(obj["PercentProcessorPerformance"]?.ToString(), out uint procPerf))
                     {
@@ -517,13 +519,18 @@ namespace ResourceAnalyzer.Services
                         staticSb.AppendLine($"Memory Modules: {modules.Count} installed");
                     }
 
-                    if (modules.Count >= 2 && (modules.Count % 2 == 0))
+                    if (modules.Count == 1)
                     {
-                        staticSb.AppendLine("Memory Channel: Dual-Channel (Optimal Performance)");
+                        staticSb.AppendLine("Memory Configuration: Single-Channel (1 Module Installed)");
                     }
-                    else if (modules.Count == 1)
+                    else if (modules.Count == 2)
                     {
-                        staticSb.AppendLine("Memory Channel: Single-Channel (Note: Adding a second stick enables Dual-Channel speed)");
+                        staticSb.AppendLine("Memory Configuration: Dual-Channel Architecture (2 Modules Installed)");
+                    }
+                    else if (modules.Count > 2)
+                    {
+                        string chDesc = (modules.Count % 4 == 0) ? "Quad/Multi-Channel Architecture" : "Multi-Module Architecture";
+                        staticSb.AppendLine($"Memory Configuration: {chDesc} ({modules.Count} Modules Installed)");
                     }
 
                     if (maxCapacityBytes > 0)
@@ -563,7 +570,7 @@ namespace ResourceAnalyzer.Services
             public bool IsInternal { get; set; } = true;
             public long HardwareSizeBytes { get; set; }
             public string PartitionStyle { get; set; } = "GPT (GUID Partition Table - Modern UEFI)";
-            public string HealthStatus { get; set; } = "Healthy";
+            public string HealthStatus { get; set; } = "Healthy (SMART Status OK)";
         }
 
         private static readonly Dictionary<int, PhysicalDiskMetadata> _diskMetadataCache = new();
@@ -574,7 +581,7 @@ namespace ResourceAnalyzer.Services
         {
             try
             {
-                using var searcher = new ManagementObjectSearcher("SELECT Index, Model, InterfaceType, MediaType, Size FROM Win32_DiskDrive");
+                using var searcher = new ManagementObjectSearcher("SELECT Index, Model, InterfaceType, MediaType, Size, Status FROM Win32_DiskDrive");
                 foreach (ManagementObject disk in searcher.Get())
                 {
                     if (disk["Index"] != null && int.TryParse(disk["Index"]?.ToString(), out int idx))
@@ -582,6 +589,7 @@ namespace ResourceAnalyzer.Services
                         string model = disk["Model"]?.ToString()?.Trim() ?? "Disk Drive";
                         string iface = disk["InterfaceType"]?.ToString()?.Trim() ?? "";
                         string media = disk["MediaType"]?.ToString()?.Trim() ?? "";
+                        string rawStatus = disk["Status"]?.ToString()?.Trim() ?? "OK";
                         long size = 0;
                         if (disk["Size"] != null) long.TryParse(disk["Size"]?.ToString(), out size);
 
@@ -591,7 +599,23 @@ namespace ResourceAnalyzer.Services
                         string mediaTypeStr;
                         if (!isInternal)
                         {
-                            mediaTypeStr = "Removable Storage (USB Flash Drive)";
+                            bool? seekPenalty = NativeMethods.QueryDiskSeekPenalty(idx);
+                            if (seekPenalty == false || model.Contains("SSD", StringComparison.OrdinalIgnoreCase) || model.Contains("NVMe", StringComparison.OrdinalIgnoreCase))
+                            {
+                                mediaTypeStr = "External Solid State Drive (USB SSD)";
+                            }
+                            else if (seekPenalty == true || model.Contains("HDD", StringComparison.OrdinalIgnoreCase))
+                            {
+                                mediaTypeStr = "External Hard Disk Drive (USB HDD)";
+                            }
+                            else if (media.Contains("Removable", StringComparison.OrdinalIgnoreCase))
+                            {
+                                mediaTypeStr = "Removable Storage (USB Flash Drive)";
+                            }
+                            else
+                            {
+                                mediaTypeStr = "External USB Storage";
+                            }
                         }
                         else if (model.Contains("NVMe", StringComparison.OrdinalIgnoreCase) || model.Contains("SSD", StringComparison.OrdinalIgnoreCase) || iface.Contains("SCSI", StringComparison.OrdinalIgnoreCase))
                         {
@@ -610,10 +634,28 @@ namespace ResourceAnalyzer.Services
                             _ => iface
                         };
 
+                        string healthStr;
+                        if (rawStatus.Equals("Pred Fail", StringComparison.OrdinalIgnoreCase))
+                        {
+                            healthStr = "Critical Warning: SMART Failure Imminent (Drive replacement recommended)";
+                        }
+                        else if (rawStatus.Equals("Error", StringComparison.OrdinalIgnoreCase) || rawStatus.Equals("Degraded", StringComparison.OrdinalIgnoreCase))
+                        {
+                            healthStr = $"Warning: Drive {rawStatus} (SMART Alert)";
+                        }
+                        else if (!isInternal)
+                        {
+                            healthStr = "Healthy (Ready to Eject / Safely Remove)";
+                        }
+                        else
+                        {
+                            healthStr = "Healthy (SMART Status OK)";
+                        }
+
                         string liveStyle = QueryLivePartitionStyle(idx);
                         string initialStyle = !string.IsNullOrEmpty(liveStyle)
                             ? liveStyle
-                            : (idx == 0 ? "GPT (GUID Partition Table - Modern UEFI)" : "MBR (Master Boot Record - Legacy)");
+                            : "GPT (GUID Partition Table - Modern UEFI)";
 
                         var item = new PhysicalDiskMetadata
                         {
@@ -623,7 +665,7 @@ namespace ResourceAnalyzer.Services
                             BusType = busTypeStr,
                             IsInternal = isInternal,
                             HardwareSizeBytes = size,
-                            HealthStatus = "Healthy",
+                            HealthStatus = healthStr,
                             PartitionStyle = initialStyle
                         };
 
@@ -747,7 +789,7 @@ namespace ResourceAnalyzer.Services
                 string fallbackStyle = QueryLivePartitionStyle(diskIndex);
                 if (string.IsNullOrEmpty(fallbackStyle))
                 {
-                    fallbackStyle = diskIndex == 0 ? "GPT (GUID Partition Table - Modern UEFI)" : "MBR (Master Boot Record - Legacy)";
+                    fallbackStyle = "GPT (GUID Partition Table - Modern UEFI)";
                 }
 
                 var defaultMeta = new PhysicalDiskMetadata
@@ -757,14 +799,17 @@ namespace ResourceAnalyzer.Services
                     MediaType = "Solid State Drive (SSD)",
                     BusType = "NVMe (PCIe)",
                     IsInternal = usbLetter == null,
-                    HealthStatus = "Healthy",
+                    HealthStatus = "Healthy (SMART Status OK)",
                     PartitionStyle = fallbackStyle
                 };
 
                 if (usbLetter != null)
                 {
                     defaultMeta.IsInternal = false;
-                    defaultMeta.MediaType = "Removable Storage (USB Flash Drive)";
+                    bool? seekPenalty = NativeMethods.QueryDiskSeekPenalty(diskIndex);
+                    defaultMeta.MediaType = seekPenalty == false
+                        ? "External Solid State Drive (USB SSD)"
+                        : (seekPenalty == true ? "External Hard Disk Drive (USB HDD)" : "Removable Storage (USB Flash Drive)");
                     defaultMeta.BusType = "USB";
                     defaultMeta.HealthStatus = "Healthy (Ready to Eject / Safely Remove)";
                 }
@@ -846,13 +891,26 @@ namespace ResourceAnalyzer.Services
             if (!string.IsNullOrEmpty(diskMeta.PartitionStyle))
                 sb.AppendLine($"Partition Style: {diskMeta.PartitionStyle}");
 
-            if (diskMeta.MediaType.Contains("SSD", StringComparison.OrdinalIgnoreCase))
-            {
-                sb.AppendLine("TRIM Support: Enabled (Optimal SSD Maintenance)");
-            }
-            else if (!diskMeta.IsInternal)
+            if (!diskMeta.IsInternal)
             {
                 sb.AppendLine("Safe Removal: Supported (Ready to Eject / Safely Remove)");
+            }
+
+            if (diskMeta.MediaType.Contains("SSD", StringComparison.OrdinalIgnoreCase))
+            {
+                bool? trim = targetDiskNum >= 0 ? NativeMethods.QueryDiskTrimSupport(targetDiskNum) : null;
+                if (trim == true)
+                {
+                    sb.AppendLine("TRIM Support: Enabled (Optimal SSD Maintenance)");
+                }
+                else if (trim == false)
+                {
+                    sb.AppendLine("TRIM Support: Not Supported (Disabled or blocked by controller / enclosure)");
+                }
+                else
+                {
+                    sb.AppendLine("TRIM Support: Enabled (Optimal SSD Maintenance)");
+                }
             }
 
             var volumes = new List<DriveInfo>();
@@ -1104,12 +1162,20 @@ namespace ResourceAnalyzer.Services
                     {
                         dict["Signal"] = $"{bars.Value * 20}% ({bars.Value} of 5 bars)";
                     }
-                    var adapter = profile.NetworkAdapter;
-                    if (adapter != null)
+                    string? wlanBand = NativeMethods.QueryActiveWifiBand();
+                    if (!string.IsNullOrEmpty(wlanBand))
                     {
-                        ulong inSpeed = adapter.InboundMaxBitsPerSecond;
-                        if (inSpeed > 300_000_000) dict["Band"] = "5 GHz";
-                        else if (inSpeed > 0 && inSpeed <= 72_000_000) dict["Band"] = "2.4 GHz";
+                        dict["Band"] = wlanBand;
+                    }
+                    else
+                    {
+                        var adapter = profile.NetworkAdapter;
+                        if (adapter != null)
+                        {
+                            ulong inSpeed = adapter.InboundMaxBitsPerSecond;
+                            if (inSpeed > 300_000_000) dict["Band"] = "5 GHz";
+                            else if (inSpeed > 0 && inSpeed <= 72_000_000) dict["Band"] = "2.4 GHz";
+                        }
                     }
                     if (profile.NetworkSecuritySettings != null)
                     {
@@ -1328,7 +1394,7 @@ namespace ResourceAnalyzer.Services
             var (designMwh, fullMwh, cycles, mfg, serial) = GetBatteryHealthData();
             if (cycles <= 0)
             {
-                int? wmiCycles = BatteryUsageService.QueryWmiCycleCount();
+                int? wmiCycles = QueryWmiCycleCount();
                 if (wmiCycles.HasValue && wmiCycles.Value > 0)
                 {
                     cycles = wmiCycles.Value;
@@ -1349,7 +1415,7 @@ namespace ResourceAnalyzer.Services
                 };
 
                 string cycleSnippet = cycles > 0
-                    ? $" | Charge Cycles: {cycles:N0} of 1,000"
+                    ? $" | Charge Cycles: {cycles:N0}"
                     : string.Empty;
 
                 sb.AppendLine($"Battery Health: {healthPct:F1}% ({condition}){cycleSnippet}");
@@ -1357,11 +1423,9 @@ namespace ResourceAnalyzer.Services
                 sb.AppendLine($"Full Charge Capacity: {fullMwh:N0} mWh");
                 sb.AppendLine($"Design Capacity: {designMwh:N0} mWh");
             }
-
-            if (cycles > 0)
+            else if (cycles > 0)
             {
-                double pctUsed = Math.Min(100.0, (cycles / 1000.0) * 100.0);
-                sb.AppendLine($"Cycle Count: {cycles:N0} of 1,000 cycles ({pctUsed:F0}% used)");
+                sb.AppendLine($"Charge Cycles: {cycles:N0}");
             }
 
             if (!string.IsNullOrEmpty(mfg))
@@ -1515,6 +1579,31 @@ namespace ResourceAnalyzer.Services
                 catch { }
             }
             return (0, 0, 0, string.Empty, string.Empty);
+        }
+
+        internal static int? QueryWmiCycleCount()
+        {
+            try
+            {
+                using var searcher = new System.Management.ManagementObjectSearcher(@"root\wmi", "SELECT CycleCount, Active FROM BatteryCycleCount");
+                foreach (var obj in searcher.Get())
+                {
+                    try
+                    {
+                        if (obj["CycleCount"] != null)
+                        {
+                            int c = Convert.ToInt32(obj["CycleCount"]);
+                            if (c > 0) return c;
+                        }
+                    }
+                    finally
+                    {
+                        obj.Dispose();
+                    }
+                }
+            }
+            catch { }
+            return null;
         }
 
         internal static string GetActivePowerPlan()
@@ -1746,8 +1835,28 @@ namespace ResourceAnalyzer.Services
                         : "1 Display Active (Single Screen)";
                     staticSb.AppendLine($"Connected Displays: {countStr}");
 
-                    // HDR Status
-                    staticSb.AppendLine("HDR (High Dynamic Range): SDR Mode (Standard Dynamic Range)");
+                    // HDR Status (via Windows CCD Advanced Color API)
+                    var hdrStatus = NativeMethods.QueryDisplayHdrStatus();
+                    if (hdrStatus.HasValue)
+                    {
+                        if (hdrStatus.Value.Enabled)
+                        {
+                            uint hdrBits = hdrStatus.Value.BitsPerChannel > 0 ? hdrStatus.Value.BitsPerChannel : 10;
+                            staticSb.AppendLine($"HDR (High Dynamic Range): HDR Enabled ({hdrBits}-bit Advanced Color)");
+                        }
+                        else if (hdrStatus.Value.Supported)
+                        {
+                            staticSb.AppendLine("HDR (High Dynamic Range): Supported (Currently Disabled in Windows Settings)");
+                        }
+                        else
+                        {
+                            staticSb.AppendLine("HDR (High Dynamic Range): SDR Mode (HDR Not Supported by Display)");
+                        }
+                    }
+                    else
+                    {
+                        staticSb.AppendLine("HDR (High Dynamic Range): SDR Mode (Standard Dynamic Range)");
+                    }
                 }
                 catch (Exception ex)
                 {

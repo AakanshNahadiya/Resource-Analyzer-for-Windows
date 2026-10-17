@@ -183,10 +183,6 @@ namespace ResourceAnalyzer.Models
         public string DataUsageNetworkFilter { get; set; } = "Current"; // "Current" or "All"
         public string DataUsageTimeFilter { get; set; } = "Full"; // "Full", "Last Month", "Last Week", "Last 24 Hours", "Today"
 
-        // Battery settings
-        public string BatteryAppDisplayMode { get; set; } = "Combined"; // "Combined", "Percentage", "DrainRate"
-        public bool HideBatteryDisclaimer { get; set; } = false;
-
         // Theme setting
         public string Theme { get; set; } = "System Default"; // "System Default", "Dark", "Light", "High Contrast Black"
     }

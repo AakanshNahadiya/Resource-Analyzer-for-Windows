@@ -2,6 +2,7 @@ using System.Threading.Tasks;
 using Xunit;
 using Xunit.Abstractions;
 using ResourceAnalyzer.Services;
+using ResourceAnalyzer.Helpers;
 
 namespace ResourceAnalyzer.Tests
 {
@@ -211,6 +212,61 @@ namespace ResourceAnalyzer.Tests
             Assert.NotNull(meta);
             Assert.False(string.IsNullOrWhiteSpace(meta.Model));
             Assert.False(string.IsNullOrWhiteSpace(meta.PartitionStyle));
+            Assert.False(string.IsNullOrWhiteSpace(meta.HealthStatus));
+        }
+
+        [Fact]
+        public void QueryDiskSeekPenalty_InvalidIndex_ReturnsNullSafely()
+        {
+            var penalty = NativeMethods.QueryDiskSeekPenalty(-1);
+            Assert.Null(penalty);
+        }
+
+        [Fact]
+        public void QueryDiskTrimSupport_InvalidIndex_ReturnsNullSafely()
+        {
+            var trim = NativeMethods.QueryDiskTrimSupport(-1);
+            Assert.Null(trim);
+        }
+
+        [Fact]
+        public void GetProcessorPowerLimits_OnWindows_ReturnsSensibleValues()
+        {
+            var limits = NativeMethods.GetProcessorPowerLimits();
+            if (limits.HasValue)
+            {
+                Assert.True(limits.Value.MaxMhz > 0);
+                Assert.True(limits.Value.MhzLimit > 0);
+            }
+        }
+
+        [Fact]
+        public void QueryDisplayHdrStatus_DoesNotThrow()
+        {
+            var status = NativeMethods.QueryDisplayHdrStatus();
+            // Should succeed or return null gracefully on any platform
+            if (status.HasValue)
+            {
+                Assert.True(status.Value.BitsPerChannel >= 0);
+            }
+        }
+
+        [Fact]
+        public void QueryActiveWifiBand_DoesNotThrow()
+        {
+            string? band = NativeMethods.QueryActiveWifiBand();
+            if (band != null)
+            {
+                Assert.True(band == "2.4 GHz" || band == "5 GHz" || band == "6 GHz");
+            }
+        }
+
+        [Fact]
+        public async Task GetHardwareDetailsAsync_Display_ContainsHdrStatus()
+        {
+            var service = new HardwareDetailService();
+            string details = await service.GetHardwareDetailsAsync("display");
+            Assert.Contains("HDR (High Dynamic Range):", details);
         }
     }
 }
