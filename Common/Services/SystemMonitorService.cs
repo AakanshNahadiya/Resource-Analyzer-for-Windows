@@ -502,13 +502,16 @@ namespace ResourceAnalyzer.Services
                     byte? bars = profile.GetSignalBars();
                     string? signal = bars.HasValue ? $"{bars.Value * 20}%" : null;
 
-                    string? band = null;
-                    var adapter = profile.NetworkAdapter;
-                    if (adapter != null)
+                    string? band = NativeMethods.QueryActiveWifiBand();
+                    if (string.IsNullOrEmpty(band))
                     {
-                        ulong inSpeed = adapter.InboundMaxBitsPerSecond;
-                        if (inSpeed > 300_000_000) band = "5 GHz";
-                        else if (inSpeed > 0 && inSpeed <= 72_000_000) band = "2.4 GHz";
+                        var adapter = profile.NetworkAdapter;
+                        if (adapter != null)
+                        {
+                            ulong inSpeed = adapter.InboundMaxBitsPerSecond;
+                            if (inSpeed > 300_000_000) band = "5 GHz";
+                            else if (inSpeed > 0 && inSpeed <= 72_000_000) band = "2.4 GHz";
+                        }
                     }
 
                     if (!string.IsNullOrEmpty(ssid))

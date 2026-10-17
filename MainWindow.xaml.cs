@@ -27,7 +27,6 @@ namespace ResourceAnalyzer
         private readonly IProcessService _processService;
         private readonly ISettingsService _settingsService;
         private readonly IDataUsageService _dataUsageService;
-        private readonly IBatteryUsageService _batteryUsageService;
         private readonly IThemeService _themeService;
         private readonly IHardwareDetailService _hardwareDetailService;
         private readonly IUpdateService _updateService;
@@ -43,16 +42,12 @@ namespace ResourceAnalyzer
         private readonly ObservableCollection<ProcessItem> _frozenItems = new();
         private readonly ObservableCollection<AppDataUsageItem> _dataUsageItems = new();
         private readonly Dictionary<string, AppDataUsageItem> _dataUsageMap = new(StringComparer.OrdinalIgnoreCase);
-        private readonly ObservableCollection<BatteryUsageItem> _batteryItems = new();
-        private readonly ObservableCollection<AppBatteryUsageItem> _appBatteryItems = new();
-        private readonly Dictionary<string, AppBatteryUsageItem> _appBatteryMap = new(StringComparer.OrdinalIgnoreCase);
         private readonly ObservableCollection<NetworkPortItem> _networkPortItems = new();
         private readonly Dictionary<string, NetworkPortItem> _networkPortMap = new(StringComparer.OrdinalIgnoreCase);
         private List<NetworkPortItem> _rawNetworkPortList = new();
         private string _currentPortSort = "Port";
         private string? _latestUpdateUrl;
         private UpdateInfo? _latestUpdateInfo;
-        private long _lastTotalDischargeMwh = 0;
 
         private readonly Dictionary<string, ResourceItem> _resourceMap = new();
         private readonly Dictionary<string, DateTime> _lastAlertTimes = new(StringComparer.OrdinalIgnoreCase);
@@ -73,7 +68,6 @@ namespace ResourceAnalyzer
             _processService = new ProcessService();
             _settingsService = new SettingsService();
             _dataUsageService = new DataUsageService();
-            _batteryUsageService = new BatteryUsageService();
             _themeService = new ThemeService();
             _hardwareDetailService = new HardwareDetailService();
             _updateService = new UpdateService();
@@ -86,8 +80,6 @@ namespace ResourceAnalyzer
             lstProcesses.ItemsSource = _processItems;
             lstFrozenApps.ItemsSource = _frozenItems;
             lstDataUsage.ItemsSource = _dataUsageItems;
-            lstBatteryUsage.ItemsSource = _batteryItems;
-            lstAppBatteryUsage.ItemsSource = _appBatteryItems;
             lstNetworkPorts.ItemsSource = _networkPortItems;
         }
 
@@ -257,7 +249,6 @@ namespace ResourceAnalyzer
         private long _cachedTodayDataUsageBytes = 0;
         private DateTime _lastDataUsageCacheTime = DateTime.MinValue;
         private DateTime _cachedTodayDate = DateTime.MinValue;
-        private DateTime _cachedBatteryDate = DateTime.Today;
 
         private void OnSystemTimeChanged(object? sender, EventArgs e)
         {
@@ -268,15 +259,6 @@ namespace ResourceAnalyzer
                 _cachedTodayDate = DateTime.MinValue;
                 _lastDataUsageCacheTime = DateTime.MinValue;
                 _ = UpdateTodayDataUsageCacheAsync();
-
-                // System clock / date rollover: invalidate Tab 4 battery cache and refresh if active
-                _cachedBatteryDate = DateTime.Today;
-                _batteryUsageService.InvalidateCache();
-                _batteryUsageService.ResetAppEnergy();
-                if (tabBatteryUsage.IsSelected)
-                {
-                    _ = RefreshBatteryUsageAsync(announce: false);
-                }
             }
             catch { }
         }
@@ -435,17 +417,7 @@ namespace ResourceAnalyzer
                         FocusListBoxItem(lstDataUsage);
                     }
                 }
-                else if (tabBatteryUsage.IsSelected)
-                {
-                    if (lstAppBatteryUsage.IsKeyboardFocusWithin)
-                    {
-                        FocusListBoxItem(lstAppBatteryUsage);
-                    }
-                    else
-                    {
-                        FocusListBoxItem(lstBatteryUsage);
-                    }
-                }
+
                 else if (tabNetworkPorts.IsSelected)
                 {
                     if (!string.IsNullOrEmpty(txtPortSearch.Text))
@@ -572,10 +544,7 @@ namespace ResourceAnalyzer
                 {
                     await RefreshDataUsageAsync(announce: false);
                 }
-                else if (tabBatteryUsage.IsSelected)
-                {
-                    await RefreshBatteryUsageAsync(announce: false);
-                }
+
                 else if (tabNetworkPorts.IsSelected)
                 {
                     await RefreshNetworkPortsAsync(isFullReset: false, announce: false);
@@ -652,19 +621,7 @@ namespace ResourceAnalyzer
                     await RefreshDataUsageRealtimeAsync();
                 }
             }
-            else if (tabBatteryUsage.IsSelected)
-            {
-                await RefreshAppBatteryUsageAsync();
 
-                // Silently refresh battery sessions & summary every 60 seconds (or immediately on midnight rollover)
-                int currentInterval = Math.Max(1, _settingsService.CurrentSettings.RefreshIntervalSeconds);
-                int ticksPer60Sec = Math.Max(1, 60 / currentInterval);
-                if (_timerTickCount % ticksPer60Sec == 0 || _cachedBatteryDate != DateTime.Today)
-                {
-                    _cachedBatteryDate = DateTime.Today;
-                    _ = RefreshBatteryUsageAsync(announce: false);
-                }
-            }
             else if (tabNetworkPorts.IsSelected)
             {
                 await RefreshNetworkPortsAsync(isFullReset: false);
@@ -842,24 +799,16 @@ namespace ResourceAnalyzer
                 else if (e.Key == Key.D4 || e.Key == Key.NumPad4)
                 {
                     e.Handled = true;
-                    tabBatteryUsage.IsSelected = true;
-                    _speechService.Speak("Tab 4: Battery Usage", interrupt: true);
+                    tabNetworkPorts.IsSelected = true;
+                    _speechService.Speak("Tab 4: Network Ports", interrupt: true);
                     FocusCurrentTabContent();
                     return;
                 }
                 else if (e.Key == Key.D5 || e.Key == Key.NumPad5)
                 {
                     e.Handled = true;
-                    tabNetworkPorts.IsSelected = true;
-                    _speechService.Speak("Tab 5: Network Ports", interrupt: true);
-                    FocusCurrentTabContent();
-                    return;
-                }
-                else if (e.Key == Key.D6 || e.Key == Key.NumPad6)
-                {
-                    e.Handled = true;
                     tabSettings.IsSelected = true;
-                    _speechService.Speak("Tab 6: Settings", interrupt: true);
+                    _speechService.Speak("Tab 5: Settings", interrupt: true);
                     cmbProcessManager?.Focus();
                     return;
                 }
@@ -979,10 +928,7 @@ namespace ResourceAnalyzer
             {
                 await RefreshDataUsageAsync();
             }
-            else if (tabBatteryUsage.IsSelected)
-            {
-                await RefreshBatteryUsageAsync();
-            }
+
             else if (tabNetworkPorts.IsSelected)
             {
                 await RefreshNetworkPortsAsync(isFullReset: true);

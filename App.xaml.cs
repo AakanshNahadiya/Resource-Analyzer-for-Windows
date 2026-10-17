@@ -20,6 +20,9 @@ namespace ResourceAnalyzer
 
         protected override void OnStartup(StartupEventArgs e)
         {
+            // Initialize process-level DLL security hardening (Microsoft SDL / CWE-427)
+            NativeMethods.InitializeProcessSecurity();
+
             DispatcherUnhandledException += (s, args) =>
             {
                 try

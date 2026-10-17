@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Windows;
 
 namespace ResourceAnalyzer.Views
@@ -20,9 +20,8 @@ namespace ResourceAnalyzer.Views
                 "Ctrl + 1 : Switch to Tab 1 (Resources)",
                 "Ctrl + 2 : Switch to Tab 2 (Processes)",
                 "Ctrl + 3 : Switch to Tab 3 (Data Usage)",
-                "Ctrl + 4 : Switch to Tab 4 (Battery Usage)",
-                "Ctrl + 5 : Switch to Tab 5 (Network Ports)",
-                "Ctrl + 6 : Switch to Tab 6 (Settings)",
+                "Ctrl + 4 : Switch to Tab 4 (Network Ports)",
+                "Ctrl + 5 : Switch to Tab 5 (Settings)",
                 "Left / Right Arrow : Move sequentially across tabs (on Tab Header)",
                 "Down Arrow : Enter tab content (on Tab Header)",
                 "Home / End : Jump to first / last tab (on Tab Header)",

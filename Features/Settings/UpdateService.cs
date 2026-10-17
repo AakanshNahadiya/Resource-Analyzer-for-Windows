@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
@@ -191,11 +191,16 @@ namespace ResourceAnalyzer.Services
             if (string.IsNullOrWhiteSpace(url)) return;
             try
             {
-                Process.Start(new ProcessStartInfo
+                // Validate that URL is an absolute HTTP/HTTPS address to prevent protocol handler injection (CWE-88)
+                if (Uri.TryCreate(url, UriKind.Absolute, out var uri) &&
+                    (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp))
                 {
-                    FileName = url,
-                    UseShellExecute = true
-                });
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = uri.AbsoluteUri,
+                        UseShellExecute = true
+                    });
+                }
             }
             catch
             {
@@ -207,14 +212,20 @@ namespace ResourceAnalyzer.Services
         {
             if (string.IsNullOrWhiteSpace(downloadUrl)) return null;
 
+            // Restrict downloads strictly to HTTPS endpoints
+            if (!Uri.TryCreate(downloadUrl, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps)
+            {
+                return null;
+            }
+
             try
             {
                 string tempDir = Path.GetTempPath();
-                string fileName = Path.GetFileName(new Uri(downloadUrl).LocalPath);
-                if (string.IsNullOrWhiteSpace(fileName) || !fileName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
-                {
-                    fileName = "ResourceAnalyzer_Update.exe";
-                }
+                string rawFileName = Path.GetFileName(uri.LocalPath);
+                string fileName = (!string.IsNullOrWhiteSpace(rawFileName) && rawFileName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                    ? rawFileName
+                    : "ResourceAnalyzer_Update.exe";
+
                 string tempFilePath = Path.Combine(tempDir, fileName);
 
                 using var response = await _httpClient.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
@@ -251,7 +262,12 @@ namespace ResourceAnalyzer.Services
 
         public bool LaunchInstaller(string installerPath)
         {
-            if (string.IsNullOrWhiteSpace(installerPath) || !File.Exists(installerPath)) return false;
+            if (string.IsNullOrWhiteSpace(installerPath) ||
+                !File.Exists(installerPath) ||
+                !installerPath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
 
             try
             {
