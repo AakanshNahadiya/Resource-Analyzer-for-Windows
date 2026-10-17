@@ -130,7 +130,7 @@ Press <kbd>Ctrl</kbd> + <kbd>3</kbd> to switch to **Tab 3: Data Usage**:
 
 ---
 
----
+
 
 ## Step 5: Scan Open Network Ports
 
@@ -235,7 +235,4 @@ This is how you can easily monitor your PC resources, track your data usage, aud
 Finally, I will end here. If you have any questions, suggestions, ideas, or anything else, do let me know in the GitHub issues section!
 
 > **Disclaimer:** This application is created by using Google's Antigravity AI assistant. Some issues may occur.
-
-For now:  
-**Thank you for reading,**  
 **Have a great accessible experience!**
