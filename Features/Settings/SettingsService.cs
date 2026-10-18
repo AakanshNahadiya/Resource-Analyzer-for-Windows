@@ -185,5 +185,10 @@ namespace ResourceAnalyzer.Models
 
         // Theme setting
         public string Theme { get; set; } = "System Default"; // "System Default", "Dark", "Light", "High Contrast Black"
+
+        // Application updates
+        public bool AutoCheckUpdatesDaily { get; set; } = true;
+        public string? LastUpdateCheckUtc { get; set; }
+        public string? LastNotifiedVersion { get; set; }
     }
 }

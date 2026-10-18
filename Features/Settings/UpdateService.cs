@@ -22,6 +22,16 @@ namespace ResourceAnalyzer.Services
         public string HtmlUrl { get; set; } = "";
         public string? DownloadUrl { get; set; }
         public string Message { get; set; } = "";
+
+        public string GetEffectiveReleaseUrl()
+        {
+            if (!string.IsNullOrWhiteSpace(HtmlUrl) && HtmlUrl.Contains("/releases/tag/", StringComparison.OrdinalIgnoreCase))
+            {
+                return HtmlUrl;
+            }
+            string ver = HasUpdate ? LatestVersion : CurrentVersion;
+            return $"https://github.com/AakanshNahadiya/Resource-Analyzer-for-Windows/releases/tag/v{ver}";
+        }
     }
 
     public interface IUpdateService
@@ -31,6 +41,8 @@ namespace ResourceAnalyzer.Services
         void OpenUrl(string url);
         Task<string?> DownloadInstallerAsync(string downloadUrl, IProgress<int>? progress = null, CancellationToken cancellationToken = default);
         bool LaunchInstaller(string installerPath);
+        bool ShouldPerformDailyCheck(ResourceAnalyzer.Models.AppSettings settings);
+        void RecordCheckPerformed(ResourceAnalyzer.Models.AppSettings settings);
     }
 
     public class UpdateService : IUpdateService
@@ -52,6 +64,28 @@ namespace ResourceAnalyzer.Services
             {
                 _httpClient.DefaultRequestHeaders.Add("Accept", "application/vnd.github.v3+json");
             }
+        }
+
+        public bool ShouldPerformDailyCheck(ResourceAnalyzer.Models.AppSettings settings)
+        {
+            if (!settings.AutoCheckUpdatesDaily) return false;
+
+            if (!string.IsNullOrWhiteSpace(settings.LastUpdateCheckUtc) &&
+                DateTime.TryParse(settings.LastUpdateCheckUtc, null, System.Globalization.DateTimeStyles.RoundtripKind, out var lastUtc))
+            {
+                // Do not check again if checked today (same calendar day or within 24 hours)
+                if (lastUtc.Date == DateTime.UtcNow.Date || (DateTime.UtcNow - lastUtc).TotalHours < 24.0)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        public void RecordCheckPerformed(ResourceAnalyzer.Models.AppSettings settings)
+        {
+            settings.LastUpdateCheckUtc = DateTime.UtcNow.ToString("O");
         }
 
         public string GetCurrentVersion()
@@ -97,14 +131,16 @@ namespace ResourceAnalyzer.Services
                 string bestTag = "";
                 bool bestIsBeta = false;
 
-                bool targetStableOnly = channel.Equals("Stable", StringComparison.OrdinalIgnoreCase);
+                bool allowBeta = !channel.Equals("Stable", StringComparison.OrdinalIgnoreCase);
 
                 foreach (var release in doc.RootElement.EnumerateArray())
                 {
-                    // Skip drafts and prereleases
+                    // Skip drafts
                     if (release.TryGetProperty("draft", out var draftElem) && draftElem.GetBoolean())
                         continue;
-                    if (release.TryGetProperty("prerelease", out var preElem) && preElem.GetBoolean())
+
+                    bool isPrerelease = release.TryGetProperty("prerelease", out var preElem) && preElem.GetBoolean();
+                    if (isPrerelease && !allowBeta)
                         continue;
 
                     string tagName = release.TryGetProperty("tag_name", out var tagElem) ? tagElem.GetString() ?? "" : "";
@@ -121,6 +157,7 @@ namespace ResourceAnalyzer.Services
                         bestVersion = parsedVer;
                         bestRelease = release;
                         bestTag = tagName;
+                        bestIsBeta = isPrerelease || cleanTag.Contains("beta", StringComparison.OrdinalIgnoreCase);
                     }
                 }
 
@@ -128,6 +165,7 @@ namespace ResourceAnalyzer.Services
                 {
                     result.IsSuccess = true;
                     result.HasUpdate = false;
+                    result.HtmlUrl = $"https://github.com/{RepoOwner}/{RepoName}/releases/tag/v{currentVerStr}";
                     result.Message = $"Resource Analyzer for Windows is up to date (Version v{currentVerStr}).";
                     return result;
                 }
@@ -141,7 +179,7 @@ namespace ResourceAnalyzer.Services
                 result.ReleaseName = relName;
                 result.ReleaseNotes = relBody;
                 result.HtmlUrl = string.IsNullOrWhiteSpace(relHtml)
-                    ? $"https://github.com/{RepoOwner}/{RepoName}/releases"
+                    ? $"https://github.com/{RepoOwner}/{RepoName}/releases/tag/v{result.LatestVersion}"
                     : relHtml;
                 result.IsBeta = bestIsBeta;
 

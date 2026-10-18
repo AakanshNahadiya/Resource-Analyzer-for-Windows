@@ -133,24 +133,6 @@ namespace ResourceAnalyzer.Services
             }
         }
 
-        public static void PrewarmHardwareCache()
-        {
-            Task.Run(() =>
-            {
-                try
-                {
-                    SampleAllDiskSpeeds();
-                    var svc = new HardwareDetailService();
-                    svc.BuildCpuDetails();
-                    svc.BuildGpuDetails();
-                    svc.BuildRamDetails();
-                    svc.BuildDisplayDetails();
-                    svc.BuildDiskDetails();
-                }
-                catch { }
-            });
-        }
-
         public async Task<string> GetHardwareDetailsAsync(string resourceId)
         {
             return await Task.Run(() =>
@@ -212,34 +194,38 @@ namespace ResourceAnalyzer.Services
             {
                 using var perfSearcher = new ManagementObjectSearcher(
                     "SELECT PercentofMaximumFrequency, PercentProcessorPerformance, PercentProcessorUtility FROM Win32_PerfFormattedData_Counters_ProcessorInformation WHERE Name='_Total'");
-                foreach (ManagementObject obj in perfSearcher.Get())
+                using var perfColl = perfSearcher.Get();
+                foreach (ManagementObject obj in perfColl)
                 {
-                    if (obj["PercentofMaximumFrequency"] != null && uint.TryParse(obj["PercentofMaximumFrequency"]?.ToString(), out uint maxFreqPct))
+                    using (obj)
                     {
-                        sb.AppendLine($"Frequency Scaling: {maxFreqPct}% of Maximum Frequency");
-                    }
-
-                    var powerLimits = NativeMethods.GetProcessorPowerLimits();
-                    if (powerLimits.HasValue && powerLimits.Value.MaxMhz > 0 && powerLimits.Value.MhzLimit < powerLimits.Value.MaxMhz)
-                    {
-                        sb.AppendLine($"Thermal / Power Throttling: Active (Processor frequency restricted to {powerLimits.Value.MhzLimit:N0} MHz of {powerLimits.Value.MaxMhz:N0} MHz)");
-                    }
-                    else
-                    {
-                        sb.AppendLine("Thermal Throttling: Inactive (Normal operating frequency)");
-                    }
-                    if (obj["PercentProcessorPerformance"] != null && uint.TryParse(obj["PercentProcessorPerformance"]?.ToString(), out uint procPerf))
-                    {
-                        if (procPerf > 100)
+                        if (obj["PercentofMaximumFrequency"] != null && uint.TryParse(obj["PercentofMaximumFrequency"]?.ToString(), out uint maxFreqPct))
                         {
-                            sb.AppendLine($"Turbo Boost: Active ({procPerf}% relative performance)");
+                            sb.AppendLine($"Frequency Scaling: {maxFreqPct}% of Maximum Frequency");
+                        }
+
+                        var powerLimits = NativeMethods.GetProcessorPowerLimits();
+                        if (powerLimits.HasValue && powerLimits.Value.MaxMhz > 0 && powerLimits.Value.MhzLimit < powerLimits.Value.MaxMhz)
+                        {
+                            sb.AppendLine($"Thermal / Power Throttling: Active (Processor frequency restricted to {powerLimits.Value.MhzLimit:N0} MHz of {powerLimits.Value.MaxMhz:N0} MHz)");
                         }
                         else
                         {
-                            sb.AppendLine($"Turbo Boost: Inactive ({procPerf}% relative performance)");
+                            sb.AppendLine("Thermal Throttling: Inactive (Normal operating frequency)");
                         }
+                        if (obj["PercentProcessorPerformance"] != null && uint.TryParse(obj["PercentProcessorPerformance"]?.ToString(), out uint procPerf))
+                        {
+                            if (procPerf > 100)
+                            {
+                                sb.AppendLine($"Turbo Boost: Active ({procPerf}% relative performance)");
+                            }
+                            else
+                            {
+                                sb.AppendLine($"Turbo Boost: Inactive ({procPerf}% relative performance)");
+                            }
+                        }
+                        break;
                     }
-                    break;
                 }
             }
             catch { }
@@ -248,21 +234,25 @@ namespace ResourceAnalyzer.Services
             try
             {
                 using var thermalSearcher = new ManagementObjectSearcher(@"root\WMI", "SELECT CurrentTemperature, CriticalTripPoint FROM MSAcpi_ThermalZoneTemperature");
-                foreach (ManagementObject obj in thermalSearcher.Get())
+                using var thermalColl = thermalSearcher.Get();
+                foreach (ManagementObject obj in thermalColl)
                 {
-                    if (obj["CurrentTemperature"] != null && uint.TryParse(obj["CurrentTemperature"]?.ToString(), out uint rawTemp))
+                    using (obj)
                     {
-                        double tempC = (rawTemp / 10.0) - 273.15;
-                        if (tempC is > 0 and < 150)
+                        if (obj["CurrentTemperature"] != null && uint.TryParse(obj["CurrentTemperature"]?.ToString(), out uint rawTemp))
                         {
-                            string tripStr = string.Empty;
-                            if (obj["CriticalTripPoint"] != null && uint.TryParse(obj["CriticalTripPoint"]?.ToString(), out uint rawTrip))
+                            double tempC = (rawTemp / 10.0) - 273.15;
+                            if (tempC is > 0 and < 150)
                             {
-                                double tripC = (rawTrip / 10.0) - 273.15;
-                                if (tripC is > 0 and < 150) tripStr = $" (Critical Limit: {tripC:F0}°C)";
+                                string tripStr = string.Empty;
+                                if (obj["CriticalTripPoint"] != null && uint.TryParse(obj["CriticalTripPoint"]?.ToString(), out uint rawTrip))
+                                {
+                                    double tripC = (rawTrip / 10.0) - 273.15;
+                                    if (tripC is > 0 and < 150) tripStr = $" (Critical Limit: {tripC:F0}°C)";
+                                }
+                                sb.AppendLine($"CPU Thermal Zone: {tempC:F1}°C{tripStr}");
+                                break;
                             }
-                            sb.AppendLine($"CPU Thermal Zone: {tempC:F1}°C{tripStr}");
-                            break;
                         }
                     }
                 }
@@ -278,15 +268,19 @@ namespace ResourceAnalyzer.Services
                 try
                 {
                     using var csSearcher = new ManagementObjectSearcher("SELECT Manufacturer, Model FROM Win32_ComputerSystem");
-                    foreach (ManagementObject cs in csSearcher.Get())
+                    using var csColl = csSearcher.Get();
+                    foreach (ManagementObject cs in csColl)
                     {
-                        string mfg = cs["Manufacturer"]?.ToString()?.Trim() ?? string.Empty;
-                        string model = cs["Model"]?.ToString()?.Trim() ?? string.Empty;
-                        if (!string.IsNullOrEmpty(model))
+                        using (cs)
                         {
-                            staticSb.AppendLine($"System Model: {mfg} {model}".Trim());
+                            string mfg = cs["Manufacturer"]?.ToString()?.Trim() ?? string.Empty;
+                            string model = cs["Model"]?.ToString()?.Trim() ?? string.Empty;
+                            if (!string.IsNullOrEmpty(model))
+                            {
+                                staticSb.AppendLine($"System Model: {mfg} {model}".Trim());
+                            }
+                            break;
                         }
-                        break;
                     }
                 }
                 catch { }
@@ -295,15 +289,19 @@ namespace ResourceAnalyzer.Services
                 try
                 {
                     using var biosSearcher = new ManagementObjectSearcher("SELECT Manufacturer, SMBIOSBIOSVersion, ReleaseDate FROM Win32_BIOS");
-                    foreach (ManagementObject bios in biosSearcher.Get())
+                    using var biosColl = biosSearcher.Get();
+                    foreach (ManagementObject bios in biosColl)
                     {
-                        string biosVer = bios["SMBIOSBIOSVersion"]?.ToString()?.Trim() ?? string.Empty;
-                        string biosMfg = bios["Manufacturer"]?.ToString()?.Trim() ?? string.Empty;
-                        if (!string.IsNullOrEmpty(biosVer))
+                        using (bios)
                         {
-                            staticSb.AppendLine($"BIOS Version: {biosMfg} {biosVer}".Trim());
+                            string biosVer = bios["SMBIOSBIOSVersion"]?.ToString()?.Trim() ?? string.Empty;
+                            string biosMfg = bios["Manufacturer"]?.ToString()?.Trim() ?? string.Empty;
+                            if (!string.IsNullOrEmpty(biosVer))
+                            {
+                                staticSb.AppendLine($"BIOS Version: {biosMfg} {biosVer}".Trim());
+                            }
+                            break;
                         }
-                        break;
                     }
                 }
                 catch { }
@@ -312,26 +310,30 @@ namespace ResourceAnalyzer.Services
                 try
                 {
                     using var searcher = new ManagementObjectSearcher("SELECT NumberOfCores, NumberOfLogicalProcessors, MaxClockSpeed, L2CacheSize, L3CacheSize, VirtualizationFirmwareEnabled, SocketDesignation FROM Win32_Processor");
-                    foreach (ManagementObject obj in searcher.Get())
+                    using var procColl = searcher.Get();
+                    foreach (ManagementObject obj in procColl)
                     {
-                        if (obj["SocketDesignation"] != null && !string.IsNullOrWhiteSpace(obj["SocketDesignation"]?.ToString()))
-                            staticSb.AppendLine($"Socket: {obj["SocketDesignation"]}");
-                        if (obj["NumberOfCores"] != null)
-                            staticSb.AppendLine($"Physical Cores: {obj["NumberOfCores"]}");
-                        if (obj["NumberOfLogicalProcessors"] != null)
-                            staticSb.AppendLine($"Logical Processors: {obj["NumberOfLogicalProcessors"]}");
-                        if (obj["MaxClockSpeed"] != null && uint.TryParse(obj["MaxClockSpeed"]?.ToString(), out uint clockMhz))
-                            staticSb.AppendLine($"Base Clock Speed: {clockMhz / 1000.0:F2} GHz ({clockMhz} MHz)");
-                        if (obj["L2CacheSize"] != null && uint.TryParse(obj["L2CacheSize"]?.ToString(), out uint l2Kb) && l2Kb > 0)
-                            staticSb.AppendLine($"L2 Cache: {FormatHelper.FormatBytes((long)l2Kb * 1024)} ({l2Kb:N0} KB)");
-                        if (obj["L3CacheSize"] != null && uint.TryParse(obj["L3CacheSize"]?.ToString(), out uint l3Kb) && l3Kb > 0)
-                            staticSb.AppendLine($"L3 Cache: {FormatHelper.FormatBytes((long)l3Kb * 1024)} ({l3Kb:N0} KB)");
-                        if (obj["VirtualizationFirmwareEnabled"] != null)
+                        using (obj)
                         {
-                            bool virt = Convert.ToBoolean(obj["VirtualizationFirmwareEnabled"]);
-                            staticSb.AppendLine($"Virtualization: {(virt ? "Enabled in Firmware (VT-x / AMD-V)" : "Disabled")}");
+                            if (obj["SocketDesignation"] != null && !string.IsNullOrWhiteSpace(obj["SocketDesignation"]?.ToString()))
+                                staticSb.AppendLine($"Socket: {obj["SocketDesignation"]}");
+                            if (obj["NumberOfCores"] != null)
+                                staticSb.AppendLine($"Physical Cores: {obj["NumberOfCores"]}");
+                            if (obj["NumberOfLogicalProcessors"] != null)
+                                staticSb.AppendLine($"Logical Processors: {obj["NumberOfLogicalProcessors"]}");
+                            if (obj["MaxClockSpeed"] != null && uint.TryParse(obj["MaxClockSpeed"]?.ToString(), out uint clockMhz))
+                                staticSb.AppendLine($"Base Clock Speed: {clockMhz / 1000.0:F2} GHz ({clockMhz} MHz)");
+                            if (obj["L2CacheSize"] != null && uint.TryParse(obj["L2CacheSize"]?.ToString(), out uint l2Kb) && l2Kb > 0)
+                                staticSb.AppendLine($"L2 Cache: {FormatHelper.FormatBytes((long)l2Kb * 1024)} ({l2Kb:N0} KB)");
+                            if (obj["L3CacheSize"] != null && uint.TryParse(obj["L3CacheSize"]?.ToString(), out uint l3Kb) && l3Kb > 0)
+                                staticSb.AppendLine($"L3 Cache: {FormatHelper.FormatBytes((long)l3Kb * 1024)} ({l3Kb:N0} KB)");
+                            if (obj["VirtualizationFirmwareEnabled"] != null)
+                            {
+                                bool virt = Convert.ToBoolean(obj["VirtualizationFirmwareEnabled"]);
+                                staticSb.AppendLine($"Virtualization: {(virt ? "Enabled in Firmware (VT-x / AMD-V)" : "Disabled")}");
+                            }
+                            break;
                         }
-                        break;
                     }
                 }
                 catch { }
@@ -403,7 +405,8 @@ namespace ResourceAnalyzer.Services
                 long pageFileTotal = Math.Max(0, commitLimit - totalUsable);
                 if (pageFileTotal > 0)
                 {
-                    string pageFileLocation = "C:\\pagefile.sys";
+                    string sysDrive = Environment.GetEnvironmentVariable("SystemDrive") ?? "C:";
+                    string pageFileLocation = $"{sysDrive}\\pagefile.sys";
                     try
                     {
                         using var mmKey = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management");
@@ -411,7 +414,17 @@ namespace ResourceAnalyzer.Services
                         if (pfVal != null && pfVal.Length > 0 && !string.IsNullOrWhiteSpace(pfVal[0]))
                         {
                             string[] parts = pfVal[0].Split(' ', StringSplitOptions.RemoveEmptyEntries);
-                            if (parts.Length > 0) pageFileLocation = parts[0];
+                            if (parts.Length > 0)
+                            {
+                                if (parts[0].StartsWith("?:", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    pageFileLocation = $"{sysDrive}{parts[0].Substring(1)} (System Managed)";
+                                }
+                                else
+                                {
+                                    pageFileLocation = parts[0];
+                                }
+                            }
                         }
                     }
                     catch { }
@@ -440,67 +453,75 @@ namespace ResourceAnalyzer.Services
                     try
                     {
                         using var arraySearcher = new ManagementObjectSearcher("SELECT MemoryDevices, MaxCapacity FROM Win32_PhysicalMemoryArray");
-                        foreach (ManagementObject arr in arraySearcher.Get())
+                        using var arrayColl = arraySearcher.Get();
+                        foreach (ManagementObject arr in arrayColl)
                         {
-                            if (arr["MemoryDevices"] != null)
-                                totalSlots = Convert.ToInt32(arr["MemoryDevices"]);
-                            if (arr["MaxCapacity"] != null && long.TryParse(arr["MaxCapacity"]?.ToString(), out long maxKb))
-                                maxCapacityBytes = maxKb * 1024;
+                            using (arr)
+                            {
+                                if (arr["MemoryDevices"] != null)
+                                    totalSlots = Convert.ToInt32(arr["MemoryDevices"]);
+                                if (arr["MaxCapacity"] != null && long.TryParse(arr["MaxCapacity"]?.ToString(), out long maxKb))
+                                    maxCapacityBytes = maxKb * 1024;
+                            }
                         }
                     }
                     catch { }
 
                     using var memSearcher = new ManagementObjectSearcher(
                         "SELECT Speed, ConfiguredClockSpeed, FormFactor, DeviceLocator, Manufacturer, PartNumber, Capacity, SMBIOSMemoryType, MemoryType FROM Win32_PhysicalMemory");
+                    using var memColl = memSearcher.Get();
                     var modules = new List<string>();
                     uint ramSpeed = 0;
                     uint configuredSpeed = 0;
                     string formFactorStr = string.Empty;
                     string primaryMemType = string.Empty;
 
-                    foreach (ManagementObject stick in memSearcher.Get())
+                    foreach (ManagementObject stick in memColl)
                     {
-                        if (ramSpeed == 0 && stick["Speed"] != null && uint.TryParse(stick["Speed"]?.ToString(), out uint spd))
-                            ramSpeed = spd;
-
-                        if (configuredSpeed == 0 && stick["ConfiguredClockSpeed"] != null && uint.TryParse(stick["ConfiguredClockSpeed"]?.ToString(), out uint cfgSpd))
-                            configuredSpeed = cfgSpd;
-
-                        uint smbiosType = 0;
-                        if (stick["SMBIOSMemoryType"] != null && uint.TryParse(stick["SMBIOSMemoryType"]?.ToString(), out uint sType))
-                            smbiosType = sType;
-
-                        uint legType = 0;
-                        if (stick["MemoryType"] != null && uint.TryParse(stick["MemoryType"]?.ToString(), out uint lType))
-                            legType = lType;
-
-                        string memGen = DecodeSmbiosMemoryType(smbiosType, legType);
-                        if (string.IsNullOrEmpty(primaryMemType)) primaryMemType = memGen;
-
-                        if (string.IsNullOrEmpty(formFactorStr) && stick["FormFactor"] != null)
+                        using (stick)
                         {
-                            int ff = Convert.ToInt32(stick["FormFactor"]);
-                            formFactorStr = ff switch
+                            if (ramSpeed == 0 && stick["Speed"] != null && uint.TryParse(stick["Speed"]?.ToString(), out uint spd))
+                                ramSpeed = spd;
+
+                            if (configuredSpeed == 0 && stick["ConfiguredClockSpeed"] != null && uint.TryParse(stick["ConfiguredClockSpeed"]?.ToString(), out uint cfgSpd))
+                                configuredSpeed = cfgSpd;
+
+                            uint smbiosType = 0;
+                            if (stick["SMBIOSMemoryType"] != null && uint.TryParse(stick["SMBIOSMemoryType"]?.ToString(), out uint sType))
+                                smbiosType = sType;
+
+                            uint legType = 0;
+                            if (stick["MemoryType"] != null && uint.TryParse(stick["MemoryType"]?.ToString(), out uint lType))
+                                legType = lType;
+
+                            string memGen = DecodeSmbiosMemoryType(smbiosType, legType);
+                            if (string.IsNullOrEmpty(primaryMemType)) primaryMemType = memGen;
+
+                            if (string.IsNullOrEmpty(formFactorStr) && stick["FormFactor"] != null)
                             {
-                                12 => "SODIMM (Laptop)",
-                                8 => "DIMM (Desktop)",
-                                _ => "Standard"
-                            };
+                                int ff = Convert.ToInt32(stick["FormFactor"]);
+                                formFactorStr = ff switch
+                                {
+                                    12 => "SODIMM (Laptop)",
+                                    8 => "DIMM (Desktop)",
+                                    _ => "Standard"
+                                };
+                            }
+
+                            string locator = stick["DeviceLocator"]?.ToString()?.Trim() ?? $"Slot {modules.Count + 1}";
+                            string mfg = stick["Manufacturer"]?.ToString()?.Trim() ?? string.Empty;
+                            string part = stick["PartNumber"]?.ToString()?.Trim() ?? string.Empty;
+                            long cap = 0;
+                            if (stick["Capacity"] != null && long.TryParse(stick["Capacity"]?.ToString(), out long c))
+                                cap = c;
+
+                            uint effSpeed = (configuredSpeed > 0) ? configuredSpeed : ramSpeed;
+                            string speedSuffix = effSpeed > 0 ? $" ({memGen}-{effSpeed})" : $" ({memGen})";
+                            string capStr = cap > 0 ? FormatHelper.FormatBytes(cap) : "Memory Module";
+                            string stickDesc = $"{locator}: {mfg} {capStr}{speedSuffix}".Trim();
+                            if (!string.IsNullOrEmpty(part)) stickDesc += $" (Part: {part})";
+                            modules.Add(stickDesc);
                         }
-
-                        string locator = stick["DeviceLocator"]?.ToString()?.Trim() ?? $"Slot {modules.Count + 1}";
-                        string mfg = stick["Manufacturer"]?.ToString()?.Trim() ?? string.Empty;
-                        string part = stick["PartNumber"]?.ToString()?.Trim() ?? string.Empty;
-                        long cap = 0;
-                        if (stick["Capacity"] != null && long.TryParse(stick["Capacity"]?.ToString(), out long c))
-                            cap = c;
-
-                        uint effSpeed = (configuredSpeed > 0) ? configuredSpeed : ramSpeed;
-                        string speedSuffix = effSpeed > 0 ? $" ({memGen}-{effSpeed})" : $" ({memGen})";
-                        string capStr = cap > 0 ? FormatHelper.FormatBytes(cap) : "Memory Module";
-                        string stickDesc = $"{locator}: {mfg} {capStr}{speedSuffix}".Trim();
-                        if (!string.IsNullOrEmpty(part)) stickDesc += $" (Part: {part})";
-                        modules.Add(stickDesc);
                     }
 
                     if (!string.IsNullOrEmpty(primaryMemType))
@@ -582,8 +603,11 @@ namespace ResourceAnalyzer.Services
             try
             {
                 using var searcher = new ManagementObjectSearcher("SELECT Index, Model, InterfaceType, MediaType, Size, Status FROM Win32_DiskDrive");
-                foreach (ManagementObject disk in searcher.Get())
+                using var diskColl = searcher.Get();
+                foreach (ManagementObject disk in diskColl)
                 {
+                    using (disk)
+                    {
                     if (disk["Index"] != null && int.TryParse(disk["Index"]?.ToString(), out int idx))
                     {
                         string model = disk["Model"]?.ToString()?.Trim() ?? "Disk Drive";
@@ -674,18 +698,22 @@ namespace ResourceAnalyzer.Services
                             try
                             {
                                 using var pSearcher = new ManagementObjectSearcher(@"root\Microsoft\Windows\Storage", $"SELECT PartitionStyle FROM MSFT_Disk WHERE Number={idx}");
-                                foreach (ManagementObject pObj in pSearcher.Get())
+                                using var pColl = pSearcher.Get();
+                                foreach (ManagementObject pObj in pColl)
                                 {
-                                    if (pObj["PartitionStyle"] != null && ushort.TryParse(pObj["PartitionStyle"]?.ToString(), out ushort pStyle))
+                                    using (pObj)
                                     {
-                                        item.PartitionStyle = pStyle switch
+                                        if (pObj["PartitionStyle"] != null && ushort.TryParse(pObj["PartitionStyle"]?.ToString(), out ushort pStyle))
                                         {
-                                            2 => "GPT (GUID Partition Table - Modern UEFI)",
-                                            1 => "MBR (Master Boot Record - Legacy)",
-                                            _ => "Standard Partition"
-                                        };
+                                            item.PartitionStyle = pStyle switch
+                                            {
+                                                2 => "GPT (GUID Partition Table - Modern UEFI)",
+                                                1 => "MBR (Master Boot Record - Legacy)",
+                                                _ => "Standard Partition"
+                                            };
+                                        }
+                                        break;
                                     }
-                                    break;
                                 }
                             }
                             catch { }
@@ -695,6 +723,7 @@ namespace ResourceAnalyzer.Services
                         {
                             _diskMetadataCache[idx] = item;
                         }
+                    }
                     }
                 }
             }
@@ -818,12 +847,6 @@ namespace ResourceAnalyzer.Services
             }
         }
 
-        internal static bool IsPhysicalDiskHdd(int diskNum)
-        {
-            var meta = GetPhysicalDiskMetadata(diskNum);
-            return meta.MediaType.Contains("HDD", StringComparison.OrdinalIgnoreCase);
-        }
-
         private static string GetPartitionBitLockerStatus(string driveLetter, string driveFormat, bool isInternal)
         {
             if (!isInternal || driveFormat.Equals("FAT32", StringComparison.OrdinalIgnoreCase) || driveFormat.Equals("exFAT", StringComparison.OrdinalIgnoreCase))
@@ -840,13 +863,17 @@ namespace ResourceAnalyzer.Services
             {
                 using var encSearcher = new ManagementObjectSearcher(@"root\CIMV2\Security\MicrosoftVolumeEncryption",
                     $"SELECT ProtectionStatus FROM Win32_EncryptableVolume WHERE DriveLetter='{driveLetter}'");
-                foreach (ManagementObject enc in encSearcher.Get())
+                using var encColl = encSearcher.Get();
+                foreach (ManagementObject enc in encColl)
                 {
-                    if (enc["ProtectionStatus"] != null && uint.TryParse(enc["ProtectionStatus"]?.ToString(), out uint prot))
+                    using (enc)
                     {
-                        return prot == 1 ? "On (Protected with BitLocker / Device Encryption)" : "Off (Drive is not encrypted)";
+                        if (enc["ProtectionStatus"] != null && uint.TryParse(enc["ProtectionStatus"]?.ToString(), out uint prot))
+                        {
+                            return prot == 1 ? "On (Protected with BitLocker / Device Encryption)" : "Off (Drive is not encrypted)";
+                        }
+                        break;
                     }
-                    break;
                 }
             }
             catch { }
@@ -1226,78 +1253,89 @@ namespace ResourceAnalyzer.Services
                 try
                 {
                     using var gpuSearcher = new ManagementObjectSearcher("SELECT Name, DriverVersion, DriverDate, AdapterRAM, VideoProcessor, VideoModeDescription FROM Win32_VideoController");
-                    var rawList = gpuSearcher.Get().Cast<ManagementObject>().ToList();
-                    var validGpus = rawList.Where(g => !string.IsNullOrWhiteSpace(g["Name"]?.ToString())).ToList();
-
-                    staticSb.AppendLine($"GPUs Detected: {validGpus.Count}");
-                    staticSb.AppendLine();
-
-                    int gpuIndex = 0;
-                    foreach (ManagementObject gpu in validGpus)
+                    using var gpuColl = gpuSearcher.Get();
+                    var rawList = gpuColl.Cast<ManagementObject>().ToList();
+                    try
                     {
-                        gpuIndex++;
-                        string name = gpu["Name"]?.ToString()?.Trim() ?? string.Empty;
-                        string driverVer = gpu["DriverVersion"]?.ToString()?.Trim() ?? string.Empty;
-                        string vramStr = string.Empty;
-                        long vramBytes = 0;
+                        var validGpus = rawList.Where(g => !string.IsNullOrWhiteSpace(g["Name"]?.ToString())).ToList();
 
-                        if (gpu["AdapterRAM"] != null && long.TryParse(gpu["AdapterRAM"]?.ToString(), out vramBytes) && vramBytes > 0)
-                        {
-                            vramStr = FormatHelper.FormatBytes(vramBytes);
-                        }
+                        staticSb.AppendLine($"GPUs Detected: {validGpus.Count}");
+                        staticSb.AppendLine();
 
-                        string videoProc = gpu["VideoProcessor"]?.ToString()?.Trim() ?? string.Empty;
-                        string driverDate = string.Empty;
-                        if (gpu["DriverDate"] != null)
+                        int gpuIndex = 0;
+                        foreach (ManagementObject gpu in validGpus)
                         {
-                            string rawDate = gpu["DriverDate"]?.ToString() ?? string.Empty;
-                            if (rawDate.Length >= 8)
+                            gpuIndex++;
+                            string name = gpu["Name"]?.ToString()?.Trim() ?? string.Empty;
+                            string driverVer = gpu["DriverVersion"]?.ToString()?.Trim() ?? string.Empty;
+                            string vramStr = string.Empty;
+                            long vramBytes = 0;
+
+                            if (gpu["AdapterRAM"] != null && long.TryParse(gpu["AdapterRAM"]?.ToString(), out vramBytes) && vramBytes > 0)
                             {
-                                string y = rawDate.Substring(0, 4);
-                                string m = rawDate.Substring(4, 2);
-                                string d = rawDate.Substring(6, 2);
-                                driverDate = $"{d}-{m}-{y}";
+                                vramStr = FormatHelper.FormatBytes(vramBytes);
                             }
+
+                            string videoProc = gpu["VideoProcessor"]?.ToString()?.Trim() ?? string.Empty;
+                            string driverDate = string.Empty;
+                            if (gpu["DriverDate"] != null)
+                            {
+                                string rawDate = gpu["DriverDate"]?.ToString() ?? string.Empty;
+                                if (rawDate.Length >= 8)
+                                {
+                                    string y = rawDate.Substring(0, 4);
+                                    string m = rawDate.Substring(4, 2);
+                                    string d = rawDate.Substring(6, 2);
+                                    driverDate = $"{d}-{m}-{y}";
+                                }
+                            }
+
+                            bool isIntegrated = name.Contains("Iris", StringComparison.OrdinalIgnoreCase) ||
+                                                name.Contains("UHD", StringComparison.OrdinalIgnoreCase) ||
+                                                name.Contains("HD Graphics", StringComparison.OrdinalIgnoreCase) ||
+                                                name.Contains("Intel(R) Graphics", StringComparison.OrdinalIgnoreCase) ||
+                                                (name.Contains("Radeon", StringComparison.OrdinalIgnoreCase) && !name.Contains("Radeon RX", StringComparison.OrdinalIgnoreCase) && !name.Contains("Radeon Pro", StringComparison.OrdinalIgnoreCase)) ||
+                                                name.Contains("Integrated", StringComparison.OrdinalIgnoreCase);
+
+                            bool isDedicated = !isIntegrated && (
+                                                name.Contains("NVIDIA", StringComparison.OrdinalIgnoreCase) ||
+                                                name.Contains("GeForce", StringComparison.OrdinalIgnoreCase) ||
+                                                name.Contains("RTX", StringComparison.OrdinalIgnoreCase) ||
+                                                name.Contains("GTX", StringComparison.OrdinalIgnoreCase) ||
+                                                name.Contains("Quadro", StringComparison.OrdinalIgnoreCase) ||
+                                                name.Contains("Radeon RX", StringComparison.OrdinalIgnoreCase) ||
+                                                name.Contains("Radeon Pro", StringComparison.OrdinalIgnoreCase) ||
+                                                name.Contains("Arc A", StringComparison.OrdinalIgnoreCase));
+
+                            string role = isDedicated ? "Dedicated GPU" : "Integrated GPU";
+
+                            if (gpuIndex > 1)
+                            {
+                                staticSb.AppendLine();
+                                staticSb.AppendLine($"Graphics Adapter {gpuIndex} ({role}): {name}");
+                            }
+                            else
+                            {
+                                string prefix = validGpus.Count > 1 ? $"Graphics Adapter 1 ({role}): " : $"Graphics Adapter ({role}): ";
+                                staticSb.AppendLine($"{prefix}{name}");
+                            }
+
+                            if (!string.IsNullOrEmpty(driverVer))
+                                staticSb.AppendLine($"Driver Version: {driverVer}");
+                            if (!string.IsNullOrEmpty(driverDate))
+                                staticSb.AppendLine($"Driver Date: {driverDate}");
+                            if (!string.IsNullOrEmpty(vramStr))
+                                staticSb.AppendLine($"Dedicated Video Memory: {vramStr}");
+                            if (!string.IsNullOrEmpty(videoProc) && !videoProc.Equals(name, StringComparison.OrdinalIgnoreCase))
+                                staticSb.AppendLine($"Video Processor: {videoProc}");
                         }
-
-                        bool isIntegrated = name.Contains("Iris", StringComparison.OrdinalIgnoreCase) ||
-                                            name.Contains("UHD", StringComparison.OrdinalIgnoreCase) ||
-                                            name.Contains("HD Graphics", StringComparison.OrdinalIgnoreCase) ||
-                                            name.Contains("Intel(R) Graphics", StringComparison.OrdinalIgnoreCase) ||
-                                            (name.Contains("Radeon", StringComparison.OrdinalIgnoreCase) && !name.Contains("Radeon RX", StringComparison.OrdinalIgnoreCase) && !name.Contains("Radeon Pro", StringComparison.OrdinalIgnoreCase)) ||
-                                            name.Contains("Integrated", StringComparison.OrdinalIgnoreCase);
-
-                        bool isDedicated = !isIntegrated && (
-                                            name.Contains("NVIDIA", StringComparison.OrdinalIgnoreCase) ||
-                                            name.Contains("GeForce", StringComparison.OrdinalIgnoreCase) ||
-                                            name.Contains("RTX", StringComparison.OrdinalIgnoreCase) ||
-                                            name.Contains("GTX", StringComparison.OrdinalIgnoreCase) ||
-                                            name.Contains("Quadro", StringComparison.OrdinalIgnoreCase) ||
-                                            name.Contains("Radeon RX", StringComparison.OrdinalIgnoreCase) ||
-                                            name.Contains("Radeon Pro", StringComparison.OrdinalIgnoreCase) ||
-                                            name.Contains("Arc A", StringComparison.OrdinalIgnoreCase));
-
-                        string role = isDedicated ? "Dedicated GPU" : "Integrated GPU";
-
-                        if (gpuIndex > 1)
+                    }
+                    finally
+                    {
+                        foreach (var g in rawList)
                         {
-                            staticSb.AppendLine();
-                            staticSb.AppendLine($"Graphics Adapter {gpuIndex} ({role}): {name}");
+                            try { g.Dispose(); } catch { }
                         }
-                        else
-                        {
-                            string prefix = validGpus.Count > 1 ? $"Graphics Adapter 1 ({role}): " : $"Graphics Adapter ({role}): ";
-                            staticSb.AppendLine($"{prefix}{name}");
-                        }
-
-                        if (!string.IsNullOrEmpty(driverVer))
-                            staticSb.AppendLine($"Driver Version: {driverVer}");
-                        if (!string.IsNullOrEmpty(driverDate))
-                            staticSb.AppendLine($"Driver Date: {driverDate}");
-                        if (!string.IsNullOrEmpty(vramStr))
-                            staticSb.AppendLine($"Dedicated Video Memory: {vramStr}");
-                        if (!string.IsNullOrEmpty(videoProc) && !videoProc.Equals(name, StringComparison.OrdinalIgnoreCase))
-                            staticSb.AppendLine($"Video Processor: {videoProc}");
                     }
                 }
                 catch { }
@@ -1441,30 +1479,34 @@ namespace ResourceAnalyzer.Services
             try
             {
                 using var battSearcher = new ManagementObjectSearcher("SELECT Name, DeviceID, Chemistry FROM Win32_Battery");
-                foreach (ManagementObject b in battSearcher.Get())
+                using var battColl = battSearcher.Get();
+                foreach (ManagementObject b in battColl)
                 {
-                    string bName = b["Name"]?.ToString()?.Trim() ?? string.Empty;
-                    string bDevId = b["DeviceID"]?.ToString()?.Trim() ?? string.Empty;
-                    if (!string.IsNullOrEmpty(bName) && string.IsNullOrEmpty(mfg))
-                        sb.AppendLine($"Battery Model: {bName}");
-
-                    if (b["Chemistry"] != null && int.TryParse(b["Chemistry"]?.ToString(), out int chem))
+                    using (b)
                     {
-                        string chemStr = chem switch
+                        string bName = b["Name"]?.ToString()?.Trim() ?? string.Empty;
+                        string bDevId = b["DeviceID"]?.ToString()?.Trim() ?? string.Empty;
+                        if (!string.IsNullOrEmpty(bName) && string.IsNullOrEmpty(mfg))
+                            sb.AppendLine($"Battery Model: {bName}");
+
+                        if (b["Chemistry"] != null && int.TryParse(b["Chemistry"]?.ToString(), out int chem))
                         {
-                            1 => "Other",
-                            2 => "Unknown",
-                            3 => "Lead Acid",
-                            4 => "Nickel Cadmium",
-                            5 => "Nickel Metal Hydride",
-                            6 => "Lithium-ion",
-                            7 => "Zinc air",
-                            8 => "Lithium Polymer",
-                            _ => "Standard"
-                        };
-                        sb.AppendLine($"Chemistry: {chemStr}");
+                            string chemStr = chem switch
+                            {
+                                1 => "Other",
+                                2 => "Unknown",
+                                3 => "Lead Acid",
+                                4 => "Nickel Cadmium",
+                                5 => "Nickel Metal Hydride",
+                                6 => "Lithium-ion",
+                                7 => "Zinc air",
+                                8 => "Lithium Polymer",
+                                _ => "Standard"
+                            };
+                            sb.AppendLine($"Chemistry: {chemStr}");
+                        }
+                        break;
                     }
-                    break;
                 }
             }
             catch { }
@@ -1586,7 +1628,8 @@ namespace ResourceAnalyzer.Services
             try
             {
                 using var searcher = new System.Management.ManagementObjectSearcher(@"root\wmi", "SELECT CycleCount, Active FROM BatteryCycleCount");
-                foreach (var obj in searcher.Get())
+                using var coll = searcher.Get();
+                foreach (var obj in coll)
                 {
                     try
                     {
@@ -2020,13 +2063,17 @@ namespace ResourceAnalyzer.Services
             try
             {
                 using var searcher = new ManagementObjectSearcher("SELECT Manufacturer, Model FROM Win32_ComputerSystem");
-                foreach (ManagementObject obj in searcher.Get())
+                using var coll = searcher.Get();
+                foreach (ManagementObject obj in coll)
                 {
-                    string mfg = obj["Manufacturer"]?.ToString()?.Trim() ?? "";
-                    string model = obj["Model"]?.ToString()?.Trim() ?? "";
-                    if (!string.IsNullOrEmpty(mfg) || !string.IsNullOrEmpty(model))
+                    using (obj)
                     {
-                        return $"{mfg} {model}".Trim();
+                        string mfg = obj["Manufacturer"]?.ToString()?.Trim() ?? "";
+                        string model = obj["Model"]?.ToString()?.Trim() ?? "";
+                        if (!string.IsNullOrEmpty(mfg) || !string.IsNullOrEmpty(model))
+                        {
+                            return $"{mfg} {model}".Trim();
+                        }
                     }
                 }
             }

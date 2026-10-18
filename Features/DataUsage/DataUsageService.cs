@@ -86,10 +86,16 @@ namespace ResourceAnalyzer.Services
         {
             return await Task.Run(async () =>
             {
-                var now = DateTime.UtcNow;
-                DateTime startTime = timeRange switch
+                var now = DateTimeOffset.Now;
+                var startOfDay = new DateTimeOffset(DateTime.Today);
+                if (startOfDay > now)
                 {
-                    "Today" => DateTime.Today.ToUniversalTime(),
+                    startOfDay = now;
+                }
+
+                DateTimeOffset startTime = timeRange switch
+                {
+                    "Today" => startOfDay,
                     "Last 24 Hours" => now.AddHours(-24),
                     "Last Week" => now.AddDays(-7),
                     "Last Month" => now.AddDays(-30),

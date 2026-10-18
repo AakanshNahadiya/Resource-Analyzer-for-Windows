@@ -16,7 +16,7 @@ namespace ResourceAnalyzer
         private static Mutex? _mutex;
         private static EventWaitHandle? _signalEvent;
         private static bool _ownsMutex = false;
-        private static bool _keepListening = true;
+        private static RegisteredWaitHandle? _registeredWait;
 
         protected override void OnStartup(StartupEventArgs e)
         {
@@ -110,29 +110,24 @@ namespace ResourceAnalyzer
             var mainWindow = new MainWindow();
             MainWindow = mainWindow;
 
-            // Start background thread listening for show signal from new instances
+            // Register wait handle listening for show signal from new instances using Windows thread pool
             if (_signalEvent != null)
             {
-                ThreadPool.QueueUserWorkItem(_ =>
-                {
-                    while (_keepListening)
+                _registeredWait = ThreadPool.RegisterWaitForSingleObject(
+                    _signalEvent,
+                    (state, timedOut) =>
                     {
-                        try
+                        if (!timedOut)
                         {
-                            if (_signalEvent.WaitOne(1000))
+                            Dispatcher.Invoke(() =>
                             {
-                                Dispatcher.Invoke(() =>
-                                {
-                                    mainWindow.RestoreFromTray();
-                                });
-                            }
+                                mainWindow.RestoreFromTray();
+                            });
                         }
-                        catch
-                        {
-                            break;
-                        }
-                    }
-                });
+                    },
+                    null,
+                    -1,
+                    false);
             }
 
             bool startMinimized = e.Args.Any(a => a.Equals("--minimized", StringComparison.OrdinalIgnoreCase));
@@ -141,7 +136,7 @@ namespace ResourceAnalyzer
 
         protected override void OnExit(ExitEventArgs e)
         {
-            _keepListening = false;
+            _registeredWait?.Unregister(null);
             _signalEvent?.Dispose();
             if (_ownsMutex)
             {

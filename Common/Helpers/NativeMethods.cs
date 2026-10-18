@@ -91,9 +91,6 @@ namespace ResourceAnalyzer.Helpers
         #region Process & DLL Security Hardening (Microsoft SDL / CWE-427)
 
         public const uint LOAD_LIBRARY_SEARCH_DEFAULT_DIRS = 0x00001000;
-        public const uint LOAD_LIBRARY_SEARCH_APPLICATION_DIR = 0x00000200;
-        public const uint LOAD_LIBRARY_SEARCH_SYSTEM32 = 0x00000800;
-        public const uint LOAD_LIBRARY_SEARCH_USER_DIRS = 0x00000400;
 
         [DllImport("kernel32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
@@ -185,7 +182,7 @@ namespace ResourceAnalyzer.Helpers
             try
             {
                 string path = @"\\.\" + driveLetter.TrimEnd('\\');
-                using var handle = CreateFile(path, 0, 1 | 2 /* FILE_SHARE_READ | FILE_SHARE_WRITE */, IntPtr.Zero, 3 /* OPEN_EXISTING */, 0, IntPtr.Zero);
+                using var handle = CreateFile(path, 0, 1 | 2 | 4 /* FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE */, IntPtr.Zero, 3 /* OPEN_EXISTING */, 0, IntPtr.Zero);
                 if (!handle.IsInvalid)
                 {
                     if (DeviceIoControl(handle, IOCTL_STORAGE_GET_DEVICE_NUMBER, IntPtr.Zero, 0,
@@ -768,7 +765,6 @@ namespace ResourceAnalyzer.Helpers
         public const int AF_INET6 = 23;
         public const int TCP_TABLE_OWNER_PID_ALL = 5;
         public const int UDP_TABLE_OWNER_PID = 1;
-        public const uint ERROR_INSUFFICIENT_BUFFER = 122;
         public const uint NO_ERROR = 0;
 
         [DllImport("iphlpapi.dll", SetLastError = true)]

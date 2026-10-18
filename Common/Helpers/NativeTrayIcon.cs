@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -200,8 +200,9 @@ namespace ResourceAnalyzer.Helpers
             if (hMenu == IntPtr.Zero) return;
 
             AppendMenu(hMenu, MF_STRING, 1, "Show Resource Analyzer for Windows");
+            AppendMenu(hMenu, MF_STRING, 2, "Announce Network Speed");
             AppendMenu(hMenu, MF_SEPARATOR, 0, string.Empty);
-            AppendMenu(hMenu, MF_STRING, 2, "Exit");
+            AppendMenu(hMenu, MF_STRING, 3, "Exit");
 
             GetCursorPos(out POINT pt);
             SetForegroundWindow(_hwnd);
@@ -209,7 +210,8 @@ namespace ResourceAnalyzer.Helpers
             DestroyMenu(hMenu);
 
             if (cmd == 1) _onRestore();
-            else if (cmd == 2) _onExit();
+            else if (cmd == 2) _onSpeakSpeed?.Invoke();
+            else if (cmd == 3) _onExit();
         }
 
         public void Dispose()

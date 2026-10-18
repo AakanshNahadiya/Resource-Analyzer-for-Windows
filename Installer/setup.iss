@@ -1,6 +1,6 @@
 ; Script generated for Resource Analyzer for Windows
 #define MyAppName "Resource Analyzer for Windows"
-#define MyAppVersion "1.0.6"
+#define MyAppVersion "1.0.7"
 #define MyAppPublisher "Accessible Tools"
 #define MyAppExeName "ResourceAnalyzer.exe"
 
@@ -15,35 +15,33 @@ UsePreviousAppDir=no
 DirExistsWarning=no
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
+DisableReadyPage=yes
 OutputDir=Output
-OutputBaseFilename=ResourceAnalyzer_Setup_v1.0.6
+OutputBaseFilename=ResourceAnalyzer_Setup_v1.0.7
 SetupIconFile=..\Resources\app.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 Compression=lzma2/ultra64
 SolidCompression=yes
+LZMAUseSeparateProcess=yes
 WizardStyle=modern
 ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=lowest
+CloseApplications=no
+
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
-
-[Tasks]
-Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
-Name: "startwithwindows"; Description: "Start Resource Analyzer for Windows with Windows (Minimized to System Tray)"; GroupDescription: "Startup Options:"
 
 [Files]
 Source: "..\publish\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{userprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
-Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
-Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"; Parameters: "/SILENT"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Check: ShouldCreateDesktopIcon
 
 [Registry]
 ; Start with windows registry key and startup approved entry
-Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "Resource Analyzer for Windows"; ValueData: """{app}\{#MyAppExeName}"" --minimized"; Tasks: startwithwindows; Flags: uninsdeletevalue
-Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run"; ValueType: binary; ValueName: "Resource Analyzer for Windows"; ValueData: "02 00 00 00 00 00 00 00 00 00 00 00"; Tasks: startwithwindows; Flags: uninsdeletevalue
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "Resource Analyzer for Windows"; ValueData: """{app}\{#MyAppExeName}"" --minimized"; Check: ShouldStartWithWindows; Flags: uninsdeletevalue
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run"; ValueType: binary; ValueName: "Resource Analyzer for Windows"; ValueData: "02 00 00 00 00 00 00 00 00 00 00 00"; Check: ShouldStartWithWindows; Flags: uninsdeletevalue
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}"
@@ -52,6 +50,52 @@ Type: filesandordirs; Name: "{app}"
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent shellexec
 
 [Code]
+var
+  DesktopIconCheck: TNewCheckBox;
+  StartWithWindowsCheck: TNewCheckBox;
+
+function ShouldCreateDesktopIcon(): Boolean;
+begin
+  Result := (DesktopIconCheck <> nil) and DesktopIconCheck.Checked;
+end;
+
+function ShouldStartWithWindows(): Boolean;
+begin
+  Result := (StartWithWindowsCheck <> nil) and StartWithWindowsCheck.Checked;
+end;
+
+procedure InitializeWizard();
+begin
+  // Embed desktop shortcut option directly on the destination directory selection page
+  DesktopIconCheck := TNewCheckBox.Create(WizardForm);
+  DesktopIconCheck.Parent := WizardForm.SelectDirPage;
+  DesktopIconCheck.Left := WizardForm.DirEdit.Left;
+  DesktopIconCheck.Top := WizardForm.DiskSpaceLabel.Top + WizardForm.DiskSpaceLabel.Height + ScaleY(12);
+  DesktopIconCheck.Width := WizardForm.DirEdit.Width;
+  DesktopIconCheck.Height := ScaleY(24);
+  DesktopIconCheck.Caption := 'Create a &desktop shortcut';
+  DesktopIconCheck.Checked := True;
+
+  // Embed start with windows option directly below the desktop shortcut checkbox
+  StartWithWindowsCheck := TNewCheckBox.Create(WizardForm);
+  StartWithWindowsCheck.Parent := WizardForm.SelectDirPage;
+  StartWithWindowsCheck.Left := WizardForm.DirEdit.Left;
+  StartWithWindowsCheck.Top := DesktopIconCheck.Top + DesktopIconCheck.Height + ScaleY(6);
+  StartWithWindowsCheck.Width := WizardForm.DirEdit.Width;
+  StartWithWindowsCheck.Height := ScaleY(24);
+  StartWithWindowsCheck.Caption := '&Start Resource Analyzer with Windows (Minimized to System Tray)';
+  StartWithWindowsCheck.Checked := True;
+end;
+
+procedure CurPageChanged(CurPageID: Integer);
+begin
+  // On the single options page, present the button directly as "Install"
+  if CurPageID = wpSelectDir then
+  begin
+    WizardForm.NextButton.Caption := SetupMessage(msgButtonInstall);
+  end;
+end;
+
 function KillRunningApp(): Boolean;
 var
   ResultCode: Integer;
@@ -88,6 +132,12 @@ begin
   // Terminate any running instance immediately on setup startup to release file locks without popups
   KillRunningApp();
   Result := True;
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  KillRunningApp();
+  Result := '';
 end;
 
 var
@@ -184,7 +234,11 @@ end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
-  if CurStep = ssPostInstall then
+  if CurStep = ssInstall then
+  begin
+    KillRunningApp();
+  end
+  else if CurStep = ssPostInstall then
   begin
     // Register uninstaller with /SILENT so Windows "Add or Remove Programs" directly uses our unified dialog
     RegWriteStringValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{E7A23C84-4845-4DC3-8DC2-A7210FD2A882}_is1', 'UninstallString', '"' + ExpandConstant('{uninstallexe}') + '" /SILENT');
@@ -195,7 +249,11 @@ procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   AppDataDir: String;
 begin
-  if CurUninstallStep = usPostUninstall then
+  if CurUninstallStep = usUninstall then
+  begin
+    KillRunningApp();
+  end
+  else if CurUninstallStep = usPostUninstall then
   begin
     AppDataDir := ExpandConstant('{userappdata}\ResourceAnalyzer');
 

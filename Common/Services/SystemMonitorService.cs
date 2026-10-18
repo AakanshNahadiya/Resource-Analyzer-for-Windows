@@ -685,6 +685,10 @@ namespace ResourceAnalyzer.Services
                     bool isExternal = false;
                     string mediaType = "SSD";
                     string modelName = "Disk Drive";
+                    string letters = string.Join(", ", drives.Select(d => d.Name.TrimEnd('\\')));
+                    string firstLetter = drives[0].Name.Substring(0, 1).ToUpperInvariant();
+                    string diskKey;
+                    string diskLabel;
 
                     if (dNum >= 0)
                     {
@@ -692,10 +696,49 @@ namespace ResourceAnalyzer.Services
                         isExternal = !meta.IsInternal;
                         mediaType = meta.MediaType.Contains("HDD", StringComparison.OrdinalIgnoreCase) ? "HDD" : "SSD";
                         modelName = meta.Model;
+
+                        if (!isExternal)
+                        {
+                            diskKey = dNum == 0 ? "disk" : $"disk_{dNum}";
+                            diskLabel = $"Disk {dNum} (Internal {mediaType})";
+                        }
+                        else
+                        {
+                            diskKey = $"usb_{firstLetter}";
+                            diskLabel = $"USB Storage (External - {letters})";
+                        }
                     }
                     else
                     {
-                        isExternal = drives.Any(d => d.DriveType == DriveType.Removable);
+                        // Non-physical storage or virtual mount (dNum < 0)
+                        if (drives.Any(d => d.DriveType == DriveType.Network))
+                        {
+                            diskKey = $"net_{firstLetter}";
+                            diskLabel = $"Network Drive ({letters})";
+                            modelName = "Network Share / Mapped Volume";
+                            isExternal = true;
+                        }
+                        else if (drives.Any(d => d.DriveType == DriveType.CDRom))
+                        {
+                            diskKey = $"cd_{firstLetter}";
+                            diskLabel = $"Optical / Virtual Drive ({letters})";
+                            modelName = "CD/DVD / ISO Mount";
+                            isExternal = true;
+                        }
+                        else if (drives.Any(d => d.DriveType == DriveType.Removable))
+                        {
+                            diskKey = $"usb_{firstLetter}";
+                            diskLabel = $"USB Storage (External - {letters})";
+                            modelName = "External Removable Storage";
+                            isExternal = true;
+                        }
+                        else
+                        {
+                            diskKey = $"ext_{firstLetter}";
+                            diskLabel = $"External Storage ({letters})";
+                            modelName = "Virtual / Storage Space Volume";
+                            isExternal = true;
+                        }
                     }
 
                     var (readSpeed, writeSpeed) = HardwareDetailService.GetLiveDiskSpeed(dNum);
@@ -703,40 +746,16 @@ namespace ResourceAnalyzer.Services
                         ? $"Live Speed: Read {FormatHelper.FormatSpeed(readSpeed)}, Write {FormatHelper.FormatSpeed(writeSpeed)}\n"
                         : "Live Speed: Idle (0 B/s Read, 0 B/s Write)\n";
 
-                    if (!isExternal)
-                    {
-                        string diskKey = dNum == 0 ? "disk" : $"disk_{dNum}";
-                        string diskLabel = $"Disk {Math.Max(0, dNum)} (Internal {mediaType})";
+                    string summary = $"{diskLabel}: {freeFormatted} free of {totalFormatted} ({usedPercent:F0}% used)";
+                    string details = $"Device: {diskLabel}\n" +
+                                     $"Model: {modelName}\n" +
+                                     $"Total Capacity: {totalFormatted}\n" +
+                                     $"Free Space: {freeFormatted}\n" +
+                                     $"Used Space: {usedFormatted} ({usedPercent:F1}%)\n" +
+                                     speedInfo +
+                                     $"Partitions ({drives.Count}): {letters}";
 
-                        string summary = $"{diskLabel}: {freeFormatted} free of {totalFormatted} ({usedPercent:F0}% used)";
-                        string details = $"Device: {diskLabel}\n" +
-                                         $"Model: {modelName}\n" +
-                                         $"Total Capacity: {totalFormatted}\n" +
-                                         $"Free Space: {freeFormatted}\n" +
-                                         $"Used Space: {usedFormatted} ({usedPercent:F1}%)\n" +
-                                         speedInfo +
-                                         $"Partitions ({drives.Count}): " + string.Join(", ", drives.Select(d => d.Name.TrimEnd('\\')));
-
-                        result[diskKey] = (summary, details, usedPercent);
-                    }
-                    else
-                    {
-                        string letters = string.Join(", ", drives.Select(d => d.Name.TrimEnd('\\')));
-                        string firstLetter = drives[0].Name.Substring(0, 1).ToUpperInvariant();
-                        string usbKey = $"usb_{firstLetter}";
-                        string usbLabel = $"USB Storage (External - {letters})";
-
-                        string summary = $"{usbLabel}: {freeFormatted} free of {totalFormatted} ({usedPercent:F0}% used)";
-                        string details = $"Device: {usbLabel}\n" +
-                                         $"Model: {modelName}\n" +
-                                         $"Total Capacity: {totalFormatted}\n" +
-                                         $"Free Space: {freeFormatted}\n" +
-                                         $"Used Space: {usedFormatted} ({usedPercent:F1}%)\n" +
-                                         speedInfo +
-                                         $"Partitions ({drives.Count}): {letters}";
-
-                        result[usbKey] = (summary, details, usedPercent);
-                    }
+                    result[diskKey] = (summary, details, usedPercent);
                 }
             }
             catch { }
@@ -747,13 +766,6 @@ namespace ResourceAnalyzer.Services
             }
 
             return result;
-        }
-
-        public (string Summary, string Details, double Percent) SampleDisk()
-        {
-            var all = SampleAllDisks();
-            if (all.TryGetValue("disk", out var d)) return d;
-            return ("Disk 0 (Internal SSD): Data unavailable", "Could not query drive status.", -1.0);
         }
 
         private (string Summary, string Details, double Percent) SampleBattery()

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.IO;
 using System.Threading;
@@ -23,37 +23,95 @@ namespace ResourceAnalyzer.Views
             _updateService = updateService;
             _speechService = speechService;
 
-            txtTitle.Text = $"Update Available: v{_updateInfo.LatestVersion}";
-            txtVersionInfo.Text = $"Resource Analyzer for Windows v{_updateInfo.LatestVersion} is available (Current version: v{_updateInfo.CurrentVersion}).";
+            if (_updateInfo.HasUpdate)
+            {
+                Title = "Update Available - Resource Analyzer for Windows";
+                txtTitle.Text = $"Update Available: v{_updateInfo.LatestVersion}";
+                txtVersionInfo.Text = $"Resource Analyzer for Windows v{_updateInfo.LatestVersion} is available (Current version: v{_updateInfo.CurrentVersion}).";
+                txtDownloadStatus.Text = "Would you like to download and install this update now?";
 
-            if (!string.IsNullOrWhiteSpace(_updateInfo.ReleaseNotes))
-            {
-                txtReleaseNotes.Text = _updateInfo.ReleaseNotes;
-            }
-            else if (!string.IsNullOrWhiteSpace(_updateInfo.ReleaseName))
-            {
-                txtReleaseNotes.Text = _updateInfo.ReleaseName;
+                scrollReleaseNotes.Visibility = Visibility.Visible;
+                pnlDownloadProgress.Visibility = Visibility.Visible;
+
+                btnDownloadInstall.Visibility = Visibility.Visible;
+                btnSeeWhatsNew.Visibility = Visibility.Visible;
+                btnNotNow.Visibility = Visibility.Visible;
+
+                btnViewReleaseNotes.Visibility = Visibility.Collapsed;
+                btnClose.Visibility = Visibility.Collapsed;
+
+                Height = 390;
+
+                if (!string.IsNullOrWhiteSpace(_updateInfo.ReleaseNotes))
+                {
+                    txtReleaseNotes.Text = _updateInfo.ReleaseNotes;
+                }
+                else if (!string.IsNullOrWhiteSpace(_updateInfo.ReleaseName))
+                {
+                    txtReleaseNotes.Text = _updateInfo.ReleaseName;
+                }
+                else
+                {
+                    txtReleaseNotes.Text = "No release notes provided for this version.";
+                }
+
+                Loaded += (s, e) => btnDownloadInstall.Focus();
             }
             else
             {
-                txtReleaseNotes.Text = "No release notes provided for this version.";
-            }
+                Title = "Up to Date - Resource Analyzer for Windows";
+                txtTitle.Text = "Resource Analyzer is Up to Date";
+                txtVersionInfo.Text = $"You have the latest version of Resource Analyzer for Windows (Version v{_updateInfo.CurrentVersion}).";
 
-            Loaded += (s, e) => btnDownloadInstall.Focus();
+                // Completely collapse the release notes and download prompt sections to avoid misleading text
+                scrollReleaseNotes.Visibility = Visibility.Collapsed;
+                pnlDownloadProgress.Visibility = Visibility.Collapsed;
+
+                // Download, Not Now, and See What's New are ONLY present when an update is available
+                btnDownloadInstall.Visibility = Visibility.Collapsed;
+                btnSeeWhatsNew.Visibility = Visibility.Collapsed;
+                btnNotNow.Visibility = Visibility.Collapsed;
+
+                // Up to Date shows only View Release Notes and Close
+                btnViewReleaseNotes.Visibility = Visibility.Visible;
+                btnClose.Visibility = Visibility.Visible;
+
+                Height = 180;
+
+                Loaded += (s, e) => btnViewReleaseNotes.Focus();
+            }
 
             KeyDown += (s, e) =>
             {
-                if (e.Key == System.Windows.Input.Key.Enter && !_isDownloading)
+                if (e.Key == System.Windows.Input.Key.Escape)
                 {
                     e.Handled = true;
-                    BtnDownloadInstall_Click(btnDownloadInstall, new RoutedEventArgs());
-                }
-                else if (e.Key == System.Windows.Input.Key.Escape)
-                {
-                    e.Handled = true;
-                    BtnNotNow_Click(btnNotNow, new RoutedEventArgs());
+                    if (_isDownloading)
+                    {
+                        _cts.Cancel();
+                    }
+                    Close();
                 }
             };
+        }
+
+        private void BtnSeeWhatsNew_Click(object sender, RoutedEventArgs e)
+        {
+            string url = _updateInfo.GetEffectiveReleaseUrl();
+            _updateService.OpenUrl(url);
+            _speechService?.Speak("Opening release notes on GitHub.", interrupt: true);
+        }
+
+        private void BtnViewReleaseNotes_Click(object sender, RoutedEventArgs e)
+        {
+            string url = _updateInfo.GetEffectiveReleaseUrl();
+            _updateService.OpenUrl(url);
+            _speechService?.Speak("Opening release notes on GitHub.", interrupt: true);
+        }
+
+        private void BtnClose_Click(object sender, RoutedEventArgs e)
+        {
+            Close();
         }
 
         private async void BtnDownloadInstall_Click(object sender, RoutedEventArgs e)

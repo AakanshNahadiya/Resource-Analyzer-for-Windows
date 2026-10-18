@@ -123,7 +123,7 @@
                         AutomationProperties.Name="Restart in Administrator Mode (Ctrl+Shift+A)"/>
                 <TextBlock x:Name="txtStatus" VerticalAlignment="Center"
                            Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12"
-                           Text="F1: Shortcuts | Ctrl+1..6: Tabs | F5: Refresh"/>
+                           Text="F1: Shortcuts | Ctrl+1..5: Tabs | F5: Refresh"/>
             </StackPanel>
         </DockPanel>
 
@@ -601,19 +601,40 @@
 
                         <Separator Background="{DynamicResource BorderBrush}" Margin="0,16"/>
 
-                        <!-- Section 7: Application Updates -->
-                        <TextBlock Text="Application Updates &amp; Version" FontWeight="Bold" FontSize="15" Foreground="{DynamicResource AccentBrush}" Margin="0,0,0,4"/>
-                        <TextBlock x:Name="txtCurrentVersion" Text="Current Version: v1.0.6" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,10"/>
+                        <!-- Section 7: Application Updates and Resources -->
+                        <TextBlock Text="Application Updates and Resources" FontWeight="Bold" FontSize="15" Foreground="{DynamicResource AccentBrush}" Margin="0,0,0,4"/>
+                        <TextBlock x:Name="txtCurrentVersion" Text="Current Version: v1.0.7" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,8"/>
 
+                        <CheckBox x:Name="chkAutoCheckUpdates" Content="Check for updates daily" VerticalAlignment="Center" Margin="0,0,0,10"
+                                  Checked="ChkAutoCheckUpdates_Changed" Unchecked="ChkAutoCheckUpdates_Changed"
+                                  Foreground="{DynamicResource TextPrimaryBrush}"
+                                  AutomationProperties.Name="Automatically check for updates once per day on startup"/>
+
+                        <TextBlock Text="Help, Links and Actions:" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,6"/>
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                            <Button x:Name="btnCheckForUpdates" Content="Check for Updates" Width="180" Height="30" Margin="0,0,10,0"
-                                    Click="BtnCheckForUpdates_Click" Background="{DynamicResource SurfaceBackgroundBrush}" Foreground="{DynamicResource TextPrimaryBrush}" BorderBrush="{DynamicResource BorderBrush}"
-                                    AutomationProperties.Name="Check GitHub for newer official releases"/>
-                            <Button x:Name="btnDownloadUpdate" Content="Download and Install" Width="200" Height="30" Visibility="Collapsed"
+                            <ComboBox x:Name="cmbHelpResources" Width="360" Height="30" Margin="0,0,10,0"
+                                      SelectedIndex="0"
+                                      SelectionChanged="CmbHelpResources_SelectionChanged"
+                                      KeyDown="CmbHelpResources_KeyDown"
+                                      Background="{DynamicResource InputBackgroundBrush}" Foreground="{DynamicResource InputForegroundBrush}" BorderBrush="{DynamicResource InputBorderBrush}"
+                                      AutomationProperties.Name="Help and Online Resources">
+                                <ComboBoxItem Content="Check for Updates"/>
+                                <ComboBoxItem Content="Keyboard Shortcuts (F1)"/>
+                                <ComboBoxItem Content="View on GitHub"/>
+                                <ComboBoxItem Content="Create Issue and Report Bug on GitHub"/>
+                                <ComboBoxItem Content="Privacy Policy"/>
+                            </ComboBox>
+                            <Button x:Name="btnOpenHelpResource" Content="Check Now" Width="130" Height="30"
+                                    Click="BtnOpenHelpResource_Click" Background="{DynamicResource SurfaceBackgroundBrush}" Foreground="{DynamicResource TextPrimaryBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                                    AutomationProperties.Name="Execute selected help action or open link"/>
+                            <Button x:Name="btnDownloadUpdate" Content="Download and Install" Height="30" Padding="14,0" Margin="10,0,0,0" Visibility="Collapsed"
                                     Click="BtnDownloadUpdate_Click" Background="{DynamicResource AccentBrush}" Foreground="{DynamicResource SelectionForegroundBrush}" BorderBrush="{DynamicResource AccentBrush}" FontWeight="SemiBold"
                                     AutomationProperties.Name="Download and install latest update"/>
+                            <Button x:Name="btnViewReleaseNotes" Content="See What's New" Height="30" Padding="14,0" Margin="10,0,0,0" Visibility="Collapsed"
+                                    Click="BtnViewReleaseNotes_Click" Background="{DynamicResource SurfaceBackgroundBrush}" Foreground="{DynamicResource TextPrimaryBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                                    AutomationProperties.Name="View release notes on GitHub"/>
                         </StackPanel>
-                        <TextBlock x:Name="txtUpdateStatus" Text="Press 'Check for Updates' to verify whether a newer version is available." Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,2,0,8" TextWrapping="Wrap"/>
+                        <TextBlock x:Name="txtUpdateStatus" Text="Select an action and press Enter or click the button." Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,2,0,8" TextWrapping="Wrap"/>
 
                         <Separator Background="{DynamicResource BorderBrush}" Margin="0,16"/>
 
@@ -627,7 +648,7 @@
 
         <!-- Bottom status line -->
         <DockPanel Grid.Row="2" Margin="0,8,0,0">
-            <TextBlock DockPanel.Dock="Right" Text="F1: Shortcuts | Ctrl+1..6: Tabs | F5: Refresh"
+            <TextBlock DockPanel.Dock="Right" Text="F1: Shortcuts | Ctrl+1..5: Tabs | F5: Refresh"
                        Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12" HorizontalAlignment="Right"
                        AutomationProperties.Name="Keyboard Shortcuts Hint"/>
             <TextBlock x:Name="txtAnnouncement" Foreground="{DynamicResource StatusAnnouncementBrush}" FontSize="13"

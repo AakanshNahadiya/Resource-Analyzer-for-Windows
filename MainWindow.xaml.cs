@@ -106,6 +106,9 @@ namespace ResourceAnalyzer
             // Prewarm today's data usage cache in background for instant hotkey response (deferred by 1.5s)
             _ = Task.Delay(1500).ContinueWith(_ => _ = UpdateTodayDataUsageCacheAsync(), TaskScheduler.Default);
 
+            // Check for daily updates quietly in background (deferred by 3.5s)
+            _ = Task.Delay(3500).ContinueWith(_ => CheckForDailyUpdatesInBackground(), TaskScheduler.Default);
+
             // Build initial resource items
             BuildResourceItemList();
 
@@ -570,7 +573,7 @@ namespace ResourceAnalyzer
             _monitorService.SampleNetwork();
 
             // Sample physical disk throughput in background so live disk read/write speeds stay current
-            HardwareDetailService.SampleAllDiskSpeeds();
+            _ = Task.Run(HardwareDetailService.SampleAllDiskSpeeds);
 
             // Silently refresh today's data usage cache every 15 seconds in background,
             // or immediately if midnight has passed or the local calendar date rolled over

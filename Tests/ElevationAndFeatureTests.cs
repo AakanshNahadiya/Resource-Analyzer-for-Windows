@@ -177,5 +177,44 @@ namespace ResourceAnalyzer.Tests
             string? result = await service.DownloadInstallerAsync(url);
             Assert.Null(result);
         }
+
+        [Fact]
+        public void ShouldPerformDailyCheck_DisabledInSettings_ReturnsFalse()
+        {
+            var service = new UpdateService();
+            var settings = new Models.AppSettings { AutoCheckUpdatesDaily = false };
+            Assert.False(service.ShouldPerformDailyCheck(settings));
+        }
+
+        [Fact]
+        public void ShouldPerformDailyCheck_NeverChecked_ReturnsTrue()
+        {
+            var service = new UpdateService();
+            var settings = new Models.AppSettings { AutoCheckUpdatesDaily = true, LastUpdateCheckUtc = null };
+            Assert.True(service.ShouldPerformDailyCheck(settings));
+        }
+
+        [Fact]
+        public void ShouldPerformDailyCheck_AlreadyCheckedToday_ReturnsFalse()
+        {
+            var service = new UpdateService();
+            var settings = new Models.AppSettings { AutoCheckUpdatesDaily = true };
+            service.RecordCheckPerformed(settings);
+
+            Assert.False(service.ShouldPerformDailyCheck(settings));
+        }
+
+        [Fact]
+        public void ShouldPerformDailyCheck_CheckedYesterday_ReturnsTrue()
+        {
+            var service = new UpdateService();
+            var settings = new Models.AppSettings
+            {
+                AutoCheckUpdatesDaily = true,
+                LastUpdateCheckUtc = DateTime.UtcNow.AddHours(-25).ToString("O")
+            };
+
+            Assert.True(service.ShouldPerformDailyCheck(settings));
+        }
     }
 }

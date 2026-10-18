@@ -1,8 +1,10 @@
 using System;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using ResourceAnalyzer.Helpers;
 using ResourceAnalyzer.Models;
 using ResourceAnalyzer.Views;
@@ -64,9 +66,9 @@ namespace ResourceAnalyzer
                     cmbAlerts.SelectedIndex = 0;
                 }
 
-                txtHighRamValue.Text = s.HighRamLimitValue > 0 ? s.HighRamLimitValue.ToString("0.##") : string.Empty;
+                txtHighRamValue.Text = s.HighRamLimitValue > 0 ? s.HighRamLimitValue.ToString("0.##", CultureInfo.InvariantCulture) : string.Empty;
                 cmbHighRamUnit.SelectedIndex = s.HighRamLimitUnit.Equals("GB", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
-                txtHighCpuPercent.Text = s.HighCpuLimitPercent > 0 ? s.HighCpuLimitPercent.ToString("0.##") : string.Empty;
+                txtHighCpuPercent.Text = s.HighCpuLimitPercent > 0 ? s.HighCpuLimitPercent.ToString("0.##", CultureInfo.InvariantCulture) : string.Empty;
 
 
                 // Auto-refresh combo
@@ -116,6 +118,12 @@ namespace ResourceAnalyzer
                 if (s.RememberSortFilter && !string.IsNullOrWhiteSpace(s.SortBy))
                 {
                     _currentSort = s.SortBy;
+                }
+
+                // Daily Update Check
+                if (chkAutoCheckUpdates != null)
+                {
+                    chkAutoCheckUpdates.IsChecked = s.AutoCheckUpdatesDaily;
                 }
             }
             finally
@@ -402,7 +410,8 @@ namespace ResourceAnalyzer
 
             if (txtHighRamValue != null)
             {
-                if (double.TryParse(txtHighRamValue.Text.Trim(), out double ramLimit) && ramLimit > 0)
+                string rawRam = txtHighRamValue.Text.Trim().Replace(',', '.');
+                if (double.TryParse(rawRam, NumberStyles.Float, CultureInfo.InvariantCulture, out double ramLimit) && ramLimit > 0)
                 {
                     s.HighRamLimitValue = ramLimit;
                 }
@@ -419,7 +428,8 @@ namespace ResourceAnalyzer
 
             if (txtHighCpuPercent != null)
             {
-                if (double.TryParse(txtHighCpuPercent.Text.Trim(), out double cpuLimit) && cpuLimit > 0)
+                string rawCpu = txtHighCpuPercent.Text.Trim().Replace(',', '.');
+                if (double.TryParse(rawCpu, NumberStyles.Float, CultureInfo.InvariantCulture, out double cpuLimit) && cpuLimit > 0)
                 {
                     s.HighCpuLimitPercent = cpuLimit;
                 }
@@ -626,39 +636,124 @@ namespace ResourceAnalyzer
 
         #endregion
 
-        #region Application Updates
+        #region Application Updates and Resources
 
-        private async void BtnCheckForUpdates_Click(object sender, RoutedEventArgs e)
+        private void CmbHelpResources_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            btnCheckForUpdates.IsEnabled = false;
+            if (btnOpenHelpResource == null) return;
+            btnOpenHelpResource.Content = cmbHelpResources.SelectedIndex switch
+            {
+                0 => "Check Now",
+                1 => "View Shortcuts",
+                2 => "Open GitHub",
+                3 => "Report Bug",
+                4 => "Open Policy",
+                _ => "Open"
+            };
+        }
+
+        private void CmbHelpResources_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter)
+            {
+                e.Handled = true;
+                ExecuteSelectedHelpResource();
+            }
+        }
+
+        private void BtnOpenHelpResource_Click(object sender, RoutedEventArgs e)
+        {
+            ExecuteSelectedHelpResource();
+        }
+
+        private void ExecuteSelectedHelpResource()
+        {
+            int index = cmbHelpResources?.SelectedIndex ?? 0;
+            switch (index)
+            {
+                case 0:
+                    PerformCheckForUpdatesAsync();
+                    break;
+                case 1:
+                    ShowShortcutsDialog();
+                    break;
+                case 2:
+                    _updateService.OpenUrl("https://github.com/aakanshnahadiya/resource-analyzer-for-windows");
+                    _speechService.Speak("Opening Resource Analyzer repository on GitHub.", interrupt: true);
+                    txtAnnouncement.Text = "Opening GitHub repository in browser.";
+                    break;
+                case 3:
+                    _updateService.OpenUrl("https://github.com/aakanshnahadiya/resource-analyzer-for-windows/issues/new/choose");
+                    _speechService.Speak("Opening GitHub issues to report bug.", interrupt: true);
+                    txtAnnouncement.Text = "Opening GitHub issues in browser.";
+                    break;
+                case 4:
+                    _updateService.OpenUrl("https://gist.github.com/AakanshNahadiya/4d4f4abe3878de9c43ff9d9b3b7c9ee3");
+                    _speechService.Speak("Opening Accessible Tools Privacy Policy.", interrupt: true);
+                    txtAnnouncement.Text = "Opening Privacy Policy in browser.";
+                    break;
+            }
+        }
+
+        private async void PerformCheckForUpdatesAsync()
+        {
+            if (btnOpenHelpResource != null) btnOpenHelpResource.IsEnabled = false;
             txtUpdateStatus.Text = "Checking for updates from GitHub...";
             _speechService.Speak("Checking for updates.", interrupt: true);
 
-            var info = await _updateService.CheckForUpdatesAsync();
-            btnCheckForUpdates.IsEnabled = true;
-
-            txtUpdateStatus.Text = info.Message;
-            _speechService.Speak(info.Message, interrupt: true);
-
-            if (info.HasUpdate)
+            try
             {
+                var info = await _updateService.CheckForUpdatesAsync();
+                txtUpdateStatus.Text = info.Message;
+                _speechService.Speak(info.Message, interrupt: true);
+
+                _updateService.RecordCheckPerformed(_settingsService.CurrentSettings);
+                _settingsService.Save();
+
                 _latestUpdateInfo = info;
-                _latestUpdateUrl = !string.IsNullOrEmpty(info.DownloadUrl) ? info.DownloadUrl : info.HtmlUrl;
-                btnDownloadUpdate.Visibility = Visibility.Visible;
-                btnDownloadUpdate.Content = $"Download and Install (v{info.LatestVersion})";
-                btnDownloadUpdate.Focus();
 
-                var dlg = new UpdateAvailableDialog(info, _updateService, _speechService)
+                if (info.HasUpdate)
                 {
-                    Owner = this
-                };
-                dlg.ShowDialog();
+                    _latestUpdateUrl = !string.IsNullOrEmpty(info.DownloadUrl) ? info.DownloadUrl : info.HtmlUrl;
+                    btnDownloadUpdate.Visibility = Visibility.Visible;
+                    btnDownloadUpdate.Content = $"Download and Install (v{info.LatestVersion})";
+                    btnViewReleaseNotes.Visibility = Visibility.Visible;
+                    btnViewReleaseNotes.Content = "See What's New";
+                    btnDownloadUpdate.Focus();
+
+                    var dlg = new UpdateAvailableDialog(info, _updateService, _speechService)
+                    {
+                        Owner = this
+                    };
+                    dlg.ShowDialog();
+                }
+                else
+                {
+                    btnDownloadUpdate.Visibility = Visibility.Collapsed;
+                    btnViewReleaseNotes.Visibility = Visibility.Visible;
+                    btnViewReleaseNotes.Content = $"View Release Notes (v{info.CurrentVersion})";
+
+                    var dlg = new UpdateAvailableDialog(info, _updateService, _speechService)
+                    {
+                        Owner = this
+                    };
+                    dlg.ShowDialog();
+                }
             }
-            else
+            finally
             {
-                _latestUpdateInfo = null;
-                btnDownloadUpdate.Visibility = Visibility.Collapsed;
+                if (btnOpenHelpResource != null) btnOpenHelpResource.IsEnabled = true;
+                TrimProcessMemory();
             }
+        }
+
+        private void BtnViewReleaseNotes_Click(object sender, RoutedEventArgs e)
+        {
+            string url = _latestUpdateInfo?.GetEffectiveReleaseUrl() ??
+                         $"https://github.com/AakanshNahadiya/Resource-Analyzer-for-Windows/releases/tag/v{_updateService.GetCurrentVersion()}";
+            _updateService.OpenUrl(url);
+            _speechService.Speak("Opening release notes on GitHub.", interrupt: true);
+            txtAnnouncement.Text = "Opening release notes on GitHub.";
         }
 
         private void BtnDownloadUpdate_Click(object sender, RoutedEventArgs e)
@@ -675,6 +770,60 @@ namespace ResourceAnalyzer
             {
                 _updateService.OpenUrl(_latestUpdateUrl);
                 _speechService.Speak("Opening update download link in your browser.", interrupt: true);
+            }
+        }
+
+        private void ChkAutoCheckUpdates_Changed(object sender, RoutedEventArgs e)
+        {
+            if (_isUpdatingUI) return;
+            var s = _settingsService.CurrentSettings;
+            s.AutoCheckUpdatesDaily = (chkAutoCheckUpdates?.IsChecked == true);
+            _settingsService.Save();
+
+            string announcement = s.AutoCheckUpdatesDaily
+                ? "Daily update checks enabled."
+                : "Daily update checks disabled.";
+            _speechService.Speak(announcement, interrupt: true);
+            txtAnnouncement.Text = announcement;
+        }
+
+        public async void CheckForDailyUpdatesInBackground()
+        {
+            try
+            {
+                var s = _settingsService.CurrentSettings;
+                if (!_updateService.ShouldPerformDailyCheck(s)) return;
+
+                _updateService.RecordCheckPerformed(s);
+                _settingsService.Save();
+
+                var info = await _updateService.CheckForUpdatesAsync().ConfigureAwait(false);
+                if (info != null && info.IsSuccess && info.HasUpdate)
+                {
+                    if (s.LastNotifiedVersion != info.LatestVersion)
+                    {
+                        s.LastNotifiedVersion = info.LatestVersion;
+                        _settingsService.Save();
+
+                        await Dispatcher.InvokeAsync(() =>
+                        {
+                            _latestUpdateInfo = info;
+                            _latestUpdateUrl = !string.IsNullOrEmpty(info.DownloadUrl) ? info.DownloadUrl : info.HtmlUrl;
+                            txtUpdateStatus.Text = info.Message;
+                            btnDownloadUpdate.Visibility = Visibility.Visible;
+                            btnDownloadUpdate.Content = $"Download and Install (v{info.LatestVersion})";
+                            btnViewReleaseNotes.Visibility = Visibility.Visible;
+                            btnViewReleaseNotes.Content = "See What's New";
+                            _speechService.Speak($"A new version of Resource Analyzer ({info.LatestVersion}) is available. Check Settings tab to update.", interrupt: false);
+                        });
+                    }
+                }
+            }
+            catch { }
+            finally
+            {
+                // Instantly purge all update check allocations and release memory
+                TrimProcessMemory();
             }
         }
 
