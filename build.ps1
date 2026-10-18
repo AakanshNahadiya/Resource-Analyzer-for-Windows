@@ -25,14 +25,15 @@ Copy-Item "Resources/app.ico" "./publish/Resources/" -Force
 
 # Remove any foreign language satellite resource folders (leaves English intact)
 Get-ChildItem -Path "./publish" -Directory | Where-Object { $_.Name -match '^[a-z]{2}(-[A-Za-z]+)?$' } | Remove-Item -Recurse -Force
-# Remove unused Windows Desktop / WPF runtime assemblies to optimize installer size (~13.3 MB savings)
+
+# Remove unused Windows Desktop runtime assemblies to optimize installer size (~12 MB savings)
+# CRITICAL: NEVER remove System.Windows.Controls.Ribbon.dll as WPF AncestorType XAML resolution strictly requires it!
 $unusedAssemblies = @(
     "System.Windows.Forms.Design*.dll",
     "mscordbi.dll",
     "mscordaccore*.dll",
     "Microsoft.DiaSymReader.Native.amd64.dll",
     "System.Reflection.Metadata.dll",
-    "System.Windows.Controls.Ribbon.dll",
     "ReachFramework.dll",
     "PresentationUI.dll",
     "System.Printing.dll",
