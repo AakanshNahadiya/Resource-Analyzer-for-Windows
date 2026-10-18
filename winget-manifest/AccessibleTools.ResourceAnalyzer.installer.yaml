@@ -13,6 +13,6 @@ AppsAndFeaturesEntries:
 Installers:
   - Architecture: x64
     InstallerUrl: https://github.com/AakanshNahadiya/Resource-Analyzer-for-Windows/releases/download/v1.0.8/ResourceAnalyzer_Setup_v1.0.8.exe
-    InstallerSha256: FB24B62DA11067FB58EB7BC86C7A6F9E61655B0F9097831129C9F82D6DA92C93
+    InstallerSha256: C55D40EC6FE1BF348E5DA07352174853E332BF532EC6B338DB90EE45F56B2C40
 ManifestType: installer
 ManifestVersion: 1.9.0
