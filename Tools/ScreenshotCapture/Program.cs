@@ -42,6 +42,7 @@ namespace ResourceAnalyzer.Tools.ScreenshotCapture
                 app.Resources["InputForegroundBrush"] = new SolidColorBrush(Color.FromRgb(0xF8, 0xFA, 0xFC));
                 app.Resources["InputBorderBrush"] = new SolidColorBrush(Color.FromRgb(0x47, 0x55, 0x69));
                 app.Resources["ProgressBarBackgroundBrush"] = new SolidColorBrush(Color.FromRgb(0x33, 0x41, 0x55));
+                app.Resources["ProgressBarSelectedBackgroundBrush"] = new SolidColorBrush(Color.FromArgb(80, 0, 0, 0));
                 app.Resources["StatusAnnouncementBrush"] = new SolidColorBrush(Color.FromRgb(0x38, 0xBD, 0xF8));
                 app.Resources["BoolToVisConverter"] = new BooleanToVisibilityConverter();
 

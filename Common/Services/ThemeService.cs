@@ -89,7 +89,7 @@ namespace ResourceAnalyzer.Services
             var res = Application.Current?.Resources;
             if (res == null) return;
 
-            Color winBg, surfaceBg, border, textPrimary, textSecondary, accent, accentHover, selBg, selFg, inputBg, inputFg, inputBorder, progBg, statusAnnounce, activeTabBg, activeTabFg;
+            Color winBg, surfaceBg, border, textPrimary, textSecondary, accent, accentHover, selBg, selFg, inputBg, inputFg, inputBorder, progBg, progSelectedBg, statusAnnounce, activeTabBg, activeTabFg;
 
             if (theme.Equals("Light", StringComparison.OrdinalIgnoreCase))
             {
@@ -106,6 +106,7 @@ namespace ResourceAnalyzer.Services
                 inputFg = Color.FromRgb(15, 23, 42);
                 inputBorder = Color.FromRgb(148, 163, 184); // slate-400
                 progBg = Color.FromRgb(226, 232, 240); // slate-200
+                progSelectedBg = Color.FromRgb(1, 87, 155);
                 statusAnnounce = Color.FromRgb(3, 105, 161);
                 activeTabBg = Color.FromRgb(2, 132, 199); // sky-600
                 activeTabFg = Color.FromRgb(255, 255, 255); // pure white
@@ -125,6 +126,7 @@ namespace ResourceAnalyzer.Services
                 inputFg = Color.FromRgb(255, 255, 255);
                 inputBorder = Color.FromRgb(255, 255, 255);
                 progBg = Color.FromRgb(38, 38, 38);
+                progSelectedBg = Color.FromArgb(80, 0, 0, 0);
                 statusAnnounce = Color.FromRgb(250, 204, 21);
                 activeTabBg = Color.FromRgb(250, 204, 21); // vivid yellow
                 activeTabFg = Color.FromRgb(0, 0, 0);       // pure black
@@ -144,6 +146,7 @@ namespace ResourceAnalyzer.Services
                 inputFg = Color.FromRgb(248, 250, 252);
                 inputBorder = Color.FromRgb(71, 85, 105);
                 progBg = Color.FromRgb(51, 65, 85);
+                progSelectedBg = Color.FromRgb(1, 87, 155);
                 statusAnnounce = Color.FromRgb(56, 189, 248);
                 activeTabBg = Color.FromRgb(56, 189, 248); // sky-400
                 activeTabFg = Color.FromRgb(15, 23, 42);  // slate-900
@@ -162,6 +165,7 @@ namespace ResourceAnalyzer.Services
             SetBrush(res, "InputForegroundBrush", inputFg);
             SetBrush(res, "InputBorderBrush", inputBorder);
             SetBrush(res, "ProgressBarBackgroundBrush", progBg);
+            SetBrush(res, "ProgressBarSelectedBackgroundBrush", progSelectedBg);
             SetBrush(res, "StatusAnnouncementBrush", statusAnnounce);
             SetBrush(res, "ActiveTabBackgroundBrush", activeTabBg);
             SetBrush(res, "ActiveTabTextBrush", activeTabFg);

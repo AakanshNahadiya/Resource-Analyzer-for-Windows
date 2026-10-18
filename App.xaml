@@ -1,4 +1,4 @@
-﻿<Application x:Class="ResourceAnalyzer.App"
+<Application x:Class="ResourceAnalyzer.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="clr-namespace:ResourceAnalyzer">
@@ -16,6 +16,7 @@
         <SolidColorBrush x:Key="InputForegroundBrush" Color="#F8FAFC"/>
         <SolidColorBrush x:Key="InputBorderBrush" Color="#475569"/>
         <SolidColorBrush x:Key="ProgressBarBackgroundBrush" Color="#334155"/>
+        <SolidColorBrush x:Key="ProgressBarSelectedBackgroundBrush" Color="#01579B"/>
         <SolidColorBrush x:Key="StatusAnnouncementBrush" Color="#38BDF8"/>
     </Application.Resources>
 </Application>

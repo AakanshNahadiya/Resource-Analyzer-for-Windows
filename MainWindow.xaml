@@ -136,6 +136,22 @@
             </Setter>
         </Style>
 
+        <Style TargetType="local:SilentProgressBar">
+            <Setter Property="Height" Value="5"/>
+            <Setter Property="Margin" Value="0,4,0,2"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="IsHitTestVisible" Value="False"/>
+            <Setter Property="Foreground" Value="{DynamicResource AccentBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource ProgressBarBackgroundBrush}"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
+                    <Setter Property="Foreground" Value="{DynamicResource SelectionForegroundBrush}"/>
+                    <Setter Property="Background" Value="{DynamicResource ProgressBarSelectedBackgroundBrush}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
         <Style TargetType="CheckBox">
             <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
             <Setter Property="FontSize" Value="14"/>
@@ -334,10 +350,8 @@
                                 <StackPanel Margin="0,2">
                                     <TextBlock Text="{Binding DisplayText}" TextWrapping="Wrap"
                                                AutomationProperties.Name="{Binding DisplayText}"/>
-                                    <local:SilentProgressBar Minimum="0" Maximum="100" Value="{Binding Percent}" Height="5" Margin="0,4,0,2"
-                                                             Visibility="{Binding HasPercent, Converter={StaticResource BoolToVisConverter}}"
-                                                             Foreground="{DynamicResource AccentBrush}" Background="{DynamicResource ProgressBarBackgroundBrush}"
-                                                             BorderThickness="0" Focusable="False" IsHitTestVisible="False"/>
+                                    <local:SilentProgressBar Minimum="0" Maximum="100" Value="{Binding Percent}"
+                                                             Visibility="{Binding HasPercent, Converter={StaticResource BoolToVisConverter}}"/>
                                 </StackPanel>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
@@ -449,10 +463,8 @@
                                 <StackPanel Margin="0,2">
                                     <TextBlock Text="{Binding DisplayText}" TextWrapping="Wrap"
                                                AutomationProperties.Name="{Binding DisplayText}"/>
-                                    <local:SilentProgressBar Minimum="0" Maximum="100" Value="{Binding CpuPercent}" Height="5" Margin="0,4,0,2"
-                                                             Visibility="{Binding HasCpuPercent, Converter={StaticResource BoolToVisConverter}}"
-                                                             Foreground="{DynamicResource AccentBrush}" Background="{DynamicResource ProgressBarBackgroundBrush}"
-                                                             BorderThickness="0" Focusable="False" IsHitTestVisible="False"/>
+                                    <local:SilentProgressBar Minimum="0" Maximum="100" Value="{Binding CpuPercent}"
+                                                             Visibility="{Binding HasCpuPercent, Converter={StaticResource BoolToVisConverter}}"/>
                                 </StackPanel>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
@@ -523,10 +535,8 @@
                                 <StackPanel Margin="0,2">
                                     <TextBlock Text="{Binding DisplayText}" TextWrapping="Wrap"
                                                AutomationProperties.Name="{Binding DisplayText}"/>
-                                    <local:SilentProgressBar Minimum="0" Maximum="100" Value="{Binding UsagePercent}" Height="5" Margin="0,4,0,2"
-                                                             Visibility="{Binding HasPercent, Converter={StaticResource BoolToVisConverter}}"
-                                                             Foreground="{DynamicResource AccentBrush}" Background="{DynamicResource ProgressBarBackgroundBrush}"
-                                                             BorderThickness="0" Focusable="False" IsHitTestVisible="False"/>
+                                    <local:SilentProgressBar Minimum="0" Maximum="100" Value="{Binding UsagePercent}"
+                                                             Visibility="{Binding HasPercent, Converter={StaticResource BoolToVisConverter}}"/>
                                 </StackPanel>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
