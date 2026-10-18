@@ -692,8 +692,10 @@ namespace ResourceAnalyzer.Services
 
                     if (dNum >= 0)
                     {
-                        var meta = HardwareDetailService.GetPhysicalDiskMetadata(dNum);
-                        isExternal = !meta.IsInternal;
+                        bool isRemovableDrive = drives.Any(d => d.DriveType == DriveType.Removable);
+                        string? usbLetterParam = isRemovableDrive ? firstLetter : null;
+                        var meta = HardwareDetailService.GetPhysicalDiskMetadata(dNum, usbLetterParam);
+                        isExternal = !meta.IsInternal || isRemovableDrive;
                         mediaType = meta.MediaType.Contains("HDD", StringComparison.OrdinalIgnoreCase) ? "HDD" : "SSD";
                         modelName = meta.Model;
 

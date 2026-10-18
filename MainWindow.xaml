@@ -20,6 +20,9 @@
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisConverter"/>
 
+        <SolidColorBrush x:Key="ActiveTabBackgroundBrush" Color="#38BDF8"/>
+        <SolidColorBrush x:Key="ActiveTabTextBrush" Color="#0F172A"/>
+
         <Style x:Key="BannerTextFocusVisual">
             <Setter Property="Control.Template">
                 <Setter.Value>
@@ -37,21 +40,49 @@
             <Setter Property="Background" Value="{DynamicResource SurfaceBackgroundBrush}"/>
             <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
             <Setter Property="BorderThickness" Value="0"/>
-            <Style.Triggers>
-                <Trigger Property="IsSelected" Value="True">
-                    <Setter Property="Background" Value="{DynamicResource AccentBrush}"/>
-                    <Setter Property="Foreground" Value="{DynamicResource SelectionForegroundBrush}"/>
-                </Trigger>
-            </Style.Triggers>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabItem">
+                        <Border x:Name="TabBorder"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{DynamicResource BorderBrush}"
+                                BorderThickness="1,1,1,0"
+                                CornerRadius="4,4,0,0"
+                                Padding="{TemplateBinding Padding}"
+                                Margin="0,0,3,0">
+                            <ContentPresenter x:Name="ContentSite"
+                                              VerticalAlignment="Center"
+                                              HorizontalAlignment="Center"
+                                              ContentSource="Header"
+                                              RecognizesAccessKey="True"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="TabBorder" Property="Background" Value="{DynamicResource ActiveTabBackgroundBrush}"/>
+                                <Setter TargetName="TabBorder" Property="BorderBrush" Value="{DynamicResource ActiveTabBackgroundBrush}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource ActiveTabTextBrush}"/>
+                                <Setter TargetName="TabBorder" Property="TextElement.Foreground" Value="{DynamicResource ActiveTabTextBrush}"/>
+                            </Trigger>
+                            <MultiTrigger>
+                                <MultiTrigger.Conditions>
+                                    <Condition Property="IsSelected" Value="False"/>
+                                    <Condition Property="IsMouseOver" Value="True"/>
+                                </MultiTrigger.Conditions>
+                                <Setter TargetName="TabBorder" Property="Background" Value="{DynamicResource BorderBrush}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+                                <Setter TargetName="TabBorder" Property="TextElement.Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+                            </MultiTrigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
 
         <Style TargetType="ListBoxItem">
             <Setter Property="Padding" Value="10,8"/>
             <Setter Property="Margin" Value="0,2"/>
-            <Setter Property="Background" Value="{DynamicResource SurfaceBackgroundBrush}"/>
-            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
             <Setter Property="FocusVisualStyle">
                 <Setter.Value>
                     <Style>
@@ -65,16 +96,44 @@
                     </Style>
                 </Setter.Value>
             </Setter>
-            <Style.Triggers>
-                <Trigger Property="IsSelected" Value="True">
-                    <Setter Property="Background" Value="{DynamicResource SelectionBackgroundBrush}"/>
-                    <Setter Property="Foreground" Value="{DynamicResource SelectionForegroundBrush}"/>
-                    <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
-                </Trigger>
-                <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="{DynamicResource BorderBrush}"/>
-                </Trigger>
-            </Style.Triggers>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="ItemBorder"
+                                Background="{DynamicResource SurfaceBackgroundBrush}"
+                                BorderBrush="{DynamicResource BorderBrush}"
+                                BorderThickness="1"
+                                Padding="{TemplateBinding Padding}"
+                                Margin="{TemplateBinding Margin}"
+                                CornerRadius="4"
+                                SnapsToDevicePixels="True">
+                            <ContentPresenter x:Name="ContentSite"
+                                              HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                              TextElement.Foreground="{DynamicResource TextPrimaryBrush}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource SelectionBackgroundBrush}"/>
+                                <Setter TargetName="ItemBorder" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                                <Setter TargetName="ContentSite" Property="TextElement.Foreground" Value="{DynamicResource SelectionForegroundBrush}"/>
+                            </Trigger>
+                            <MultiTrigger>
+                                <MultiTrigger.Conditions>
+                                    <Condition Property="IsSelected" Value="True"/>
+                                    <Condition Property="Selector.IsSelectionActive" Value="False"/>
+                                </MultiTrigger.Conditions>
+                                <Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource SelectionBackgroundBrush}"/>
+                                <Setter TargetName="ItemBorder" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                                <Setter TargetName="ContentSite" Property="TextElement.Foreground" Value="{DynamicResource SelectionForegroundBrush}"/>
+                            </MultiTrigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ItemBorder" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
 
         <Style TargetType="CheckBox">
@@ -94,6 +153,124 @@
             <Setter Property="Background" Value="{DynamicResource SurfaceBackgroundBrush}"/>
             <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
             <Setter Property="Padding" Value="8,5"/>
+        </Style>
+
+        <Style TargetType="ComboBox">
+            <Setter Property="Background" Value="{DynamicResource InputBackgroundBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource InputForegroundBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource InputBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="10,4,28,4"/>
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <ToggleButton x:Name="ToggleButton"
+                                          Focusable="False"
+                                          ClickMode="Press"
+                                          IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border x:Name="TemplateRoot"
+                                                Background="{DynamicResource InputBackgroundBrush}"
+                                                BorderBrush="{DynamicResource InputBorderBrush}"
+                                                BorderThickness="1"
+                                                CornerRadius="4">
+                                            <Border Width="26"
+                                                    HorizontalAlignment="Right"
+                                                    Margin="0">
+                                                <Path x:Name="Arrow"
+                                                      Data="M 0 0 L 4 4 L 8 0 Z"
+                                                      Fill="{DynamicResource TextSecondaryBrush}"
+                                                      HorizontalAlignment="Center"
+                                                      VerticalAlignment="Center"/>
+                                            </Border>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="TemplateRoot" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                                                <Setter TargetName="Arrow" Property="Fill" Value="{DynamicResource AccentBrush}"/>
+                                            </Trigger>
+                                            <Trigger Property="IsChecked" Value="True">
+                                                <Setter TargetName="TemplateRoot" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                                                <Setter TargetName="Arrow" Property="Fill" Value="{DynamicResource AccentBrush}"/>
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+                            <ContentPresenter x:Name="ContentSite"
+                                              Content="{TemplateBinding SelectionBoxItem}"
+                                              ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                              ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}"
+                                              ContentStringFormat="{TemplateBinding SelectionBoxItemStringFormat}"
+                                              HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                              Margin="{TemplateBinding Padding}"
+                                              IsHitTestVisible="False"
+                                              TextElement.Foreground="{DynamicResource InputForegroundBrush}"/>
+                            <Popup x:Name="PART_Popup"
+                                   AllowsTransparency="True"
+                                   IsOpen="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
+                                   Placement="Bottom"
+                                   PopupAnimation="Slide">
+                                <Border x:Name="DropDownBorder"
+                                        Background="{DynamicResource SurfaceBackgroundBrush}"
+                                        BorderBrush="{DynamicResource BorderBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="4"
+                                        Margin="0,2,0,0"
+                                        MinWidth="{Binding ActualWidth, ElementName=ToggleButton}"
+                                        MaxHeight="{TemplateBinding MaxDropDownHeight}">
+                                    <ScrollViewer SnapsToDevicePixels="True">
+                                        <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Contained"/>
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsFocused" Value="True">
+                                <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="ComboBoxItem">
+            <Setter Property="Padding" Value="10,6"/>
+            <Setter Property="Background" Value="{DynamicResource SurfaceBackgroundBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBoxItem">
+                        <Border x:Name="ItemBorder"
+                                Background="{TemplateBinding Background}"
+                                BorderThickness="0"
+                                Padding="{TemplateBinding Padding}"
+                                Margin="2,1"
+                                CornerRadius="3">
+                            <ContentPresenter HorizontalAlignment="Left"
+                                              VerticalAlignment="Center"
+                                              TextElement.Foreground="{TemplateBinding Foreground}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource SelectionBackgroundBrush}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource SelectionForegroundBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource SelectionBackgroundBrush}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource SelectionForegroundBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
     </Window.Resources>
 
@@ -129,11 +306,12 @@
 
         <!-- Main Tab Control -->
         <TabControl x:Name="tabMain" Grid.Row="1" Background="{DynamicResource WindowBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                    SelectedIndex="0"
                     SelectionChanged="TabMain_SelectionChanged"
                     AutomationProperties.Name="Task Manager Tabs">
 
             <!-- TAB 1: System Resources -->
-            <TabItem x:Name="tabResources" Header="1. Resources"
+            <TabItem x:Name="tabResources" Header="1. Resources" IsSelected="True"
                      AutomationProperties.Name="System Resources Tab (1 of 5)">
                 <Grid Margin="10">
                     <Grid.RowDefinitions>
@@ -296,11 +474,11 @@
                     <WrapPanel Grid.Row="0" Margin="0,0,0,8" VerticalAlignment="Center">
                         <!-- Network adapter filter -->
                         <TextBlock Text="Network: " VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,4,0"/>
-                        <ComboBox x:Name="cmbDataNetwork" Width="200" Height="28" Margin="0,0,12,0"
+                        <ComboBox x:Name="cmbDataNetwork" Width="260" Height="28" Margin="0,0,12,0"
                                   SelectionChanged="CmbDataFilter_SelectionChanged"
                                   Background="{DynamicResource InputBackgroundBrush}" Foreground="{DynamicResource InputForegroundBrush}" BorderBrush="{DynamicResource InputBorderBrush}"
                                   AutomationProperties.Name="Filter by Network Connection">
-                            <ComboBoxItem Content="Current Connected Network (Default)"/>
+                            <ComboBoxItem Content="Current Connected Network"/>
                             <ComboBoxItem Content="All Networks"/>
                         </ComboBox>
 
@@ -560,19 +738,19 @@
                         <!-- Section 6: Startup, System Tray & Preferences -->
                         <TextBlock Text="Startup, System Tray &amp; Preferences" FontWeight="Bold" FontSize="15" Foreground="{DynamicResource AccentBrush}" Margin="0,0,0,4"/>
                         <TextBlock Text="Window closing and Windows login startup options:" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,8"/>
-                        <ComboBox x:Name="cmbStartupTray" Width="460" Height="30" HorizontalAlignment="Left"
+                        <ComboBox x:Name="cmbStartupTray" Width="520" Height="30" HorizontalAlignment="Left"
                                   SelectedIndex="0"
                                   SelectionChanged="CmbStartupTray_SelectionChanged"
                                   Background="{DynamicResource InputBackgroundBrush}" Foreground="{DynamicResource InputForegroundBrush}" BorderBrush="{DynamicResource InputBorderBrush}"
                                   AutomationProperties.Name="Startup and System Tray Options">
-                            <ComboBoxItem Content="Minimize to System Tray on close + Start with Windows (Recommended default)"/>
-                            <ComboBoxItem Content="Minimize to System Tray on close (Do not start with Windows)"/>
+                            <ComboBoxItem Content="Minimize to Tray + Start with Windows (Recommended)"/>
+                            <ComboBoxItem Content="Minimize to Tray (Do not start with Windows)"/>
                             <ComboBoxItem Content="Exit completely on close + Start with Windows"/>
                             <ComboBoxItem Content="Exit completely on close (Do not start with Windows)"/>
                         </ComboBox>
 
                         <TextBlock Text="Session memory for process list sorting and filtering:" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,14,0,8"/>
-                        <ComboBox x:Name="cmbRememberPrefs" Width="460" Height="30" HorizontalAlignment="Left"
+                        <ComboBox x:Name="cmbRememberPrefs" Width="520" Height="30" HorizontalAlignment="Left"
                                   SelectionChanged="CmbRememberPrefs_SelectionChanged"
                                   Background="{DynamicResource InputBackgroundBrush}" Foreground="{DynamicResource InputForegroundBrush}" BorderBrush="{DynamicResource InputBorderBrush}"
                                   AutomationProperties.Name="Preferences Memory Options">

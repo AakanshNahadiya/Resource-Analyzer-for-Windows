@@ -1,6 +1,6 @@
 ; Script generated for Resource Analyzer for Windows
 #define MyAppName "Resource Analyzer for Windows"
-#define MyAppVersion "1.0.7"
+#define MyAppVersion "1.0.8"
 #define MyAppPublisher "Accessible Tools"
 #define MyAppExeName "ResourceAnalyzer.exe"
 
@@ -17,7 +17,7 @@ DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 DisableReadyPage=yes
 OutputDir=Output
-OutputBaseFilename=ResourceAnalyzer_Setup_v1.0.7
+OutputBaseFilename=ResourceAnalyzer_Setup_v1.0.8
 SetupIconFile=..\Resources\app.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 Compression=lzma2/ultra64

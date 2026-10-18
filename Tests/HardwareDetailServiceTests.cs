@@ -130,7 +130,7 @@ namespace ResourceAnalyzer.Tests
             Assert.Contains("Total Physical Memory:", ramDetails);
             Assert.Contains("In Use:", ramDetails);
             Assert.Contains("Cached (Standby):", ramDetails);
-            Assert.Contains("Free Memory:", ramDetails);
+            Assert.Contains("Free (unused, not counting cache):", ramDetails);
             Assert.Contains("Available:", ramDetails);
             Assert.Contains("Committed:", ramDetails);
         }
@@ -147,7 +147,7 @@ namespace ResourceAnalyzer.Tests
             Assert.True(freedBytes >= 0);
             Assert.False(string.IsNullOrWhiteSpace(updatedDetails));
             Assert.Contains("Cached (Standby):", updatedDetails);
-            Assert.Contains("Free Memory:", updatedDetails);
+            Assert.Contains("Free (unused, not counting cache):", updatedDetails);
         }
 
         [Fact]
@@ -189,7 +189,11 @@ namespace ResourceAnalyzer.Tests
         public async Task GetHardwareDetailsAsync_UsbResource_ReturnsExternalSpecs()
         {
             var service = new HardwareDetailService();
-            string details = await service.GetHardwareDetailsAsync("usb_E");
+            var usbDrive = DriveInfo.GetDrives().FirstOrDefault(d => d.DriveType == DriveType.Removable);
+            if (usbDrive == null) return; // Skip dynamically if no USB drive is currently attached
+
+            string letter = usbDrive.Name.Substring(0, 1);
+            string details = await service.GetHardwareDetailsAsync($"usb_{letter}");
             _output.WriteLine($"=== USB DETAILS ===\n{details}\n");
 
             Assert.Contains("Physical Drive:", details);
@@ -227,6 +231,23 @@ namespace ResourceAnalyzer.Tests
         {
             var trim = NativeMethods.QueryDiskTrimSupport(-1);
             Assert.Null(trim);
+        }
+
+        [Fact]
+        public void QueryDiskStorageProperty_InvalidIndex_ReturnsNullSafely()
+        {
+            var prop = NativeMethods.QueryDiskStorageProperty(-1);
+            Assert.Null(prop);
+        }
+
+        [Fact]
+        public void GetPhysicalDiskMetadata_WithUsbLetter_IdentifiesAsExternal()
+        {
+            var meta = HardwareDetailService.GetPhysicalDiskMetadata(-1, "F");
+            Assert.NotNull(meta);
+            Assert.False(meta.IsInternal);
+            Assert.Equal("USB", meta.BusType);
+            Assert.Contains("Ready to Eject", meta.HealthStatus);
         }
 
         [Fact]

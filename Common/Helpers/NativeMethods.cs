@@ -304,6 +304,83 @@ namespace ResourceAnalyzer.Helpers
             return null;
         }
 
+        public struct DiskStorageProperty
+        {
+            public bool Removable;
+            public int BusType;
+            public string VendorId;
+            public string ProductId;
+            public string SerialNumber;
+        }
+
+        public static DiskStorageProperty? QueryDiskStorageProperty(int diskIndex)
+        {
+            if (diskIndex < 0) return null;
+            try
+            {
+                string path = $@"\\.\PhysicalDrive{diskIndex}";
+                using var handle = CreateFile(path, 0, 1 | 2 | 4, IntPtr.Zero, 3, 0, IntPtr.Zero);
+                if (!handle.IsInvalid)
+                {
+                    var query = new STORAGE_PROPERTY_QUERY
+                    {
+                        PropertyId = 0, // StorageDeviceProperty
+                        QueryType = 0,  // PropertyStandardQuery
+                        AdditionalParameters = new byte[1]
+                    };
+                    int qSize = Marshal.SizeOf(typeof(STORAGE_PROPERTY_QUERY));
+                    IntPtr inBuf = Marshal.AllocHGlobal(qSize);
+                    Marshal.StructureToPtr(query, inBuf, false);
+                    int outSize = 2048;
+                    IntPtr outBuf = Marshal.AllocHGlobal(outSize);
+                    try
+                    {
+                        if (DeviceIoControl(handle, IOCTL_STORAGE_QUERY_PROPERTY, inBuf, (uint)qSize, outBuf, (uint)outSize, out uint ret, IntPtr.Zero) && ret >= 32)
+                        {
+                            bool removable = Marshal.ReadByte(outBuf, 10) != 0;
+                            int vendorOffset = Marshal.ReadInt32(outBuf, 12);
+                            int prodOffset = Marshal.ReadInt32(outBuf, 16);
+                            int serialOffset = Marshal.ReadInt32(outBuf, 24);
+                            int busType = Marshal.ReadInt32(outBuf, 28);
+
+                            string vendor = "";
+                            string prod = "";
+                            string serial = "";
+
+                            if (vendorOffset > 0 && vendorOffset < ret)
+                            {
+                                vendor = Marshal.PtrToStringAnsi(new IntPtr(outBuf.ToInt64() + vendorOffset))?.Trim() ?? "";
+                            }
+                            if (prodOffset > 0 && prodOffset < ret)
+                            {
+                                prod = Marshal.PtrToStringAnsi(new IntPtr(outBuf.ToInt64() + prodOffset))?.Trim() ?? "";
+                            }
+                            if (serialOffset > 0 && serialOffset < ret)
+                            {
+                                serial = Marshal.PtrToStringAnsi(new IntPtr(outBuf.ToInt64() + serialOffset))?.Trim() ?? "";
+                            }
+
+                            return new DiskStorageProperty
+                            {
+                                Removable = removable,
+                                BusType = busType,
+                                VendorId = vendor,
+                                ProductId = prod,
+                                SerialNumber = serial
+                            };
+                        }
+                    }
+                    finally
+                    {
+                        Marshal.FreeHGlobal(inBuf);
+                        Marshal.FreeHGlobal(outBuf);
+                    }
+                }
+            }
+            catch { }
+            return null;
+        }
+
         public const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
 
         [DllImport("kernel32.dll", SetLastError = true)]

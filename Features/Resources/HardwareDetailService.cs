@@ -399,7 +399,7 @@ namespace ResourceAnalyzer.Services
                 long freeMemory = Math.Max(0, avail - systemCache);
 
                 sb.AppendLine($"Cached (Standby): {FormatHelper.FormatBytes(systemCache)}");
-                sb.AppendLine($"Free Memory: {FormatHelper.FormatBytes(freeMemory)}");
+                sb.AppendLine($"Free (unused, not counting cache): {FormatHelper.FormatBytes(freeMemory)}");
                 sb.AppendLine($"Committed: {FormatHelper.FormatBytes(commitTotal)} of {FormatHelper.FormatBytes(commitLimit)}");
 
                 long pageFileTotal = Math.Max(0, commitLimit - totalUsable);
@@ -821,27 +821,85 @@ namespace ResourceAnalyzer.Services
                     fallbackStyle = "GPT (GUID Partition Table - Modern UEFI)";
                 }
 
+                var diskProp = NativeMethods.QueryDiskStorageProperty(diskIndex);
+                bool? seekPenalty = NativeMethods.QueryDiskSeekPenalty(diskIndex);
+
+                bool isUsb = (diskProp.HasValue && (diskProp.Value.BusType == 7 || diskProp.Value.Removable)) || usbLetter != null;
+                bool isInternal = !isUsb;
+
+                string model = "Physical Disk Drive";
+                if (diskProp.HasValue && !string.IsNullOrWhiteSpace(diskProp.Value.ProductId))
+                {
+                    string p = diskProp.Value.ProductId.Trim();
+                    string v = diskProp.Value.VendorId.Trim();
+                    model = (!string.IsNullOrWhiteSpace(v) && !p.Contains(v, StringComparison.OrdinalIgnoreCase))
+                        ? $"{v} {p}"
+                        : p;
+                }
+
+                string mediaTypeStr;
+                string busTypeStr;
+                string healthStr;
+
+                if (!isInternal)
+                {
+                    busTypeStr = "USB";
+                    healthStr = "Healthy (Ready to Eject / Safely Remove)";
+                    if (seekPenalty == false || model.Contains("SSD", StringComparison.OrdinalIgnoreCase) || model.Contains("NVMe", StringComparison.OrdinalIgnoreCase))
+                    {
+                        mediaTypeStr = "External Solid State Drive (USB SSD)";
+                    }
+                    else if (seekPenalty == true || model.Contains("HDD", StringComparison.OrdinalIgnoreCase))
+                    {
+                        mediaTypeStr = "External Hard Disk Drive (USB HDD)";
+                    }
+                    else
+                    {
+                        mediaTypeStr = "Removable Storage (USB Flash Drive)";
+                    }
+                }
+                else
+                {
+                    healthStr = "Healthy (SMART Status OK)";
+                    if (diskProp.HasValue && diskProp.Value.BusType == 17)
+                    {
+                        busTypeStr = "NVMe (PCIe)";
+                    }
+                    else if (diskProp.HasValue && diskProp.Value.BusType == 11)
+                    {
+                        busTypeStr = "SATA";
+                    }
+                    else
+                    {
+                        busTypeStr = model.Contains("NVMe", StringComparison.OrdinalIgnoreCase) ? "NVMe (PCIe)" : "SATA / IDE";
+                    }
+
+                    if (seekPenalty == false || model.Contains("NVMe", StringComparison.OrdinalIgnoreCase) || model.Contains("SSD", StringComparison.OrdinalIgnoreCase))
+                    {
+                        mediaTypeStr = "Solid State Drive (SSD)";
+                    }
+                    else if (seekPenalty == true)
+                    {
+                        mediaTypeStr = "Hard Disk Drive (HDD)";
+                    }
+                    else
+                    {
+                        mediaTypeStr = "Solid State Drive (SSD)";
+                    }
+                }
+
                 var defaultMeta = new PhysicalDiskMetadata
                 {
                     Index = diskIndex,
-                    Model = "Physical Disk Drive",
-                    MediaType = "Solid State Drive (SSD)",
-                    BusType = "NVMe (PCIe)",
-                    IsInternal = usbLetter == null,
-                    HealthStatus = "Healthy (SMART Status OK)",
+                    Model = model,
+                    MediaType = mediaTypeStr,
+                    BusType = busTypeStr,
+                    IsInternal = isInternal,
+                    HealthStatus = healthStr,
                     PartitionStyle = fallbackStyle
                 };
 
-                if (usbLetter != null)
-                {
-                    defaultMeta.IsInternal = false;
-                    bool? seekPenalty = NativeMethods.QueryDiskSeekPenalty(diskIndex);
-                    defaultMeta.MediaType = seekPenalty == false
-                        ? "External Solid State Drive (USB SSD)"
-                        : (seekPenalty == true ? "External Hard Disk Drive (USB HDD)" : "Removable Storage (USB Flash Drive)");
-                    defaultMeta.BusType = "USB";
-                    defaultMeta.HealthStatus = "Healthy (Ready to Eject / Safely Remove)";
-                }
+                _diskMetadataCache[diskIndex] = defaultMeta;
 
                 return defaultMeta;
             }
