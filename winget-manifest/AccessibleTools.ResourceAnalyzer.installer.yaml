@@ -1,18 +1,18 @@
 # yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.9.0.schema.json
 PackageIdentifier: AccessibleTools.ResourceAnalyzer
-PackageVersion: 1.0.6
+PackageVersion: 1.0.7
 InstallerType: inno
 InstallModes:
   - interactive
   - silent
   - silentWithProgress
 Scope: user
-ReleaseDate: 2026-10-17
+ReleaseDate: 2026-10-18
 AppsAndFeaturesEntries:
   - ProductCode: '{E7A23C84-4845-4DC3-8DC2-A7210FD2A882}_is1'
 Installers:
   - Architecture: x64
-    InstallerUrl: https://github.com/AakanshNahadiya/Resource-Analyzer-for-Windows/releases/download/v1.0.6/ResourceAnalyzer_Setup_v1.0.6.exe
-    InstallerSha256: 22E577AD692BF0B1E5AD39E2122C9B91762CFE0A65DA85BAB84AFED54873FB47
+    InstallerUrl: https://github.com/AakanshNahadiya/Resource-Analyzer-for-Windows/releases/download/v1.0.7/ResourceAnalyzer_Setup_v1.0.7.exe
+    InstallerSha256: CFA549C47D486EB4803A35FF158FB085170948CC30F62BB231A7002CC6659B5D
 ManifestType: installer
 ManifestVersion: 1.9.0
