@@ -23,7 +23,7 @@ namespace ResourceAnalyzer
             AddResourceItem("gpu", "GPU");
             AddResourceItem("display", "Display");
             AddResourceItem("network", "Network");
-            AddResourceItem("disk", "Disk 0 (Internal SSD)");
+            AddResourceItem("disk", "Disk 0");
             if (_monitorService.HasBattery) AddResourceItem("battery", "Battery");
 
             if (_resourceItems.Count > 0 && lstResources.SelectedIndex < 0)

@@ -586,11 +586,11 @@ namespace ResourceAnalyzer.Services
         {
             public int Index { get; set; }
             public string Model { get; set; } = "Physical Disk Drive";
-            public string MediaType { get; set; } = "Solid State Drive (SSD)";
-            public string BusType { get; set; } = "NVMe (PCIe)";
+            public string MediaType { get; set; } = "Storage Media";
+            public string BusType { get; set; } = "Storage";
             public bool IsInternal { get; set; } = true;
             public long HardwareSizeBytes { get; set; }
-            public string PartitionStyle { get; set; } = "GPT (GUID Partition Table - Modern UEFI)";
+            public string PartitionStyle { get; set; } = "Standard Partition";
             public string HealthStatus { get; set; } = "Healthy (SMART Status OK)";
         }
 
@@ -679,7 +679,7 @@ namespace ResourceAnalyzer.Services
                         string liveStyle = QueryLivePartitionStyle(idx);
                         string initialStyle = !string.IsNullOrEmpty(liveStyle)
                             ? liveStyle
-                            : "GPT (GUID Partition Table - Modern UEFI)";
+                            : "Standard Partition";
 
                         var item = new PhysicalDiskMetadata
                         {
@@ -818,7 +818,7 @@ namespace ResourceAnalyzer.Services
                 string fallbackStyle = QueryLivePartitionStyle(diskIndex);
                 if (string.IsNullOrEmpty(fallbackStyle))
                 {
-                    fallbackStyle = "GPT (GUID Partition Table - Modern UEFI)";
+                    fallbackStyle = "Standard Partition";
                 }
 
                 var diskProp = NativeMethods.QueryDiskStorageProperty(diskIndex);
