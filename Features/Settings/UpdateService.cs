@@ -47,7 +47,7 @@ namespace ResourceAnalyzer.Services
 
     public class UpdateService : IUpdateService
     {
-        private const string RepoOwner = "AakanshNahadiya";
+        private const string RepoOwner = "AccessibleTools";
         private const string RepoName = "Resource-Analyzer-for-Windows";
         private const string ApiUrl = $"https://api.github.com/repos/{RepoOwner}/{RepoName}/releases";
 

@@ -648,6 +648,7 @@ namespace ResourceAnalyzer
                 2 => "Open GitHub",
                 3 => "Report Bug",
                 4 => "Open Policy",
+                5 => "Open Notices",
                 _ => "Open"
             };
         }
@@ -678,12 +679,12 @@ namespace ResourceAnalyzer
                     ShowShortcutsDialog();
                     break;
                 case 2:
-                    _updateService.OpenUrl("https://github.com/aakanshnahadiya/resource-analyzer-for-windows");
+                    _updateService.OpenUrl("https://github.com/AccessibleTools/Resource-Analyzer-for-Windows");
                     _speechService.Speak("Opening Resource Analyzer repository on GitHub.", interrupt: true);
                     txtAnnouncement.Text = "Opening GitHub repository in browser.";
                     break;
                 case 3:
-                    _updateService.OpenUrl("https://github.com/aakanshnahadiya/resource-analyzer-for-windows/issues/new/choose");
+                    _updateService.OpenUrl("https://github.com/AccessibleTools/Resource-Analyzer-for-Windows/issues/new/choose");
                     _speechService.Speak("Opening GitHub issues to report bug.", interrupt: true);
                     txtAnnouncement.Text = "Opening GitHub issues in browser.";
                     break;
@@ -691,6 +692,11 @@ namespace ResourceAnalyzer
                     _updateService.OpenUrl("https://gist.github.com/AakanshNahadiya/4d4f4abe3878de9c43ff9d9b3b7c9ee3");
                     _speechService.Speak("Opening Accessible Tools Privacy Policy.", interrupt: true);
                     txtAnnouncement.Text = "Opening Privacy Policy in browser.";
+                    break;
+                case 5:
+                    _updateService.OpenUrl("https://github.com/AccessibleTools/Resource-Analyzer-for-Windows/blob/main/THIRD-PARTY-NOTICES.md");
+                    _speechService.Speak("Opening Third-Party Notices and Licenses.", interrupt: true);
+                    txtAnnouncement.Text = "Opening Third-Party Notices in browser.";
                     break;
             }
         }

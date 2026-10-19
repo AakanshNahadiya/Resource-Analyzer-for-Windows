@@ -811,6 +811,7 @@
                                 <ComboBoxItem Content="View on GitHub"/>
                                 <ComboBoxItem Content="Create Issue and Report Bug on GitHub"/>
                                 <ComboBoxItem Content="Privacy Policy"/>
+                                <ComboBoxItem Content="Third-Party Notices and Licenses"/>
                             </ComboBox>
                             <Button x:Name="btnOpenHelpResource" Content="Check Now" Width="130" Height="30"
                                     Click="BtnOpenHelpResource_Click" Background="{DynamicResource SurfaceBackgroundBrush}" Foreground="{DynamicResource TextPrimaryBrush}" BorderBrush="{DynamicResource BorderBrush}"
