@@ -2,18 +2,22 @@ Accessible Tools Non-Commercial License (Source-Available)
 
 Copyright (c) 2026 Accessible Tools (Aakansh Nahadiya).
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to use,
-copy, modify, merge, and distribute the Software, subject to the following
-conditions:
+Permission is hereby granted, free of charge and royalty-free, on a worldwide,
+perpetual, non-exclusive basis to any person obtaining a copy of this software
+and associated documentation files (the "Software"), to use, copy, modify, merge,
+and distribute the Software, subject to the following conditions:
 
 1. Non-Commercial & Permitted Use:
-   The Software is free for personal, educational, research, and internal
-   organizational or business IT evaluation use. The Software and any derivative
-   works may NOT be sold, rented, leased, licensed for a fee, monetized behind
-   a paywall, or offered as a paid commercial service. Technical reviews,
-   demonstrations, and editorial coverage (including on ad-supported blogs,
-   videos, or news media) are explicitly permitted.
+   The Software is free for any lawful non-commercial purpose whatsoever,
+   including without limitation personal, educational, research, accessibility,
+   hobbyist, non-profit, and internal organizational or business use.
+   The Software and any derivative works may NOT be sold, rented, leased,
+   licensed for a fee, monetized behind a paywall, or offered as a paid
+   commercial service. Using the Software inside an organization for its
+   own work is not commercial exploitation. Selling, renting, or charging
+   for the Software, or for access to it, is. Technical reviews,
+   demonstrations, benchmarks, and editorial coverage (including on
+   ad-supported blogs, videos, or news media) are explicitly permitted.
 
 2. Ownership & Attribution:
    Original ownership, authorship, and copyright belong exclusively to
@@ -62,11 +66,10 @@ conditions:
 9. Governing Law, Jurisdiction & Severability:
    This License and any disputes arising out of or related to the Software
    shall be governed by and construed in accordance with the laws of India,
-   subject to the jurisdiction of the competent courts of India, with final
-   judicial authority vested in the Supreme Court of India. If any provision
-   of this License is found to be invalid or unenforceable, that provision
-   shall be enforced to the maximum extent permissible, and the remaining
-   provisions shall remain in full force and effect.
+   subject to the jurisdiction of the courts of competent jurisdiction in India.
+   If any provision of this License is found to be invalid or unenforceable,
+   that provision shall be enforced to the maximum extent permissible, and the
+   remaining provisions shall remain in full force and effect.
 
 10. Disclaimer of Warranty & Limitation of Liability:
     THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
