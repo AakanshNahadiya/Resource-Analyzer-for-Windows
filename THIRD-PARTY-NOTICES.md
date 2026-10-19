@@ -1,8 +1,17 @@
-# Third-Party Software Notices and Licenses
+# Software License and Third-Party Notices
 
-Resource Analyzer for Windows uses or redistributes the following third-party components under their respective open source licenses.
+## 1. Primary Application License
+
+Resource Analyzer for Windows is licensed under the **Accessible Tools Non-Commercial License (Source-Available)**.
+
+* **Author & Copyright:** Accessible Tools (Aakansh Nahadiya)
+* **Full License Terms:** [View Official LICENSE](https://github.com/AccessibleTools/Resource-Analyzer-for-Windows/blob/main/LICENSE)
 
 ---
+
+## 2. Third-Party Software Notices and Licenses
+
+Resource Analyzer for Windows uses or redistributes the following third-party components under their respective open source licenses:
 
 ### 1. Microsoft .NET Runtime & Libraries
 * **Component:** Microsoft .NET Runtime and Base Class Libraries
