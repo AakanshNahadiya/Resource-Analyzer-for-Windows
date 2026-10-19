@@ -23,10 +23,46 @@ conditions:
    binaries, provided all modifications retain this license and remain strictly
    non-commercial.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+4. Trademark & Branding Protection:
+   This license does not grant permission to use the trade names, logos,
+   trademarks, icons, or product names of Accessible Tools or Aakansh Nahadiya
+   for endorsement, advertising, or in modified derivative works in any manner
+   that misleads users into believing the derivative work is the official release.
+
+5. Strict Prohibition on Bundling & Unwanted Software:
+   The Software and any redistribution may NOT, under any circumstances,
+   be packaged, wrapped, combined, or bundled with advertising software,
+   adware, toolbars, spyware, cryptominers, malware, or third-party
+   commercial installers and download managers. Such bundling is strictly
+   and unconditionally prohibited.
+
+6. Automatic Termination on Breach:
+   Any failure to comply with the terms of this License shall automatically
+   and immediately terminate all rights and permissions granted to you,
+   without notice. Upon termination, any continued copying, modification,
+   or distribution shall constitute willful copyright infringement.
+
+7. Cloud Services, Hosting & AI Training:
+   The Software may NOT be used as part of a commercial software-as-a-service
+   (SaaS), hosted cloud service, paywalled platform, or for the automated
+   training of commercial machine learning or artificial intelligence models.
+
+8. Severability:
+   If any provision of this License is found by a court of competent
+   jurisdiction to be invalid, illegal, or unenforceable, that provision
+   shall be enforced to the maximum extent permissible, and the remaining
+   provisions of this License shall remain in full force and effect.
+
+9. Governing Law & Jurisdiction:
+   This License and any disputes arising out of or related to the Software
+   shall be governed by and construed in accordance with the laws of India,
+   subject to the exclusive jurisdiction of the competent courts of India.
+
+10. Disclaimer of Warranty & Limitation of Liability:
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE, ACCURACY, AND NONINFRINGEMENT. IN NO EVENT
+    SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES,
+    DATA LOSS, HARDWARE DAMAGE, OR OTHER LIABILITY, WHETHER IN AN ACTION OF
+    CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH
+    THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
