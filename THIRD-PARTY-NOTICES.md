@@ -36,7 +36,7 @@ Resource Analyzer for Windows uses or redistributes the following third-party co
 * **Copyright:** (c) NV Access Limited and contributors
 * **License:** GNU Lesser General Public License (LGPL), Version 2.1
 * **Official Repository:** https://github.com/nvaccess/nvda
-* **License Text:** https://github.com/nvaccess/nvda/blob/master/license.txt
+* **License Text:** https://github.com/nvaccess/nvda/blob/master/extras/controllerClient/license.txt
 
 ---
 
