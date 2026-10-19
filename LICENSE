@@ -1,27 +1,31 @@
-Non-Commercial Open Software License
+Accessible Tools Non-Commercial License (Source-Available)
 
-Copyright (c) 2026 Accessible Tools (Aakansh Nahadiya). All rights reserved.
+Copyright (c) 2026 Accessible Tools (Aakansh Nahadiya).
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to use,
 copy, modify, merge, and distribute the Software, subject to the following
 conditions:
 
-1. Non-Commercial Use Only:
-   The Software and any derivative works may NOT be sold, rented, leased,
-   licensed for a fee, or used in any manner for commercial monetization or
-   financial gain. Redistribution must be free of charge.
+1. Non-Commercial & Permitted Use:
+   The Software is free for personal, educational, research, and internal
+   organizational or business IT evaluation use. The Software and any derivative
+   works may NOT be sold, rented, leased, licensed for a fee, monetized behind
+   a paywall, or offered as a paid commercial service. Technical reviews,
+   demonstrations, and editorial coverage (including on ad-supported blogs,
+   videos, or news media) are explicitly permitted.
 
 2. Ownership & Attribution:
-   Original ownership and copyright belong exclusively to Accessible Tools (Aakansh Nahadiya).
-   No person or entity may claim ownership, copyright, or exclusive rights
-   over the Software. The above copyright notice and this permission notice
-   shall be included in all copies or substantial portions of the Software.
+   Original ownership, authorship, and copyright belong exclusively to
+   Accessible Tools (Aakansh Nahadiya). No person or entity may claim ownership
+   or exclusive rights over the Software. The above copyright notice and this
+   permission notice shall be included in all copies or substantial portions
+   of the Software.
 
 3. Freedom to Modify and Distribute:
-   Users are free to modify, customize, and distribute the source code and
-   binaries, provided all modifications retain this license and remain strictly
-   non-commercial.
+   Users are free to inspect, modify, customize, and distribute the source code
+   and binaries, provided all modifications and derivative works retain this
+   license, give clear notice of changes made, and remain strictly non-commercial.
 
 4. Trademark & Branding Protection:
    This license does not grant permission to use the trade names, logos,
@@ -29,12 +33,13 @@ conditions:
    for endorsement, advertising, or in modified derivative works in any manner
    that misleads users into believing the derivative work is the official release.
 
-5. Strict Prohibition on Bundling & Unwanted Software:
-   The Software and any redistribution may NOT, under any circumstances,
-   be packaged, wrapped, combined, or bundled with advertising software,
-   adware, toolbars, spyware, cryptominers, malware, or third-party
-   commercial installers and download managers. Such bundling is strictly
-   and unconditionally prohibited.
+5. Prohibition on Bundling & Authorized Distribution Channels:
+   The Software and any redistribution may NOT, under any circumstances, be
+   packaged, wrapped, combined, or bundled with advertising software, adware,
+   toolbars, spyware, cryptominers, malware, or third-party commercial download
+   wrappers. Distribution through official channels authorized by the Licensor
+   (including the Microsoft Store, GitHub Releases, and Windows Package Manager
+   / winget) is explicitly recognized and permitted.
 
 6. Automatic Termination on Breach:
    Any failure to comply with the terms of this License shall automatically
@@ -47,16 +52,21 @@ conditions:
    (SaaS), hosted cloud service, paywalled platform, or for the automated
    training of commercial machine learning or artificial intelligence models.
 
-8. Severability:
-   If any provision of this License is found by a court of competent
-   jurisdiction to be invalid, illegal, or unenforceable, that provision
-   shall be enforced to the maximum extent permissible, and the remaining
-   provisions of this License shall remain in full force and effect.
+8. Third-Party Components & Dependencies:
+   The Software may include, link to, or depend on third-party runtime libraries
+   and components (such as Microsoft .NET and the NVDA Controller Client).
+   Each third-party component remains licensed under its respective author's
+   license terms (e.g., MIT, LGPL), and this License does not modify or
+   supersede those third-party terms.
 
-9. Governing Law & Jurisdiction:
+9. Governing Law, Jurisdiction & Severability:
    This License and any disputes arising out of or related to the Software
    shall be governed by and construed in accordance with the laws of India,
-   subject to the exclusive jurisdiction of the competent courts of India.
+   subject to the jurisdiction of the competent courts of India, with final
+   judicial authority vested in the Supreme Court of India. If any provision
+   of this License is found to be invalid or unenforceable, that provision
+   shall be enforced to the maximum extent permissible, and the remaining
+   provisions shall remain in full force and effect.
 
 10. Disclaimer of Warranty & Limitation of Liability:
     THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
