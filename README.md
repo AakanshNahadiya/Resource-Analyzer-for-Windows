@@ -1,160 +1,42 @@
 # Resource Analyzer for Windows
-> A lightweight, screen-reader based system monitor, process manager, network data usage tracker, and port scanner designed specifically for Windows.
-I was struggling to use the default Windows Task Manager with a screen reader. The complicated tables made it frustrating to check basic things like CPU and RAM usage.
-Also, finding out which app is eating your internet data in Windows is one of the most frustrating problems. The default Windows settings pages are slow, buried, and confusing with screen readers.
-This is why I have created a tool called **Resource Analyzer for Windows**.
-This tool gives you a clean, single-line overview of your computer health, processes, network data usage, and active network ports without cluttered tables.
-In this guide, I'm going to show you how you can use this tool step-by-step.
-Now let's understand what Resource Analyzer is.
-## What is Resource Analyzer?
-Resource Analyzer is an all-in-one solution for monitoring system resources, managing processes, tracking network data usage, and auditing open network ports.
-* **No Cluttered Tables:** Speaks everything as simple, natural single-line sentences.
-* **100% Screen Reader Friendly:** Built and optimized from the ground up for NVDA, JAWS, and Windows Narrator.
-* **Solves Windows Data Usage:** Gives an instant breakdown of how much internet data each application has consumed.
-* **Real-Time Network & Port Telemetry:** Tracks per-app data usage, network throughput, and active listening ports.
-Now it's time to set up Resource Analyzer step-by-step.
-## Requirements I Recommend
-1. **Operating System:** Windows 10 or Windows 11 (64-bit).
-2. **Screen Reader:** Fully tested with NVDA, but the same behavior can be expected from other screen readers such as JAWS and Windows Narrator.
-3. **No extra dependencies:** Ready-to-run package; no separate .NET installation needed.
-4. **Standard Privileges:** Installs to your user profile without needing Administrator rights (optional elevation available anytime via <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>A</kbd>).
-## Step 1: Download and Install Resource Analyzer
-1. Locate the setup file: `ResourceAnalyzer_Setup_v2.0.0.exe`.
-2. Press <kbd>Enter</kbd> on the setup file to open the installation wizard.
-3. Use the <kbd>Tab</kbd> key to review installation options:
-   * **Create a desktop shortcut:** Press <kbd>Space</kbd> to check or uncheck.
-   * **Start with Windows:** Press <kbd>Space</kbd> if you want it to run quietly in your system tray on boot.
-5. Press <kbd>Tab</kbd> to locate the **Install** button and press <kbd>Enter</kbd>.
-6. Once installation is completed, press <kbd>Enter</kbd> on **Finish** to launch the app.
-## Step 2: Check Your System Resources
-When you open Resource Analyzer, you land on **Tab 1: Resources** by default.
-Use the <kbd>Down Arrow</kbd> and <kbd>Up Arrow</kbd> keys to move through your hardware items:
-* **CPU:** Speaks your overall load, logical core count, and processor model.
-* **RAM:** Automatically switches between MB and GB based on usage (e.g., `820 MB used` or `5.42 GB of 16.0 GB used`).
-* **GPU:** Active graphics adapter name, driver date, dedicated VRAM, and total memory.
-* **Display:** Active resolution, refresh rate (Hz), DPI scaling factor, bit depth, and HDR status.
-* **Disk:** Shows the free and total capacity of your drive, along with live read/write speeds.
-* **Network:** Shows your active Wi-Fi or Ethernet adapter, SSID, signal strength, and real-time speeds.
-* **Audio:** Active audio playback device name, volume level, and mute status.
-* **Battery:** Displays your battery percentage and charging status (automatically hidden on desktop PCs).
-### Technical Hardware Specifications
-To view technical specifications, press <kbd>Enter</kbd> on any hardware item:
-* **CPU:** Base clock speed, physical cores, threads, L2/L3 cache, system uptime, and firmware virtualization status.
-* **RAM:** Memory clock speed (e.g. `3200 MHz`), slots used (e.g. `2 of 2 slots`), form factor (SODIMM/DIMM), hardware reserved memory, committed memory, cached memory, and individual module part numbers.
-* **GPU:** Graphics adapter, driver version, driver release date, dedicated VRAM, and display resolution.
-* **Display:** Monitor model, resolution, refresh rate (Hz), scale factor, bit depth, color space, and primary display flag.
-* **Disk:** Drive model (e.g. `NVMe Intel SSD`), interface type, partition count, and breakdown of all connected drives.
-* **Network:** Controller name, physical MAC address, Wi-Fi SSID, Wi-Fi standard (802.11ac/ax), radio band (5 GHz / 2.4 GHz), Wi-Fi channel, signal strength %, IP addresses, gateway, and DNS servers.
-* **Battery:** Health %, wear level, design capacity, full charge capacity, charge cycles (cleanly omitted if unsupported), and chemistry.
-* **Audio:** Active playback device, endpoint name, volume level, and mute status.
-> [!TIP]
-> Inside the Technical Details dialog, use <kbd>Down Arrow</kbd> and <kbd>Up Arrow</kbd> to read each specification line-by-line. Press <kbd>Ctrl</kbd> + <kbd>C</kbd> (or <kbd>Tab</kbd> to **Copy to Clipboard**) to copy the full technical report, and press <kbd>Escape</kbd> to close.
-### Copy System Diagnostic Snapshot (<kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>C</kbd>)
-Whenever you need technical support, press <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>C</kbd> anywhere in the application. It immediately generates a clean, plain-text summary of your OS, processor, RAM, graphics, audio, storage, network, and battery, and copies it to your clipboard ready to paste into an email or forum post.
-## Step 3: Manage Your Processes & Groups
-Press <kbd>Ctrl</kbd> + <kbd>2</kbd> (or <kbd>Ctrl</kbd> + <kbd>Tab</kbd>) to switch to **Tab 2: Processes**.
-Every running process is shown as a clean, single-line sentence. Multi-instance apps like Google Chrome or Microsoft Edge are grouped together automatically.
-### Managing Processes:
-1. **Expand and Collapse Groups:**
-   * On any grouped process, press <kbd>Right Arrow</kbd> to expand the group.
-   * Use <kbd>Down Arrow</kbd> to explore each individual child process. The app automatically identifies what each sub-process is doing (window titles, hosted Windows service names, or roles like `Web Content (Tab)` and `GPU Process`).
-   * Press <kbd>Left Arrow</kbd> to collapse the group back.
-   * Press <kbd>Ctrl</kbd> + <kbd>G</kbd> to toggle application grouping on or off.
-2. **Search for an App:**
-   * Press <kbd>Ctrl</kbd> + <kbd>F</kbd> to focus the search box.
-   * Type the app name (e.g., `notepad`) and press <kbd>Down Arrow</kbd> to enter the filtered list.
-   * Press <kbd>Escape</kbd> to clear the search.
-3. **Sort the List:**
-   * <kbd>Ctrl</kbd> + <kbd>M</kbd>: Sort by highest Memory (RAM).
-   * <kbd>Ctrl</kbd> + <kbd>P</kbd>: Sort by highest CPU usage.
-   * <kbd>Ctrl</kbd> + <kbd>N</kbd>: Sort alphabetically by Name.
-4. **Task Actions:**
-   * Select the process you want to close and press <kbd>Delete</kbd>.
-   * Press <kbd>Shift</kbd> + <kbd>Delete</kbd> to end an entire parent-child process tree.
-   * Press <kbd>Ctrl</kbd> + <kbd>R</kbd> to restart a process with its original command-line arguments and working directory.
-   * Press <kbd>Shift</kbd> + <kbd>F10</kbd> (or the Application key) to open the context menu for **Restart Task**, **End Task**, **Open File Location**, or **Search on Web**.
-## Step 4: Track Application Data Usage
-In Windows, checking which application is consuming your internet data is a huge headache. The default Windows Data Usage settings page is slow and hard to navigate with speech.
-Resource Analyzer solves this with a dedicated, real-time **Data Usage** tab.
-Press <kbd>Ctrl</kbd> + <kbd>3</kbd> to switch to **Tab 3: Data Usage**:
-1. **Select Network Connection:** Press <kbd>Tab</kbd> to reach the Network dropdown. Choose **Current Connected Network** or **All Networks**.
-2. **Choose Time Period:** Press <kbd>Tab</kbd> to reach the Period dropdown. Filter by **Today**, **Last 24 Hours**, **Last Week (7 Days)**, **Last Month (30 Days)**, or **Full (All Recorded)**.
-3. **Search by Name:** Press <kbd>Tab</kbd> to reach the Filter box. Type any app name (like Chrome or Steam) to see exactly how much data it used.
-4. **Explore Application Data:** Press <kbd>Tab</kbd> to enter the list. Each item speaks the app name, data received, data sent, and combined total in MB or GB. Updates scan in real-time without moving your cursor.
-## Step 5: Scan Open Network Ports
-Press <kbd>Ctrl</kbd> + <kbd>4</kbd> to switch to **Tab 4: Network Ports**:
-1. **Filter by Protocol:** Filter between **All Protocols**, **TCP Only**, or **UDP Only**.
-2. **Filter by State:** Filter between **All States**, **Listening Only**, or **Established Only**.
-3. **Search:** Press <kbd>Ctrl</kbd> + <kbd>F</kbd> or tab to the search box to find ports by port number, IP address, or process name.
-4. **Sort Ports:**
-   * <kbd>Ctrl</kbd> + <kbd>P</kbd>: Sort by Port Number.
-   * <kbd>Ctrl</kbd> + <kbd>N</kbd>: Sort by Process Name.
-   * <kbd>Ctrl</kbd> + <kbd>S</kbd>: Sort by Connection State.
-5. **Close Connection Process:** Press <kbd>Delete</kbd> on any port item to terminate the process listening on that port.
-## Step 6: Check Network Speed and Daily Data from Anywhere
-You don't need to open Resource Analyzer every time you want to check your internet:
-* **Check Live Speed:** Press <kbd>Ctrl</kbd> + <kbd>Win</kbd> + <kbd>I</kbd> once from **anywhere in Windows**. Your screen reader immediately speaks your current download and upload speeds.
-* **Check Daily Data Usage:** Press <kbd>Ctrl</kbd> + <kbd>Win</kbd> + <kbd>I</kbd> **twice quickly** (within 300 ms). Your screen reader immediately speaks your total internet data consumed today.
-* **Show/Hide Window:** Press <kbd>Ctrl</kbd> + <kbd>Win</kbd> + <kbd>T</kbd> to bring Resource Analyzer to the foreground or minimize it.
-## Step 7: Configure Your Settings
-Press <kbd>Ctrl</kbd> + <kbd>5</kbd> to reach **Tab 5: Settings**.
-Use <kbd>Tab</kbd> and <kbd>Arrow keys</kbd> to customize your options:
-1. **Process Manager Settings:**
-   * Decide whether to hide Windows system processes, and whether to prompt for confirmation before ending tasks.
-   * Choose how process names are spoken (showing/hiding `.exe` extensions and PIDs).
-2. **Resource Overuse Alerts:**
-   * Enable speech and notification alerts when an app exceeds your chosen limit.
-   * Alert on High RAM, High CPU, or both with custom thresholds (e.g. 2 GB RAM or 80% CPU).
-3. **Auto-Refresh Rate:**
-   * Background update intervals: **1s**, **2s (Default)**, **3s**, **5s**, or **Paused** (manual <kbd>F5</kbd> only).
-4. **Appearance and Color Theme:**
-   * Select your visual theme: **System Default** (follows Windows dark/light mode), **Dark Theme**, **Light Theme**, or **High Contrast Black**.
-5. **Startup and System Tray:**
-   * Configure window closing behavior (minimize to system tray or exit completely).
-   * Toggle starting automatically with Windows.
-6. **Windows System Tools:**
-   * Open native **Windows Startup Apps Settings** (<kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>S</kbd>) directly.
-   * Open native **Windows Services Manager** (`services.msc`) directly from an accessible button.
-7. **Application Updates:**
-   * Check for newer official releases with a single button. If an update is available, download and install it in one click.
-8. **Preferences and Reset:**
-   * Choose whether to remember your process sort and filter preferences across restarts.
-   * Press **Reset All Settings to Defaults** to restore original configurations anytime.
-## A Quick Note on "File Location is Unavailable"
-> [!NOTE]
-> When you press <kbd>Shift</kbd> + <kbd>F10</kbd> on some processes like `nvda.exe` and select **Open File Location**, you might hear:  
-> *"File location is unavailable for nvda.exe."*
-> 
-> This is completely normal. NVDA runs with special Windows accessibility permissions (`UIAccess`) so it can read secure lock screens and UAC prompts. Windows security blocks standard applications from opening the file paths of protected accessibility tools.
-## Keyboard Shortcuts Reference
-| Shortcut | Description |
-| :--- | :--- |
-| <kbd>Ctrl</kbd> + <kbd>1</kbd> | Switch to Tab 1 (Resources) |
-| <kbd>Ctrl</kbd> + <kbd>2</kbd> | Switch to Tab 2 (Processes) |
-| <kbd>Ctrl</kbd> + <kbd>3</kbd> | Switch to Tab 3 (Data Usage) |
-| <kbd>Ctrl</kbd> + <kbd>4</kbd> | Switch to Tab 4 (Network Ports) |
-| <kbd>Ctrl</kbd> + <kbd>5</kbd> | Switch to Tab 5 (Settings) |
-| <kbd>F1</kbd> or <kbd>Shift</kbd> + <kbd>/</kbd> | Open Keyboard Shortcuts Help dialog |
-| <kbd>F5</kbd> | Refresh current tab data immediately |
-| <kbd>Enter</kbd> | View detailed technical hardware specifications (Resources tab) |
-| <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>C</kbd> | Copy complete plain-text System Diagnostic Snapshot to clipboard |
-| <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>A</kbd> | Restart Resource Analyzer as Administrator |
-| <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>S</kbd> | Open Windows Startup Apps Settings |
-| <kbd>Ctrl</kbd> + <kbd>F</kbd> | Search / filter processes, data usage, or network ports |
-| <kbd>Ctrl</kbd> + <kbd>M</kbd> | Sort processes by Memory (RAM) usage |
-| <kbd>Ctrl</kbd> + <kbd>P</kbd> | Sort processes by CPU usage / Sort ports by Port Number |
-| <kbd>Ctrl</kbd> + <kbd>N</kbd> | Sort processes or ports alphabetically by Name |
-| <kbd>Ctrl</kbd> + <kbd>S</kbd> | Sort network ports by Connection State |
-| <kbd>Ctrl</kbd> + <kbd>G</kbd> | Toggle application grouping on or off (Processes tab) |
-| <kbd>Right Arrow</kbd> | Expand grouped application to see sub-processes (Processes tab) |
-| <kbd>Left Arrow</kbd> | Collapse grouped application (Processes tab) |
-| <kbd>Ctrl</kbd> + <kbd>R</kbd> | Restart selected process |
-| <kbd>Delete</kbd> | End selected task or port owner process |
-| <kbd>Shift</kbd> + <kbd>Delete</kbd> | End entire process tree (Processes tab) |
-| <kbd>Ctrl</kbd> + <kbd>Win</kbd> + <kbd>I</kbd> | Single tap: Speak live network speed / Double tap: Speak today's data usage |
-| <kbd>Ctrl</kbd> + <kbd>Win</kbd> + <kbd>T</kbd> | Global hotkey: Show or restore Resource Analyzer window |
-## In the End
-This is how you can easily monitor your PC resources, track your data usage, audit network ports, and manage processes with a screen reader.
-Finally, I will end here. If you have any questions, suggestions, ideas, or anything else, do let me know in the GitHub issues section!
-> **Disclaimer:** This application is created by using Google's Antigravity AI assistant. Some issues may occur.
-**Have a great accessible experience!**
+
+A lightweight, screen reader friendly system monitor, process manager, data usage tracker and port scanner for Windows.
+
+I was struggling to use the default Task Manager with a screen reader. The tables made it frustrating to check basic things like CPU and RAM, and finding out which app is eating my internet data was even worse. So I built this tool. It speaks everything as simple single-line sentences, with no cluttered tables.
+
+It is tested with NVDA. JAWS and Windows Narrator should behave the same.
+## Requirements
+
+Windows 10 or Windows 11 (64-bit). No separate .NET install is needed. It installs to your user profile without Administrator rights, and you can restart it as Administrator any time with `Ctrl + Shift + A`.
+
+## Install
+
+Run `ResourceAnalyzer_Setup_v2.0.0.exe`. Press `Tab` to choose options (desktop shortcut, start with Windows, check or uncheck for daily update, Review privacy policy), then press Install and Finish.
+
+## How to use it
+
+Switch tabs with `Ctrl + 1` to `Ctrl + 5`. Press `F1` at any time to hear all keyboard shortcuts, and `F5` to refresh.
+
+**Resources (Ctrl + 1):** Use Up and Down Arrow to move through CPU, RAM, GPU, display, disk, network, audio and battery. Press `Enter` on any item for technical details, and `Escape` to close. If you turn on Live Internet Ping in Settings, the Network details also speak your latency, for example "Internet Latency (Ping): 28 ms (Fast / Low Latency)". The labels are Fast under 35 ms, Good up to 80 ms, Moderate up to 150 ms, and High Latency above that. If the router blocks ping or the internet is down, you hear "Request Timed Out" and everything else still works. Press `Ctrl + Shift + C` anywhere to copy a plain-text system snapshot. It includes your IP address, MAC address and Wi-Fi name, so check it before posting it publicly.
+
+**Processes (Ctrl + 2):** Every process is one sentence, and multi-instance apps like Edge are grouped. Use Right and Left Arrow to expand or collapse a group, `Ctrl + F` to filter, and `Ctrl + M`, `Ctrl + P` or `Ctrl + N` to sort by memory, CPU or name. Press `Delete` to end a task, `Shift + Delete` to end a whole process tree, and `Ctrl + R` to restart one. Critical Windows system processes are protected.
+
+**Data Usage (Ctrl + 3):** See how much data each app has used. Choose the network, the time period, and filter by app name.
+
+**Network Ports (Ctrl + 4):** See listening and established ports. Filter by protocol or state, search by port, address or process name, and sort with `Ctrl + P`, `Ctrl + N` or `Ctrl + S`. Press `Delete` to end the process that owns a port.
+
+**Settings (Ctrl + 5):** Confirmation before ending tasks, how process names are spoken, resource overuse alerts, refresh rate, theme (including High Contrast Black), tray and startup behavior, update checks, live internet ping (off by default), Help menu and a reset button.
+
+**From anywhere in Windows:** Press `Ctrl + Win + I` once to hear your live network speed, or twice quickly to hear today's data usage. Press `Ctrl + Win + T` to show or hide the window.
+
+## Privacy
+
+The app does not collect personal data and has no telemetry. It never sends anything in the background without your permission. There are only two optional network features. The first is the update check to GitHub. The second is Live Internet Ping, which is off by default. When you enable it, the app sends one ICMP echo packet to 1.1.1.1 (Cloudflare) with a 400 ms timeout, and only at the moment you open the Network details. It does not ping continuously, and no data is sent with it. As with any ping or website visit, GitHub and Cloudflare can see your IP address. Your settings are stored locally on your PC. Please also read more about in privacy Policy.
+
+## Good to know
+
+On some processes like `nvda.exe`, Open File Location says the file location is unavailable. That is normal, because NVDA runs with special accessibility permissions that Windows protects.
+
+## Disclaimer
+
+This app was created with Google's Antigravity AI assistant, so some issues may occur. If you have questions, suggestions or ideas, please open an issue on GitHub.
