@@ -34,3 +34,10 @@ update_winget.*
 update-winget.*
 update.bat
 *.sha256
+
+## MSIX Packaging Artifacts
+*.msix
+*.msixbundle
+*.appx
+MSIX/PackageRoot/
+PackageRoot/

@@ -23,6 +23,7 @@ namespace ResourceAnalyzer
                 var s = _settingsService.CurrentSettings;
 
                 // Process Manager Combo (Prompt before ending task: Yes / No)
+                ConfigureHelpResourcesForPackaging();
                 cmbProcessManager.SelectedIndex = s.ConfirmBeforeEndTask ? 0 : 1;
 
                 // Process Naming & Speech Format Combo
@@ -649,17 +650,49 @@ namespace ResourceAnalyzer
 
         #region Application Updates and Resources
 
+        private void ConfigureHelpResourcesForPackaging()
+        {
+            if (PackageHelper.IsStorePackage() && cmbHelpResources != null)
+            {
+                if (chkAutoCheckUpdates != null)
+                {
+                    chkAutoCheckUpdates.Visibility = Visibility.Collapsed;
+                }
+
+                for (int i = 0; i < cmbHelpResources.Items.Count; i++)
+                {
+                    if (cmbHelpResources.Items[i] is ComboBoxItem item &&
+                        item.Content?.ToString()?.Contains("Update", StringComparison.OrdinalIgnoreCase) == true)
+                    {
+                        cmbHelpResources.Items.RemoveAt(i);
+                        break;
+                    }
+                }
+
+                if (cmbHelpResources.SelectedIndex < 0 && cmbHelpResources.Items.Count > 0)
+                {
+                    cmbHelpResources.SelectedIndex = 0;
+                }
+
+                if (txtCurrentVersion != null)
+                {
+                    txtCurrentVersion.Text = $"Current Version: v{_updateService.GetCurrentVersion()} (Microsoft Store)";
+                }
+            }
+        }
+
         private void CmbHelpResources_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (btnOpenHelpResource == null) return;
-            btnOpenHelpResource.Content = cmbHelpResources.SelectedIndex switch
+            string selectedText = (cmbHelpResources.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "";
+            btnOpenHelpResource.Content = selectedText switch
             {
-                0 => "Check Now",
-                1 => "View Shortcuts",
-                2 => "Open GitHub",
-                3 => "Report Bug",
-                4 => "Open Policy",
-                5 => "Open Notices",
+                var s when s.Contains("Update") => "Check Now",
+                var s when s.Contains("Shortcuts") => "View Shortcuts",
+                var s when s.Contains("GitHub") && !s.Contains("Bug") => "Open GitHub",
+                var s when s.Contains("Bug") || s.Contains("Issue") => "Report Bug",
+                var s when s.Contains("Privacy") => "Open Policy",
+                var s when s.Contains("Notices") || s.Contains("Licenses") => "Open Notices",
                 _ => "Open"
             };
         }
@@ -680,8 +713,41 @@ namespace ResourceAnalyzer
 
         private void ExecuteSelectedHelpResource()
         {
-            int index = cmbHelpResources?.SelectedIndex ?? 0;
-            switch (index)
+            string selectedText = (cmbHelpResources?.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "";
+            if (selectedText.Contains("Update"))
+            {
+                PerformCheckForUpdatesAsync();
+            }
+            else if (selectedText.Contains("Shortcuts"))
+            {
+                ShowShortcutsDialog();
+            }
+            else if (selectedText.Contains("GitHub") && !selectedText.Contains("Bug"))
+            {
+                _updateService.OpenUrl("https://github.com/AccessibleTools/Resource-Analyzer-for-Windows");
+                _speechService.Speak("Opening Resource Analyzer repository on GitHub.", interrupt: true);
+                txtAnnouncement.Text = "Opening GitHub repository in browser.";
+            }
+            else if (selectedText.Contains("Bug") || selectedText.Contains("Issue"))
+            {
+                _updateService.OpenUrl("https://github.com/AccessibleTools/Resource-Analyzer-for-Windows/issues/new/choose");
+                _speechService.Speak("Opening GitHub issues to report bug.", interrupt: true);
+                txtAnnouncement.Text = "Opening GitHub issues in browser.";
+            }
+            else if (selectedText.Contains("Privacy"))
+            {
+                _updateService.OpenUrl("https://gist.github.com/AakanshNahadiya/4d4f4abe3878de9c43ff9d9b3b7c9ee3");
+                _speechService.Speak("Opening Accessible Tools Privacy Policy.", interrupt: true);
+                txtAnnouncement.Text = "Opening Privacy Policy in browser.";
+            }
+            else if (selectedText.Contains("Notices") || selectedText.Contains("Licenses"))
+            {
+                _updateService.OpenUrl("https://github.com/AccessibleTools/Resource-Analyzer-for-Windows/blob/main/THIRD-PARTY-NOTICES.md");
+                _speechService.Speak("Opening Third-Party Notices and Licenses.", interrupt: true);
+                txtAnnouncement.Text = "Opening Third-Party Notices in browser.";
+            }
+
+            if (false) switch (0)
             {
                 case 0:
                     PerformCheckForUpdatesAsync();
@@ -804,7 +870,7 @@ namespace ResourceAnalyzer
             try
             {
                 var s = _settingsService.CurrentSettings;
-                if (!_updateService.ShouldPerformDailyCheck(s)) return;
+                if (PackageHelper.IsStorePackage() || !_updateService.ShouldPerformDailyCheck(s)) return;
 
                 _updateService.RecordCheckPerformed(s);
                 _settingsService.Save();

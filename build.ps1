@@ -72,7 +72,11 @@ if (Test-Path $isccPath) {
         Write-Host "`n==========================================" -ForegroundColor Green
         $setupFile = (Get-ChildItem "./Installer/Output/*.exe" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1)
         Write-Host " Setup Installer: ./Installer/Output/$($setupFile.Name)" -ForegroundColor Green
-        $targetDir = "C:\Users\Aakansh\Music\Output"
+        $repoParent = (Resolve-Path "$PSScriptRoot\..").Path
+        $targetDir = "$repoParent\Output"
+        if (-not (Test-Path $targetDir)) {
+            New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
+        }
         if (Test-Path $targetDir) {
             $destFile = Join-Path $targetDir $setupFile.Name
             Copy-Item $setupFile.FullName -Destination $targetDir -Force
