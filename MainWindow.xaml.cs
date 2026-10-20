@@ -52,6 +52,7 @@ namespace ResourceAnalyzer
         private readonly Dictionary<string, ResourceItem> _resourceMap = new();
         private readonly Dictionary<string, DateTime> _lastAlertTimes = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, int> _consecutiveCpuAlertHits = new(StringComparer.OrdinalIgnoreCase);
+        private DateTime _lastGlobalAlertTime = DateTime.MinValue;
         private readonly HashSet<string> _expandedGroups = new(StringComparer.OrdinalIgnoreCase);
 
         private string _currentSort = "Memory";
@@ -69,7 +70,7 @@ namespace ResourceAnalyzer
             _settingsService = new SettingsService();
             _dataUsageService = new DataUsageService();
             _themeService = new ThemeService();
-            _hardwareDetailService = new HardwareDetailService();
+            _hardwareDetailService = new HardwareDetailService(_settingsService);
             _updateService = new UpdateService();
             _networkPortService = new NetworkPortService();
 
@@ -95,6 +96,7 @@ namespace ResourceAnalyzer
             IntPtr hwnd = helper.EnsureHandle();
 
             InitTrayIcon(hwnd);
+            NativeTrayIcon.EnsureHiddenInNotificationArea();
             InitHotkey(hwnd);
             Microsoft.Win32.SystemEvents.TimeChanged += OnSystemTimeChanged;
 
@@ -103,11 +105,18 @@ namespace ResourceAnalyzer
             ApplySettingsToRuntime();
 
 
-            // Prewarm today's data usage cache in background for instant hotkey response (deferred by 1.5s)
-            _ = Task.Delay(1500).ContinueWith(_ => _ = UpdateTodayDataUsageCacheAsync(), TaskScheduler.Default);
+            // Clean up any downloaded temp installers from previous updates
+            UpdateService.CleanupTempInstallers();
+            _ = Task.Delay(3000).ContinueWith(_ => UpdateService.CleanupTempInstallers(), TaskScheduler.Default);
 
-            // Check for daily updates quietly in background (deferred by 3.5s)
-            _ = Task.Delay(3500).ContinueWith(_ => CheckForDailyUpdatesInBackground(), TaskScheduler.Default);
+            // Prewarm today's data usage cache in background for instant hotkey response (deferred by 2.0s)
+            _ = Task.Delay(2000).ContinueWith(_ => _ = UpdateTodayDataUsageCacheAsync(), TaskScheduler.Default);
+
+            // Check for daily updates quietly in background (deferred by 4.0s)
+            _ = Task.Delay(4000).ContinueWith(_ => CheckForDailyUpdatesInBackground(), TaskScheduler.Default);
+
+            // Flush initial startup JIT/XAML allocations to minimize working set RAM
+            _ = Task.Delay(2500).ContinueWith(_ => TrimProcessMemory(), TaskScheduler.Default);
 
             // Build initial resource items
             BuildResourceItemList();
@@ -205,9 +214,9 @@ namespace ResourceAnalyzer
         {
             if (WindowState == WindowState.Minimized && _settingsService.CurrentSettings.MinimizeToTray)
             {
+                _trayIcon?.EnsureCreated();
                 Hide();
                 TrimProcessMemory();
-                _speechService.Speak("Resource Analyzer for Windows minimized to system tray. Press Control Windows I anytime to hear network speed.", interrupt: true);
             }
         }
 
@@ -232,9 +241,9 @@ namespace ResourceAnalyzer
                 if (_settingsService.CurrentSettings.MinimizeToTray)
                 {
                     WindowState = WindowState.Minimized;
+                    _trayIcon?.EnsureCreated();
                     Hide();
                     TrimProcessMemory();
-                    _speechService.Speak("Resource Analyzer for Windows minimized.", interrupt: true);
                 }
                 else
                 {
@@ -486,7 +495,16 @@ namespace ResourceAnalyzer
             }
         }
 
-        private void ExitApplication()
+        private void ListBoxItem_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (sender is ListBoxItem item)
+            {
+                item.IsSelected = true;
+                item.Focus();
+            }
+        }
+
+        public void ExitApplication()
         {
             _isExplicitExit = true;
             try { Microsoft.Win32.SystemEvents.TimeChanged -= OnSystemTimeChanged; } catch { }
@@ -495,6 +513,7 @@ namespace ResourceAnalyzer
             _themeService?.Dispose();
             Close();
             System.Windows.Application.Current.Shutdown();
+            Environment.Exit(0);
         }
 
         private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
@@ -502,9 +521,9 @@ namespace ResourceAnalyzer
             if (!_isExplicitExit && _settingsService.CurrentSettings.MinimizeToTray)
             {
                 e.Cancel = true;
+                _trayIcon?.EnsureCreated();
                 Hide();
                 TrimProcessMemory();
-                _speechService.Speak("Resource Analyzer for Windows minimized to system tray. Press Control Windows I anytime to hear network speed.", interrupt: true);
             }
             else
             {
@@ -513,6 +532,7 @@ namespace ResourceAnalyzer
                 _hotkeyService?.Dispose();
                 _themeService?.Dispose();
                 System.Windows.Application.Current.Shutdown();
+                Environment.Exit(0);
             }
         }
 
@@ -572,12 +592,9 @@ namespace ResourceAnalyzer
             // Always sample network throughput in background (costs < 0.05ms) so live speed hotkey and Tab 1 stay current
             _monitorService.SampleNetwork();
 
-            // Sample physical disk throughput in background so live disk read/write speeds stay current
-            _ = Task.Run(HardwareDetailService.SampleAllDiskSpeeds);
-
-            // Silently refresh today's data usage cache every 15 seconds in background,
-            // or immediately if midnight has passed or the local calendar date rolled over
-            if (_cachedTodayDate != DateTime.Today || (DateTime.UtcNow - _lastDataUsageCacheTime).TotalSeconds >= 15)
+            // Silently refresh today's data usage cache if the local calendar date rolled over
+            // or when viewing the Data Usage tab (throttled to 60s)
+            if (_cachedTodayDate != DateTime.Today || (tabDataUsage.IsSelected && (DateTime.UtcNow - _lastDataUsageCacheTime).TotalSeconds >= 60))
             {
                 _ = UpdateTodayDataUsageCacheAsync();
             }
@@ -593,8 +610,7 @@ namespace ResourceAnalyzer
                 {
                     try
                     {
-                        bool hideSystem = s.HideSystemProcesses;
-                        var list = await _processService.GetProcessesAsync(string.Empty, _currentSort, hideSystem);
+                        var list = await _processService.GetProcessesAsync(string.Empty, _currentSort);
                         CheckResourceAlerts(list);
                     }
                     catch (Exception ex)
@@ -639,7 +655,7 @@ namespace ResourceAnalyzer
                 {
                     try
                     {
-                        var alertList = await _processService.GetProcessesAsync(string.Empty, "Memory", settings.HideSystemProcesses);
+                        var alertList = await _processService.GetProcessesAsync(string.Empty, "Memory");
                         CheckResourceAlerts(alertList);
                     }
                     catch (Exception ex)
@@ -647,12 +663,6 @@ namespace ResourceAnalyzer
                         Debug.WriteLine($"Background alert scan error: {ex.Message}");
                     }
                 }
-            }
-
-            // Periodic memory trimming (every 10 seconds / 5 ticks) to keep working set tightly bounded (~25-35 MB)
-            if (_timerTickCount > 0 && _timerTickCount % 5 == 0)
-            {
-                TrimProcessMemory();
             }
         }
 
@@ -779,7 +789,6 @@ namespace ResourceAnalyzer
                 {
                     e.Handled = true;
                     tabResources.IsSelected = true;
-                    _speechService.Speak("Tab 1: Resources", interrupt: true);
                     FocusCurrentTabContent();
                     return;
                 }
@@ -787,7 +796,6 @@ namespace ResourceAnalyzer
                 {
                     e.Handled = true;
                     tabProcesses.IsSelected = true;
-                    _speechService.Speak("Tab 2: Processes", interrupt: true);
                     FocusCurrentTabContent();
                     return;
                 }
@@ -795,7 +803,6 @@ namespace ResourceAnalyzer
                 {
                     e.Handled = true;
                     tabDataUsage.IsSelected = true;
-                    _speechService.Speak("Tab 3: Data Usage", interrupt: true);
                     FocusCurrentTabContent();
                     return;
                 }
@@ -803,7 +810,6 @@ namespace ResourceAnalyzer
                 {
                     e.Handled = true;
                     tabNetworkPorts.IsSelected = true;
-                    _speechService.Speak("Tab 4: Network Ports", interrupt: true);
                     FocusCurrentTabContent();
                     return;
                 }
@@ -811,7 +817,6 @@ namespace ResourceAnalyzer
                 {
                     e.Handled = true;
                     tabSettings.IsSelected = true;
-                    _speechService.Speak("Tab 5: Settings", interrupt: true);
                     cmbProcessManager?.Focus();
                     return;
                 }
@@ -822,20 +827,17 @@ namespace ResourceAnalyzer
                     {
                         txtPortSearch.Focus();
                         txtPortSearch.SelectAll();
-                        _speechService.Speak("Search network ports. Type port number, process name, or IP.", interrupt: true);
                     }
                     else if (tabDataUsage.IsSelected)
                     {
                         txtDataSearch.Focus();
                         txtDataSearch.SelectAll();
-                        _speechService.Speak("Search data usage applications.", interrupt: true);
                     }
                     else
                     {
                         tabProcesses.IsSelected = true;
                         txtSearch.Focus();
                         txtSearch.SelectAll();
-                        _speechService.Speak("Search processes. Type filter text.", interrupt: true);
                     }
                     return;
                 }
@@ -882,7 +884,22 @@ namespace ResourceAnalyzer
                     }
                     else
                     {
-                        SetSort("CPU");
+                        if (tabResources.IsSelected && lstResources.SelectedItem is ResourceItem resItem)
+                        {
+                            if (SafeClipboard.TrySetText(resItem.DisplayText))
+                            {
+                                _speechService.Speak($"Copied {resItem.Summary} to clipboard.", interrupt: true);
+                                txtAnnouncement.Text = $"Copied {resItem.Summary} to clipboard.";
+                            }
+                        }
+                        else if (tabDataUsage.IsSelected && lstDataUsage.SelectedItem is AppDataUsageItem dataItem)
+                        {
+                            if (SafeClipboard.TrySetText(dataItem.DisplayText))
+                            {
+                                _speechService.Speak($"Copied {dataItem.AppName} data usage to clipboard.", interrupt: true);
+                                txtAnnouncement.Text = $"Copied {dataItem.AppName} data usage to clipboard.";
+                            }
+                        }
                     }
                     return;
                 }
@@ -895,7 +912,17 @@ namespace ResourceAnalyzer
                     }
                     else
                     {
-                        SetSort("Name");
+                        if (tabDataUsage.IsSelected)
+                        {
+                            cmbDataNetwork.SelectedIndex = (cmbDataNetwork.SelectedIndex == 0) ? 1 : 0;
+                            string netMode = cmbDataNetwork.SelectedIndex == 0 ? "Current Connected Network" : "All Networks";
+                            _speechService.Speak($"Network filter: {netMode}.", interrupt: true);
+                            txtAnnouncement.Text = $"Network filter: {netMode}.";
+                        }
+                        else if (tabProcesses.IsSelected)
+                        {
+                            SetSort("Name");
+                        }
                     }
                     return;
                 }

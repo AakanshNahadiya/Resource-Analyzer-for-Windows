@@ -148,7 +148,7 @@ namespace ResourceAnalyzer.Views
 
             try
             {
-                string? installerPath = await _updateService.DownloadInstallerAsync(downloadUrl, progress, _cts.Token);
+                string? installerPath = await _updateService.DownloadInstallerAsync(downloadUrl, _updateInfo.ExpectedSha256, progress, _cts.Token);
                 if (!string.IsNullOrEmpty(installerPath) && File.Exists(installerPath))
                 {
                     txtDownloadStatus.Text = "Download complete. Starting installer...";
@@ -175,6 +175,14 @@ namespace ResourceAnalyzer.Views
                     btnDownloadInstall.IsEnabled = true;
                     btnNotNow.IsEnabled = true;
                 }
+            }
+            catch (System.Security.SecurityException)
+            {
+                txtDownloadStatus.Text = "Security Error: Checksum verification failed. The installer was deleted for your safety.";
+                _speechService?.Speak("Security alert. Downloaded installer failed checksum verification and was deleted for your safety.", interrupt: true);
+                MessageBox.Show(this, "The downloaded update did not match the official SHA-256 checksum from GitHub and was deleted for your safety.", "Security Verification Failed", MessageBoxButton.OK, MessageBoxImage.Warning);
+                btnDownloadInstall.IsEnabled = true;
+                btnNotNow.IsEnabled = true;
             }
             catch (Exception ex)
             {

@@ -127,8 +127,7 @@ There is 1 interface on the system:
             Assert.DoesNotContain("C:", titleBeforeColon);
             Assert.DoesNotContain("D:", titleBeforeColon);
 
-            // Details should contain partition list and capacity
-            Assert.Contains("Partitions (", disk0.Details);
+            // Live sampling Details is string.Empty (zero allocation); full partition details are provided by HardwareDetailService
             Assert.True(disk0.Percent >= 0);
         }
 

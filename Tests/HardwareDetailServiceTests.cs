@@ -21,7 +21,9 @@ namespace ResourceAnalyzer.Tests
         [InlineData("disk")]
         [InlineData("network")]
         [InlineData("gpu")]
+        [InlineData("display")]
         [InlineData("battery")]
+        [InlineData("audio")]
         public async Task GetHardwareDetailsAsync_ReturnsDetailedSpecs(string id)
         {
             var service = new HardwareDetailService();
@@ -133,6 +135,8 @@ namespace ResourceAnalyzer.Tests
             Assert.Contains("Free (unused, not counting cache):", ramDetails);
             Assert.Contains("Available:", ramDetails);
             Assert.Contains("Committed:", ramDetails);
+            Assert.DoesNotContain("::", ramDetails);
+            Assert.DoesNotContain("•", ramDetails);
         }
 
         [Fact]
@@ -262,6 +266,16 @@ namespace ResourceAnalyzer.Tests
         }
 
         [Fact]
+        public void GetCpuTopology_OnWindows_ReturnsSensibleCoresAndCaches()
+        {
+            var topo = NativeMethods.GetCpuTopology();
+            Assert.NotNull(topo);
+            Assert.True(topo.Value.PhysicalCores > 0, "Physical cores must be greater than 0");
+            Assert.True(topo.Value.Sockets > 0, "Socket count must be greater than 0");
+            Assert.True(topo.Value.L1DataCacheBytes > 0 || topo.Value.L2CacheBytes > 0 || topo.Value.L3CacheBytes > 0, "At least one cache level must be detected");
+        }
+
+        [Fact]
         public void QueryDisplayHdrStatus_DoesNotThrow()
         {
             var status = NativeMethods.QueryDisplayHdrStatus();
@@ -270,6 +284,30 @@ namespace ResourceAnalyzer.Tests
             {
                 Assert.True(status.Value.BitsPerChannel >= 0);
             }
+        }
+
+        [Fact]
+        public void QueryDisplayCcdInfo_DoesNotThrow()
+        {
+            var info = NativeMethods.QueryDisplayCcdInfo();
+            if (info.HasValue)
+            {
+                Assert.False(string.IsNullOrWhiteSpace(info.Value.ConnectionTechnology));
+            }
+        }
+
+        [Theory]
+        [InlineData(3840, 2160, "(4K Ultra HD)")]
+        [InlineData(2560, 1440, "(2K QHD)")]
+        [InlineData(1920, 1080, "(Full HD)")]
+        [InlineData(1600, 900, "(HD+)")]
+        [InlineData(1366, 768, "(HD)")]
+        [InlineData(1280, 720, "(720p HD)")]
+        [InlineData(800, 600, "")]
+        public void FormatHelper_GetResolutionStandard_ReturnsExpectedNames(int width, int height, string expected)
+        {
+            string actual = FormatHelper.GetResolutionStandard(width, height);
+            Assert.Equal(expected, actual);
         }
 
         [Fact]
@@ -283,11 +321,91 @@ namespace ResourceAnalyzer.Tests
         }
 
         [Fact]
+        public void QueryActiveWifiChannelAndBand_DoesNotThrow()
+        {
+            var result = NativeMethods.QueryActiveWifiChannelAndBand();
+            if (result.HasValue)
+            {
+                Assert.True(result.Value.Channel > 0);
+                Assert.True(result.Value.Band == "2.4 GHz" || result.Value.Band == "5 GHz" || result.Value.Band == "6 GHz");
+            }
+        }
+
+        [Fact]
         public async Task GetHardwareDetailsAsync_Display_ContainsHdrStatus()
         {
             var service = new HardwareDetailService();
             string details = await service.GetHardwareDetailsAsync("display");
+            _output.WriteLine($"=== DISPLAY DETAILS ===\n{details}\n");
             Assert.Contains("HDR (High Dynamic Range):", details);
+            Assert.Contains("Connection:", details);
+        }
+
+        [Fact]
+        public async Task GetHardwareDetailsAsync_Cpu_ContainsTemperatureOrAdminIndicator()
+        {
+            var service = new HardwareDetailService();
+            string details = await service.GetHardwareDetailsAsync("cpu");
+            _output.WriteLine($"=== CPU DETAILS ===\n{details}\n");
+            bool hasThermal = details.Contains("CPU Thermal Zone:") || details.Contains("CPU Temperature: Available when running as Administrator");
+            Assert.True(hasThermal, "CPU details must show thermal zone or admin indicator");
+        }
+
+        [Fact]
+        public async Task GetHardwareDetailsAsync_Network_PingDisabledByDefault()
+        {
+            var service = new HardwareDetailService();
+            string details = await service.GetHardwareDetailsAsync("network");
+            _output.WriteLine($"=== NETWORK DETAILS (DEFAULT) ===\n{details}\n");
+            Assert.DoesNotContain("Internet Latency (Ping):", details);
+        }
+
+        [Fact]
+        public async Task GetHardwareDetailsAsync_Network_PingEnabled_IncludesLatencyField()
+        {
+            var mockSettings = new FakeSettingsService(new ResourceAnalyzer.Models.AppSettings { EnableNetworkPing = true });
+            var service = new HardwareDetailService(mockSettings);
+            string details = await service.GetHardwareDetailsAsync("network");
+            _output.WriteLine($"=== NETWORK DETAILS (PING ENABLED) ===\n{details}\n");
+            Assert.Contains("Internet Latency (Ping):", details);
+        }
+
+        [Fact]
+        public async Task GetHardwareDetailsAsync_Audio_ContainsDefaultOutputAndControllers()
+        {
+            var service = new HardwareDetailService();
+            string details = await service.GetHardwareDetailsAsync("audio");
+            _output.WriteLine($"=== AUDIO DETAILS ===\n{details}\n");
+            Assert.Contains("Default Output:", details);
+            Assert.Contains("Default Input (Mic):", details);
+        }
+
+        [Fact]
+        public void NativeMethods_GetDefaultAudioDeviceInfo_DoesNotThrow()
+        {
+            var render = NativeMethods.GetDefaultAudioDeviceInfo(NativeMethods.EDataFlow.eRender);
+            if (render.HasValue)
+            {
+                _output.WriteLine($"Render device: {render.Value.Name}, {render.Value.FormFactor}, Vol={render.Value.Volume:P0}, Mute={render.Value.IsMuted}, Rate={render.Value.SampleRate}Hz");
+                Assert.False(string.IsNullOrWhiteSpace(render.Value.Name));
+            }
+
+            var capture = NativeMethods.GetDefaultAudioDeviceInfo(NativeMethods.EDataFlow.eCapture);
+            if (capture.HasValue)
+            {
+                _output.WriteLine($"Capture device: {capture.Value.Name}, {capture.Value.FormFactor}");
+                Assert.False(string.IsNullOrWhiteSpace(capture.Value.Name));
+            }
+        }
+
+        private class FakeSettingsService : ISettingsService
+        {
+            public ResourceAnalyzer.Models.AppSettings CurrentSettings { get; }
+            public FakeSettingsService(ResourceAnalyzer.Models.AppSettings settings) => CurrentSettings = settings;
+            public void Load() { }
+            public void Save() { }
+            public void ResetToDefaults() { }
+            public void ApplyAutoStart(bool enable) { }
         }
     }
 }

@@ -11,10 +11,11 @@ namespace ResourceAnalyzer.Services
 {
     public interface IProcessService
     {
-        Task<List<ProcessItem>> GetProcessesAsync(string searchTerm, string sortBy, bool hideSystemProcesses = false);
-        Task<(bool Success, string Message)> KillProcessAsync(int pid, string processName);
-        Task<(bool Success, string Message)> KillProcessTreeAsync(int pid, string processName);
-        Task<(bool Success, string Message)> RestartProcessAsync(int pid, string processName);
+        Task<List<ProcessItem>> GetProcessesAsync(string searchTerm, string sortBy);
+        Task<(bool Success, string Message)> KillProcessAsync(int pid, string processName, string? subProcessDetail = null);
+        Task<(bool Success, string Message)> KillProcessTreeAsync(int pid, string processName, string? subProcessDetail = null);
+        Task<(bool Success, string Message)> RestartProcessAsync(int pid, string processName, string? subProcessDetail = null);
+        bool CanTerminateProcess(int pid, string processName, string? subProcessDetail, out string reason);
         string? GetProcessExecutablePath(int pid);
         HashSet<int> GetHungPids();
         int GetActiveForegroundPid();
@@ -115,6 +116,16 @@ namespace ResourceAnalyzer.Services
             "Idle", "System", "Registry", "Memory Compression", "smss", "csrss", "wininit", "services", "lsass", "winlogon", "dwm"
         };
 
+        private static readonly HashSet<string> CriticalServices = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "RpcSs", "DcomLaunch", "PlugPlay", "LSM", "SamSs", "BrokerInfrastructure"
+        };
+
+        private static readonly HashSet<string> ProtectedAntiMalwareProcesses = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "MsMpEng", "SecurityHealthService"
+        };
+
         private static readonly HashSet<string> SystemProcesses = new(StringComparer.OrdinalIgnoreCase)
         {
             // Core Windows Subsystems & Kernel
@@ -195,6 +206,30 @@ namespace ResourceAnalyzer.Services
 
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _descriptionCache = new(StringComparer.OrdinalIgnoreCase)
         {
+            // Core Windows Subsystems & Kernel
+            ["Idle"] = "System Idle Process",
+            ["System"] = "System Kernel",
+            ["Registry"] = "System Registry",
+            ["Memory Compression"] = "Memory Compression",
+            ["smss"] = "Session Manager Subsystem",
+            ["csrss"] = "Client Server Runtime Subsystem",
+            ["wininit"] = "Windows Initialization Process",
+            ["services"] = "Service Control Manager",
+            ["lsass"] = "Local Security Authority Subsystem Service",
+            ["winlogon"] = "Windows Logon Application",
+            ["dwm"] = "Desktop Window Manager",
+            ["svchost"] = "Host Process for Windows Services",
+            ["fontdrvhost"] = "Usermode Font Driver Host",
+            ["sihost"] = "Shell Infrastructure Host",
+            ["taskhostw"] = "Host Process for Windows Tasks",
+            ["RuntimeBroker"] = "Runtime Broker",
+            ["dllhost"] = "COM Surrogate",
+            ["conhost"] = "Console Window Host",
+            ["spoolsv"] = "Print Spooler",
+            ["MsMpEng"] = "Antimalware Service Executable",
+            ["SecurityHealthService"] = "Windows Security Health Service",
+
+            // Common Desktop & System Applications
             ["explorer"] = "Windows Explorer",
             ["taskmgr"] = "Task Manager",
             ["cmd"] = "Command Prompt",
@@ -239,18 +274,129 @@ namespace ResourceAnalyzer.Services
             }
             catch
             {
-                // Access denied or terminated process
+                // Access denied on live process handle in Session 0.
+                // Fall back to reading the file directly from System32 on disk for standard users (Fix 7)
+                try
+                {
+                    string exeName = processName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+                        ? processName
+                        : $"{processName}.exe";
+                    string sysPath = System.IO.Path.Combine(Environment.SystemDirectory, exeName);
+                    if (System.IO.File.Exists(sysPath))
+                    {
+                        var fvi = FileVersionInfo.GetVersionInfo(sysPath);
+                        if (!string.IsNullOrWhiteSpace(fvi.FileDescription))
+                        {
+                            string desc = fvi.FileDescription.Trim();
+                            _descriptionCache[processName] = desc;
+                            return desc;
+                        }
+                    }
+                }
+                catch { }
             }
 
             _descriptionCache[processName] = processName;
             return processName;
         }
 
+        public bool CanTerminateProcess(int pid, string processName, string? subProcessDetail, out string reason)
+        {
+            string cleanName = processName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+                ? processName[..^4]
+                : processName;
+
+            // 1. Critical Kernel Processes & System PIDs (PID 4, smss, csrss, wininit, etc.)
+            if ((pid > 0 && pid <= 4) || CriticalKernelProcesses.Contains(cleanName) || CriticalKernelProcesses.Contains(processName))
+            {
+                reason = $"{cleanName} is a critical Windows system process and cannot be terminated.";
+                return false;
+            }
+
+            // 2. Protected Process Light (PPL) Anti-Malware Services (MsMpEng, Defender)
+            if (ProtectedAntiMalwareProcesses.Contains(cleanName) || ProtectedAntiMalwareProcesses.Contains(processName))
+            {
+                reason = $"{cleanName} is a protected Windows antimalware process (PPL) and cannot be terminated.";
+                return false;
+            }
+
+            // 3. Critical Foundational System Services (BSOD Protection for svchost)
+            string? servicesToCheck = subProcessDetail;
+            if (string.IsNullOrWhiteSpace(servicesToCheck) && pid > 4 &&
+                (cleanName.Equals("svchost", StringComparison.OrdinalIgnoreCase) ||
+                 processName.Equals("svchost", StringComparison.OrdinalIgnoreCase)))
+            {
+                var services = ProcessDetailResolver.GetActiveServices();
+                if (services.TryGetValue(pid, out var autoSvc))
+                {
+                    servicesToCheck = autoSvc;
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(servicesToCheck))
+            {
+                foreach (var svc in CriticalServices)
+                {
+                    if (servicesToCheck.IndexOf(svc, StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        reason = $"{cleanName} hosts the critical Windows service '{svc}' and cannot be terminated without crashing Windows.";
+                        return false;
+                    }
+                }
+            }
+
+            // 4. Windows Native IsProcessCritical API Check (Flags processes that trigger Bug Check on exit)
+            if (pid > 4)
+            {
+                IntPtr hQuery = NativeMethods.OpenProcess(NativeMethods.PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
+                if (hQuery != IntPtr.Zero)
+                {
+                    try
+                    {
+                        if (NativeMethods.IsProcessCritical(hQuery, out bool isCritical) && isCritical)
+                        {
+                            reason = $"{cleanName} is designated by Windows as a critical system process and cannot be terminated.";
+                            return false;
+                        }
+                    }
+                    finally
+                    {
+                        NativeMethods.CloseHandle(hQuery);
+                    }
+                }
+            }
+
+            // 5. Native Permission Probe: Check PROCESS_TERMINATE rights
+            if (pid > 4)
+            {
+                IntPtr hTerm = NativeMethods.OpenProcess(NativeMethods.PROCESS_TERMINATE, false, pid);
+                if (hTerm != IntPtr.Zero)
+                {
+                    NativeMethods.CloseHandle(hTerm);
+                }
+                else
+                {
+                    int lastError = Marshal.GetLastWin32Error();
+                    if (lastError == 5) // ERROR_ACCESS_DENIED
+                    {
+                        if (ElevationHelper.IsRunningAsAdmin())
+                        {
+                            reason = $"{cleanName} is protected by Windows kernel security policies and cannot be terminated.";
+                            return false;
+                        }
+                    }
+                }
+            }
+
+            reason = string.Empty;
+            return true;
+        }
+
         HashSet<int> IProcessService.GetHungPids() => GetHungPids();
         int IProcessService.GetActiveForegroundPid() => GetActiveForegroundPid();
         string IProcessService.GetProcessDescription(int pid, string processName) => GetProcessDescription(pid, processName);
 
-        public async Task<List<ProcessItem>> GetProcessesAsync(string searchTerm, string sortBy, bool hideSystemProcesses = false)
+        public async Task<List<ProcessItem>> GetProcessesAsync(string searchTerm, string sortBy)
         {
             return await Task.Run(() =>
             {
@@ -301,17 +447,6 @@ namespace ResourceAnalyzer.Services
                     string cleanName = name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
                         ? name[..^4]
                         : name;
-
-                    // Filter system/kernel processes if requested
-                    if (hideSystemProcesses)
-                    {
-                        if (pid == 0 || pid == 4 || p.SessionId == 0 ||
-                            SystemProcesses.Contains(name) ||
-                            SystemProcesses.Contains(cleanName))
-                        {
-                            continue;
-                        }
-                    }
 
                     // Ultra-efficient CPU Calculation via 100ns deltas
                     double cpuPercent = 0.0;
@@ -409,13 +544,13 @@ namespace ResourceAnalyzer.Services
             });
         }
 
-        public async Task<(bool Success, string Message)> KillProcessAsync(int pid, string processName)
+        public async Task<(bool Success, string Message)> KillProcessAsync(int pid, string processName, string? subProcessDetail = null)
         {
             return await Task.Run(() =>
             {
-                if (pid == 0 || pid == 4 || CriticalKernelProcesses.Contains(processName))
+                if (!CanTerminateProcess(pid, processName, subProcessDetail, out string cantTerminateReason))
                 {
-                    return (false, $"{processName} is a critical Windows system process and cannot be terminated.");
+                    return (false, cantTerminateReason);
                 }
 
                 try
@@ -430,6 +565,10 @@ namespace ResourceAnalyzer.Services
                 }
                 catch (System.ComponentModel.Win32Exception)
                 {
+                    if (ElevationHelper.IsRunningAsAdmin())
+                    {
+                        return (false, $"Access denied. {processName} is protected by Windows kernel security policies and cannot be terminated.");
+                    }
                     return (false, $"Access denied. Administrator privileges may be required to end {processName}.");
                 }
                 catch (Exception ex)
@@ -439,13 +578,13 @@ namespace ResourceAnalyzer.Services
             });
         }
 
-        public async Task<(bool Success, string Message)> KillProcessTreeAsync(int pid, string processName)
+        public async Task<(bool Success, string Message)> KillProcessTreeAsync(int pid, string processName, string? subProcessDetail = null)
         {
             return await Task.Run(() =>
             {
-                if (pid == 0 || pid == 4 || CriticalKernelProcesses.Contains(processName))
+                if (!CanTerminateProcess(pid, processName, subProcessDetail, out string cantTerminateReason))
                 {
-                    return (false, $"{processName} is a critical Windows system process and cannot be terminated.");
+                    return (false, cantTerminateReason);
                 }
 
                 try
@@ -460,6 +599,10 @@ namespace ResourceAnalyzer.Services
                 }
                 catch (System.ComponentModel.Win32Exception)
                 {
+                    if (ElevationHelper.IsRunningAsAdmin())
+                    {
+                        return (false, $"Access denied. {processName} is protected by Windows kernel security policies and cannot be terminated.");
+                    }
                     return (false, $"Access denied. Administrator privileges may be required to end {processName}.");
                 }
                 catch (Exception ex)
@@ -469,13 +612,13 @@ namespace ResourceAnalyzer.Services
             });
         }
 
-        public async Task<(bool Success, string Message)> RestartProcessAsync(int pid, string processName)
+        public async Task<(bool Success, string Message)> RestartProcessAsync(int pid, string processName, string? subProcessDetail = null)
         {
             return await Task.Run(() =>
             {
-                if (pid == 0 || pid == 4 || CriticalKernelProcesses.Contains(processName))
+                if (!CanTerminateProcess(pid, processName, subProcessDetail, out string cantRestartReason))
                 {
-                    return (false, $"{processName} is a critical Windows system process and cannot be restarted.");
+                    return (false, cantRestartReason);
                 }
 
                 string? exePath = GetProcessExecutablePath(pid);
@@ -484,42 +627,21 @@ namespace ResourceAnalyzer.Services
                     return (false, $"Cannot restart {processName}: executable file path could not be determined.");
                 }
 
-                // Terminate process tree
+                // Native process tree termination
                 try
                 {
-                    bool taskkillSuccess = false;
-                    try
-                    {
-                        var psi = new ProcessStartInfo
-                        {
-                            FileName = "taskkill.exe",
-                            Arguments = $"/T /F /PID {pid}",
-                            CreateNoWindow = true,
-                            UseShellExecute = false,
-                            RedirectStandardError = true,
-                            RedirectStandardOutput = true
-                        };
-                        using var p = Process.Start(psi);
-                        if (p != null)
-                        {
-                            p.WaitForExit(3000);
-                            taskkillSuccess = (p.ExitCode == 0);
-                        }
-                    }
-                    catch { }
-
-                    if (!taskkillSuccess)
-                    {
-                        try
-                        {
-                            using var proc = Process.GetProcessById(pid);
-                            proc.Kill(true);
-                            proc.WaitForExit(2000);
-                        }
-                        catch { }
-                    }
+                    using var proc = Process.GetProcessById(pid);
+                    proc.Kill(entireProcessTree: true);
+                    proc.WaitForExit(3000);
                 }
-                catch { }
+                catch (ArgumentException)
+                {
+                    // Process already exited
+                }
+                catch (Exception ex)
+                {
+                    return (false, $"Could not stop {processName}: {ex.Message}");
+                }
 
                 // Brief grace period for socket and file release
                 System.Threading.Thread.Sleep(300);

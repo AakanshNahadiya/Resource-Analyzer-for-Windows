@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading.Tasks;
@@ -141,6 +141,18 @@ namespace ResourceAnalyzer
                 e.Handled = true;
                 txtDataSearch.Text = string.Empty;
                 lstDataUsage.Focus();
+            }
+        }
+
+        private void CtxDataUsageCopyDetails_Click(object sender, RoutedEventArgs e)
+        {
+            if (lstDataUsage.SelectedItem is AppDataUsageItem dataItem)
+            {
+                if (SafeClipboard.TrySetText(dataItem.DisplayText))
+                {
+                    _speechService.Speak($"Copied {dataItem.AppName} data usage to clipboard.", interrupt: true);
+                    txtAnnouncement.Text = $"Copied {dataItem.AppName} data usage to clipboard.";
+                }
             }
         }
 

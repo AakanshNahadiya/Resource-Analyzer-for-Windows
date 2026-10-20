@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Threading;
 using ResourceAnalyzer.Helpers;
 using ResourceAnalyzer.Models;
 using ResourceAnalyzer.Views;
@@ -129,14 +130,13 @@ namespace ResourceAnalyzer
             return result;
         }
 
-        private async Task RefreshProcessesAsync(bool isFullReset = false)
+        private async Task RefreshProcessesAsync(bool isFullReset = false, int preferredIndex = -1)
         {
             try
             {
                 string term = txtSearch.Text;
-                bool hideSystem = _settingsService.CurrentSettings.HideSystemProcesses;
                 bool groupProcesses = _settingsService.CurrentSettings.GroupProcesses;
-                var rawList = await _processService.GetProcessesAsync(term, _currentSort, hideSystem);
+                var rawList = await _processService.GetProcessesAsync(term, _currentSort);
 
                 // Check resource overuse alerts on raw processes (only if unfiltered; timer handles full scan when filtered)
                 if (string.IsNullOrEmpty(term))
@@ -189,6 +189,8 @@ namespace ResourceAnalyzer
                 else
                 {
                     string prevSelectedKey = (lstProcesses.SelectedItem as ProcessItem)?.ItemKey ?? string.Empty;
+                    int prevSelectedIndex = preferredIndex >= 0 ? preferredIndex : lstProcesses.SelectedIndex;
+                    bool hadFocus = lstProcesses.IsKeyboardFocusWithin;
                     var freshMap = new Dictionary<string, ProcessItem>(StringComparer.OrdinalIgnoreCase);
                     foreach (var p in list)
                     {
@@ -252,28 +254,58 @@ namespace ResourceAnalyzer
                                 }
                             }
                         }
+                    }
 
-                        // Restore selection cleanly with focus lock
-                        if (!string.IsNullOrEmpty(prevSelectedKey))
+                    // Restore selection cleanly with focus lock
+                    bool selectionRestored = false;
+                    if (!string.IsNullOrEmpty(prevSelectedKey))
+                    {
+                        var match = _processItems.FirstOrDefault(p => string.Equals(p.ItemKey, prevSelectedKey, StringComparison.OrdinalIgnoreCase));
+                        if (match != null)
                         {
-                            var match = _processItems.FirstOrDefault(p => string.Equals(p.ItemKey, prevSelectedKey, StringComparison.OrdinalIgnoreCase));
-                            if (match != null)
+                            if (!ReferenceEquals(lstProcesses.SelectedItem, match))
                             {
-                                if (!ReferenceEquals(lstProcesses.SelectedItem, match))
+                                lstProcesses.SelectedItem = match;
+                            }
+                            if (hadFocus || lstProcesses.IsKeyboardFocusWithin)
+                            {
+                                var container = lstProcesses.ItemContainerGenerator.ContainerFromItem(match) as ListBoxItem;
+                                container?.Focus();
+                            }
+                            selectionRestored = true;
+                        }
+                    }
+
+                    if (!selectionRestored && _processItems.Count > 0)
+                    {
+                        int targetIdx = prevSelectedIndex >= 0 ? prevSelectedIndex : 0;
+                        targetIdx = Math.Clamp(targetIdx, 0, _processItems.Count - 1);
+                        var targetItem = _processItems[targetIdx];
+                        lstProcesses.SelectedIndex = targetIdx;
+                        lstProcesses.ScrollIntoView(targetItem);
+
+                        _ = Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() =>
+                        {
+                            if (tabProcesses.IsSelected)
+                            {
+                                lstProcesses.UpdateLayout();
+                                var container = (lstProcesses.ItemContainerGenerator.ContainerFromItem(targetItem)
+                                    ?? lstProcesses.ItemContainerGenerator.ContainerFromIndex(targetIdx)) as ListBoxItem;
+                                if (container != null)
                                 {
-                                    lstProcesses.SelectedItem = match;
+                                    container.Focus();
+                                    Keyboard.Focus(container);
                                 }
-                                if (lstProcesses.IsKeyboardFocusWithin)
+                                else
                                 {
-                                    var container = lstProcesses.ItemContainerGenerator.ContainerFromItem(match) as ListBoxItem;
-                                    container?.Focus();
+                                    Keyboard.Focus(lstProcesses);
                                 }
                             }
-                        }
-                        else if (_processItems.Count > 0 && lstProcesses.SelectedIndex < 0)
-                        {
-                            lstProcesses.SelectedIndex = 0;
-                        }
+                        }));
+                    }
+                    else if (_processItems.Count > 0 && lstProcesses.SelectedIndex < 0)
+                    {
+                        lstProcesses.SelectedIndex = 0;
                     }
                 }
             }
@@ -333,6 +365,8 @@ namespace ResourceAnalyzer
             // have their combined total resource usage evaluated against the limit.
             var appGroups = actionableProcesses.GroupBy(p => p.Name, StringComparer.OrdinalIgnoreCase).ToList();
 
+            (string Title, string Message, string AlertKey)? pendingAlertToFire = null;
+
             foreach (var group in appGroups)
             {
                 long totalRamBytes = group.Sum(p => p.MemoryBytes);
@@ -348,11 +382,13 @@ namespace ResourceAnalyzer
                     string ramKey = $"RAM_{group.Key}";
                     if (!_lastAlertTimes.TryGetValue(ramKey, out var lastTime) || (now - lastTime).TotalSeconds >= 60)
                     {
-                        _lastAlertTimes[ramKey] = now;
+                        if (pendingAlertToFire == null)
+                        {
                         string limitStr = $"{s.HighRamLimitValue} {s.HighRamLimitUnit}";
                         string usedStr = FormatHelper.FormatBytes(totalRamBytes);
                         string msg = $"{appTitle} is exceeding maximum RAM usage ({usedStr}, limit: {limitStr}).";
-                        TriggerResourceAlert("High RAM Usage Alert", msg);
+                            pendingAlertToFire = ("High RAM Usage Alert", msg, ramKey);
+                        }
                     }
                 }
 
@@ -369,9 +405,11 @@ namespace ResourceAnalyzer
                     {
                         if (!_lastAlertTimes.TryGetValue(cpuKey, out var lastTime) || (now - lastTime).TotalSeconds >= 60)
                         {
-                            _lastAlertTimes[cpuKey] = now;
+                            if (pendingAlertToFire == null)
+                            {
                             string msg = $"{appTitle} is exceeding maximum CPU usage ({totalCpuPercent:F1}%, limit: {cpuLimitPercent:F0}%).";
-                            TriggerResourceAlert("High CPU Usage Alert", msg);
+                                pendingAlertToFire = ("High CPU Usage Alert", msg, cpuKey);
+                            }
                         }
                     }
                 }
@@ -386,7 +424,29 @@ namespace ResourceAnalyzer
             if (_consecutiveCpuAlertHits.Count > 0)
             {
                 var activeCpuKeys = new HashSet<string>(appGroups.Select(g => $"CPU_{g.Key}"), StringComparer.OrdinalIgnoreCase);
-                var stale = _consecutiveCpuAlertHits.Keys.Where(k => !activeCpuKeys.Contains(k)).ToList();
+                foreach (var k in _consecutiveCpuAlertHits.Keys.Where(k => !activeCpuKeys.Contains(k)).ToList())
+                {
+                    _consecutiveCpuAlertHits.Remove(k);
+                }
+            }
+
+            // Staggered Delivery: Fire at most ONE alert per check cycle with a minimum 4-second gap between any alerts.
+            // Guarantees:
+            // 1. Each application maintains its own independent 60-second cooldown starting from when it was actually alerted.
+            // 2. Multiple high-resource applications never collide or cancel each other's speech.
+            // 3. Windows Shell tray notification balloons are delivered reliably without being dropped.
+            if (pendingAlertToFire != null)
+            {
+                if ((now - _lastGlobalAlertTime).TotalSeconds >= 4)
+                {
+                    _lastAlertTimes[pendingAlertToFire.Value.AlertKey] = now;
+                    _lastGlobalAlertTime = now;
+                    TriggerResourceAlert(pendingAlertToFire.Value.Title, pendingAlertToFire.Value.Message);
+                }
+            }
+        }
+
+        /*
                 foreach (var k in stale)
                 {
                     _consecutiveCpuAlertHits.Remove(k);
@@ -394,6 +454,7 @@ namespace ResourceAnalyzer
             }
         }
 
+        */
         private async Task TryEndSelectedProcessAsync()
         {
             if (lstProcesses.SelectedItem is not ProcessItem item)
@@ -402,10 +463,20 @@ namespace ResourceAnalyzer
                 return;
             }
 
+            int savedIndex = lstProcesses.SelectedIndex;
             bool confirm = _settingsService.CurrentSettings.ConfirmBeforeEndTask;
 
             if (item.IsGroupHeader)
             {
+                if (item.Name.Equals("svchost", StringComparison.OrdinalIgnoreCase) ||
+                    item.Name.Equals("svchost.exe", StringComparison.OrdinalIgnoreCase))
+                {
+                    string safeMsg = "svchost.exe hosts critical Windows system services and the entire group cannot be terminated.";
+                    _speechService.Speak(safeMsg, interrupt: true);
+                    txtAnnouncement.Text = safeMsg;
+                    return;
+                }
+
                 if (confirm)
                 {
                     string promptTarget = $"all {item.InstanceTotal} instances of {item.DisplayName}";
@@ -444,7 +515,14 @@ namespace ResourceAnalyzer
                 _speechService.Speak(msg, interrupt: true);
                 txtAnnouncement.Text = msg;
 
-                await RefreshProcessesAsync(isFullReset: true);
+                await RefreshProcessesAsync(isFullReset: true, preferredIndex: savedIndex);
+                return;
+            }
+
+            if (!_processService.CanTerminateProcess(item.Pid, item.Name, item.SubProcessDetail, out string blockReason))
+            {
+                _speechService.Speak(blockReason, interrupt: true);
+                txtAnnouncement.Text = blockReason;
                 return;
             }
 
@@ -473,11 +551,11 @@ namespace ResourceAnalyzer
                 }
             }
 
-            var (success, singleMsg) = await _processService.KillProcessAsync(item.Pid, item.DisplayName);
+            var (success, singleMsg) = await _processService.KillProcessAsync(item.Pid, item.DisplayName, item.SubProcessDetail);
             _speechService.Speak(singleMsg, interrupt: true);
             txtAnnouncement.Text = singleMsg;
 
-            await RefreshProcessesAsync(isFullReset: true);
+            await RefreshProcessesAsync(isFullReset: true, preferredIndex: savedIndex);
         }
 
         private async Task TryEndSelectedProcessTreeAsync()
@@ -488,10 +566,20 @@ namespace ResourceAnalyzer
                 return;
             }
 
+            int savedIndex = lstProcesses.SelectedIndex;
             bool confirm = _settingsService.CurrentSettings.ConfirmBeforeEndTask;
 
             if (item.IsGroupHeader)
             {
+                if (item.Name.Equals("svchost", StringComparison.OrdinalIgnoreCase) ||
+                    item.Name.Equals("svchost.exe", StringComparison.OrdinalIgnoreCase))
+                {
+                    string safeMsg = "svchost.exe hosts critical Windows system services and the entire group cannot be terminated.";
+                    _speechService.Speak(safeMsg, interrupt: true);
+                    txtAnnouncement.Text = safeMsg;
+                    return;
+                }
+
                 if (confirm)
                 {
                     string promptTarget = $"entire process trees of all {item.InstanceTotal} instances of {item.DisplayName}";
@@ -530,7 +618,14 @@ namespace ResourceAnalyzer
                 _speechService.Speak(msg, interrupt: true);
                 txtAnnouncement.Text = msg;
 
-                await RefreshProcessesAsync(isFullReset: true);
+                await RefreshProcessesAsync(isFullReset: true, preferredIndex: savedIndex);
+                return;
+            }
+
+            if (!_processService.CanTerminateProcess(item.Pid, item.Name, item.SubProcessDetail, out string blockReason))
+            {
+                _speechService.Speak(blockReason, interrupt: true);
+                txtAnnouncement.Text = blockReason;
                 return;
             }
 
@@ -559,20 +654,30 @@ namespace ResourceAnalyzer
                 }
             }
 
-            var (success, singleMsg) = await _processService.KillProcessTreeAsync(item.Pid, item.DisplayName);
+            var (success, singleMsg) = await _processService.KillProcessTreeAsync(item.Pid, item.DisplayName, item.SubProcessDetail);
             _speechService.Speak(singleMsg, interrupt: true);
             txtAnnouncement.Text = singleMsg;
 
-            await RefreshProcessesAsync(isFullReset: true);
+            await RefreshProcessesAsync(isFullReset: true, preferredIndex: savedIndex);
         }
 
         private async Task TryRestartSelectedProcessAsync()
         {
             if (lstProcesses.SelectedItem is not ProcessItem item) return;
 
+            int savedIndex = lstProcesses.SelectedIndex;
             int targetPid = item.Pid;
             if (item.IsGroupHeader)
             {
+                if (item.Name.Equals("svchost", StringComparison.OrdinalIgnoreCase) ||
+                    item.Name.Equals("svchost.exe", StringComparison.OrdinalIgnoreCase))
+                {
+                    string safeMsg = "svchost.exe hosts critical Windows system services and cannot be restarted.";
+                    _speechService.Speak(safeMsg, interrupt: true);
+                    txtAnnouncement.Text = safeMsg;
+                    return;
+                }
+
                 if (item.GroupChildPids.Count > 0)
                 {
                     targetPid = item.GroupChildPids[0];
@@ -584,11 +689,18 @@ namespace ResourceAnalyzer
                 }
             }
 
-            var (success, msg) = await _processService.RestartProcessAsync(targetPid, item.DisplayName);
+            if (!_processService.CanTerminateProcess(targetPid, item.Name, item.SubProcessDetail, out string blockReason))
+            {
+                _speechService.Speak(blockReason, interrupt: true);
+                txtAnnouncement.Text = blockReason;
+                return;
+            }
+
+            var (success, msg) = await _processService.RestartProcessAsync(targetPid, item.DisplayName, item.SubProcessDetail);
             _speechService.Speak(msg, interrupt: true);
             txtAnnouncement.Text = msg;
 
-            await RefreshProcessesAsync(isFullReset: true);
+            await RefreshProcessesAsync(isFullReset: true, preferredIndex: savedIndex);
         }
 
         #endregion
@@ -679,6 +791,105 @@ namespace ResourceAnalyzer
                 e.Handled = true;
                 _ = RefreshAllAsync(announce: true);
             }
+            else if (!Keyboard.Modifiers.HasFlag(ModifierKeys.Control) && !Keyboard.Modifiers.HasFlag(ModifierKeys.Alt))
+            {
+                char pressedChar = '\0';
+                if (e.Key >= Key.A && e.Key <= Key.Z)
+                {
+                    pressedChar = (char)('A' + (e.Key - Key.A));
+                }
+                else if (e.Key >= Key.D0 && e.Key <= Key.D9)
+                {
+                    pressedChar = (char)('0' + (e.Key - Key.D0));
+                }
+                else if (e.Key >= Key.NumPad0 && e.Key <= Key.NumPad9)
+                {
+                    pressedChar = (char)('0' + (e.Key - Key.NumPad0));
+                }
+
+                if (pressedChar != '\0' && _processItems.Count > 0)
+                {
+                    int currentIdx = lstProcesses.SelectedIndex;
+                    int count = _processItems.Count;
+                    int startIdx = (currentIdx >= 0) ? (currentIdx + 1) % count : 0;
+
+                    bool found = false;
+                    for (int i = 0; i < count; i++)
+                    {
+                        int checkIdx = (startIdx + i) % count;
+                        var item = _processItems[checkIdx];
+
+                        if (ProcessMatchesLetter(item, pressedChar))
+                        {
+                            found = true;
+                            e.Handled = true;
+                            lstProcesses.SelectedIndex = checkIdx;
+                            lstProcesses.ScrollIntoView(item);
+
+                            var container = (ListBoxItem)lstProcesses.ItemContainerGenerator.ContainerFromIndex(checkIdx);
+                            if (container == null)
+                            {
+                                lstProcesses.UpdateLayout();
+                                container = (ListBoxItem)lstProcesses.ItemContainerGenerator.ContainerFromIndex(checkIdx);
+                            }
+                            container?.Focus();
+
+                            _speechService.Speak(item.DisplayText, interrupt: true);
+                            txtAnnouncement.Text = item.DisplayText;
+                            break;
+                        }
+                    }
+
+                    if (!found)
+                    {
+                        e.Handled = true;
+                        string notFoundMsg = $"No process starting with {pressedChar}.";
+                        _speechService.Speak(notFoundMsg, interrupt: true);
+                        txtAnnouncement.Text = notFoundMsg;
+                    }
+                }
+            }
+        }
+
+        internal static bool ProcessMatchesLetter(ProcessItem item, char letter)
+        {
+            string charStr = letter.ToString();
+
+            // 1. Direct name and description prefix matches
+            if (item.Name.StartsWith(charStr, StringComparison.OrdinalIgnoreCase)) return true;
+            if (!string.IsNullOrWhiteSpace(item.Description) && item.Description.TrimStart().StartsWith(charStr, StringComparison.OrdinalIgnoreCase)) return true;
+            if (!string.IsNullOrWhiteSpace(item.DisplayName) && item.DisplayName.TrimStart().StartsWith(charStr, StringComparison.OrdinalIgnoreCase)) return true;
+            if (item.IsGroupChild && !string.IsNullOrWhiteSpace(item.SubProcessDetail) && item.SubProcessDetail.TrimStart().StartsWith(charStr, StringComparison.OrdinalIgnoreCase)) return true;
+
+            // 2. Word boundary matches in DisplayName (e.g. 'E' for "Microsoft Edge", 'C' for "Google Chrome")
+            string full = item.DisplayName;
+            if (!string.IsNullOrWhiteSpace(full))
+            {
+                // Strip trademark symbols so (R), (TM), (C) do not trigger false letter matches
+                string cleaned = full.Replace("(R)", " ", StringComparison.OrdinalIgnoreCase)
+                                     .Replace("(TM)", " ", StringComparison.OrdinalIgnoreCase)
+                                     .Replace("(C)", " ", StringComparison.OrdinalIgnoreCase)
+                                     .Replace("®", " ")
+                                     .Replace("™", " ")
+                                     .Replace("©", " ");
+
+                var parts = cleaned.Split(new[] { ' ', '(', ')', '[', ']', '-', '/', '\\', '_' }, StringSplitOptions.RemoveEmptyEntries);
+                foreach (var part in parts)
+                {
+                    if (string.Equals(part, "R", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(part, "TM", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    if (part.StartsWith(charStr, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
         }
 
         private async void LstProcesses_MouseDoubleClick(object sender, MouseButtonEventArgs e)
@@ -754,7 +965,7 @@ namespace ResourceAnalyzer
             {
                 try
                 {
-                    Clipboard.SetText(item.DisplayText);
+                    if (!SafeClipboard.TrySetText(item.DisplayText)) return;
                     _speechService.Speak($"Copied {item.Name} details to clipboard.", interrupt: true);
                     txtAnnouncement.Text = $"Copied {item.Name} details to clipboard.";
                 }
@@ -779,10 +990,11 @@ namespace ResourceAnalyzer
                 e.Handled = true;
                 if (lstFrozenApps.SelectedItem is ProcessItem item)
                 {
+                    int savedIndex = lstProcesses.SelectedIndex;
                     var (success, msg) = await _processService.KillProcessTreeAsync(item.Pid, item.DisplayName);
                     _speechService.Speak(msg, interrupt: true);
                     txtAnnouncement.Text = msg;
-                    await RefreshProcessesAsync(isFullReset: true);
+                    await RefreshProcessesAsync(isFullReset: true, preferredIndex: savedIndex);
                 }
             }
         }
@@ -791,10 +1003,11 @@ namespace ResourceAnalyzer
         {
             if (lstFrozenApps.SelectedItem is ProcessItem item)
             {
+                int savedIndex = lstProcesses.SelectedIndex;
                 var (success, msg) = await _processService.KillProcessTreeAsync(item.Pid, item.DisplayName);
                 _speechService.Speak(msg, interrupt: true);
                 txtAnnouncement.Text = msg;
-                await RefreshProcessesAsync(isFullReset: true);
+                await RefreshProcessesAsync(isFullReset: true, preferredIndex: savedIndex);
             }
         }
 
@@ -802,10 +1015,11 @@ namespace ResourceAnalyzer
         {
             if (lstFrozenApps.SelectedItem is ProcessItem item)
             {
+                int savedIndex = lstProcesses.SelectedIndex;
                 var (success, msg) = await _processService.KillProcessTreeAsync(item.Pid, item.DisplayName);
                 _speechService.Speak(msg, interrupt: true);
                 txtAnnouncement.Text = msg;
-                await RefreshProcessesAsync(isFullReset: true);
+                await RefreshProcessesAsync(isFullReset: true, preferredIndex: savedIndex);
             }
         }
 

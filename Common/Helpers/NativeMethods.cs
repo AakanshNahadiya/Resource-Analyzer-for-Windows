@@ -381,6 +381,7 @@ namespace ResourceAnalyzer.Helpers
             return null;
         }
 
+        public const uint PROCESS_TERMINATE = 0x0001;
         public const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
 
         [DllImport("kernel32.dll", SetLastError = true)]
@@ -389,6 +390,77 @@ namespace ResourceAnalyzer.Helpers
         [DllImport("kernel32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static extern bool CloseHandle(IntPtr hObject);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool IsProcessCritical(IntPtr hProcess, [MarshalAs(UnmanagedType.Bool)] out bool isCritical);
+
+        [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool ConvertStringSecurityDescriptorToSecurityDescriptor(
+            string StringSecurityDescriptor,
+            uint StringSDRevision,
+            out IntPtr SecurityDescriptor,
+            out uint SecurityDescriptorSize);
+
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        private static extern IntPtr CreateEvent(
+            ref SECURITY_ATTRIBUTES lpEventAttributes,
+            [MarshalAs(UnmanagedType.Bool)] bool bManualReset,
+            [MarshalAs(UnmanagedType.Bool)] bool bInitialState,
+            string lpName);
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct SECURITY_ATTRIBUTES
+        {
+            public int nLength;
+            public IntPtr lpSecurityDescriptor;
+            [MarshalAs(UnmanagedType.Bool)]
+            public bool bInheritHandle;
+        }
+
+        public static System.Threading.EventWaitHandle? CreateCrossIntegrityEvent(string name, bool manualReset, bool initialState)
+        {
+            try
+            {
+                // D:(A;;GA;;;WD) = Allow Generic All to Everyone (World)
+                // S:(ML;;NW;;;LW) = Mandatory Integrity Label: Low with No-Write-Up policy
+                const string sddl = "D:(A;;GA;;;WD)S:(ML;;NW;;;LW)";
+                if (ConvertStringSecurityDescriptorToSecurityDescriptor(sddl, 1, out IntPtr pSD, out _))
+                {
+                    try
+                    {
+                        var sa = new SECURITY_ATTRIBUTES
+                        {
+                            nLength = Marshal.SizeOf<SECURITY_ATTRIBUTES>(),
+                            lpSecurityDescriptor = pSD,
+                            bInheritHandle = false
+                        };
+                        IntPtr hEvent = CreateEvent(ref sa, manualReset, initialState, name);
+                        if (hEvent != IntPtr.Zero)
+                        {
+                            var safeHandle = new Microsoft.Win32.SafeHandles.SafeWaitHandle(hEvent, ownsHandle: true);
+                            var resetMode = manualReset ? System.Threading.EventResetMode.ManualReset : System.Threading.EventResetMode.AutoReset;
+                            return new System.Threading.EventWaitHandle(initialState, resetMode) { SafeWaitHandle = safeHandle };
+                        }
+                    }
+                    finally
+                    {
+                        LocalFree(pSD);
+                    }
+                }
+            }
+            catch { }
+
+            try
+            {
+                return new System.Threading.EventWaitHandle(initialState, manualReset ? System.Threading.EventResetMode.ManualReset : System.Threading.EventResetMode.AutoReset, name);
+            }
+            catch
+            {
+                return null;
+            }
+        }
 
         [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
         [return: MarshalAs(UnmanagedType.Bool)]
@@ -642,6 +714,132 @@ namespace ResourceAnalyzer.Helpers
 
         #endregion
 
+        #region Processor & Topology
+
+        public const uint PF_VIRT_FIRMWARE_ENABLED = 21;
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool IsProcessorFeaturePresent(uint ProcessorFeature);
+
+        public enum LOGICAL_PROCESSOR_RELATIONSHIP
+        {
+            RelationProcessorCore = 0,
+            RelationNumaNode = 1,
+            RelationCache = 2,
+            RelationProcessorPackage = 3,
+            RelationGroup = 4,
+            RelationAll = 0xffff
+        }
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool GetLogicalProcessorInformationEx(
+            LOGICAL_PROCESSOR_RELATIONSHIP RelationshipType,
+            IntPtr Buffer,
+            ref uint ReturnedLength);
+
+        public record struct CpuTopologyInfo(
+            int PhysicalCores,
+            int PerformanceCores,
+            int EfficiencyCores,
+            int Sockets,
+            long L1DataCacheBytes,
+            long L1InstructionCacheBytes,
+            long L2CacheBytes,
+            long L3CacheBytes);
+
+        public static CpuTopologyInfo? GetCpuTopology()
+        {
+            try
+            {
+                uint len = 0;
+                GetLogicalProcessorInformationEx(LOGICAL_PROCESSOR_RELATIONSHIP.RelationAll, IntPtr.Zero, ref len);
+                if (len == 0) return null;
+
+                IntPtr buffer = Marshal.AllocHGlobal((int)len);
+                try
+                {
+                    if (!GetLogicalProcessorInformationEx(LOGICAL_PROCESSOR_RELATIONSHIP.RelationAll, buffer, ref len))
+                        return null;
+
+                    int offset = 0;
+                    int cores = 0;
+                    int pCores = 0;
+                    int eCores = 0;
+                    int sockets = 0;
+                    long l1d = 0;
+                    long l1i = 0;
+                    long l2 = 0;
+                    long l3 = 0;
+
+                    while (offset < len)
+                    {
+                        IntPtr ptr = new IntPtr(buffer.ToInt64() + offset);
+                        int relationship = Marshal.ReadInt32(ptr, 0);
+                        int size = Marshal.ReadInt32(ptr, 4);
+                        if (size <= 0) break;
+
+                        if (relationship == (int)LOGICAL_PROCESSOR_RELATIONSHIP.RelationProcessorCore)
+                        {
+                            cores++;
+                            byte efficiencyClass = Marshal.ReadByte(ptr, 9);
+                            if (efficiencyClass == 0) eCores++;
+                            else pCores++;
+                        }
+                        else if (relationship == (int)LOGICAL_PROCESSOR_RELATIONSHIP.RelationProcessorPackage)
+                        {
+                            sockets++;
+                        }
+                        else if (relationship == (int)LOGICAL_PROCESSOR_RELATIONSHIP.RelationCache)
+                        {
+                            byte level = Marshal.ReadByte(ptr, 8);
+                            int cacheSize = Marshal.ReadInt32(ptr, 12);
+                            int cacheType = Marshal.ReadInt32(ptr, 16); // 1 = Instruction, 2 = Data, 0 = Unified
+
+                            if (level == 1)
+                            {
+                                if (cacheType == 1) l1i += cacheSize;
+                                else l1d += cacheSize;
+                            }
+                            else if (level == 2)
+                            {
+                                l2 += cacheSize;
+                            }
+                            else if (level == 3)
+                            {
+                                l3 += cacheSize;
+                            }
+                        }
+
+                        offset += size;
+                    }
+
+                    if (cores <= 0) return null;
+
+                    return new CpuTopologyInfo(
+                        cores,
+                        pCores,
+                        eCores,
+                        Math.Max(1, sockets),
+                        l1d,
+                        l1i,
+                        l2,
+                        l3);
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(buffer);
+                }
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        #endregion
+
         #region Display
 
         public const int ENUM_CURRENT_SETTINGS = -1;
@@ -801,7 +999,56 @@ namespace ResourceAnalyzer.Helpers
         public static extern int DisplayConfigGetDeviceInfo(
             ref DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO requestPacket);
 
-        public static (bool Supported, bool Enabled, uint BitsPerChannel)? QueryDisplayHdrStatus()
+        public const uint DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME = 2;
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        public struct DISPLAYCONFIG_TARGET_DEVICE_NAME
+        {
+            public DISPLAYCONFIG_DEVICE_INFO_HEADER header;
+            public uint flags;
+            public uint outputTechnology;
+            public ushort edidManufactureId;
+            public ushort edidProductCodeId;
+            public uint connectorInstance;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)]
+            public string monitorFriendlyDeviceName;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)]
+            public string monitorDevicePath;
+        }
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        public static extern int DisplayConfigGetDeviceInfo(
+            ref DISPLAYCONFIG_TARGET_DEVICE_NAME requestPacket);
+
+        public static string FormatOutputTechnology(uint tech)
+        {
+            return tech switch
+            {
+                0x80000000 => "Internal Display (Built-in Screen / eDP)",
+                11 => "Embedded DisplayPort (eDP)",
+                10 => "DisplayPort",
+                18 => "DisplayPort over USB-C",
+                5 => "HDMI",
+                4 => "DVI",
+                0 => "VGA (HD15)",
+                6 => "LVDS (Internal Laptop Panel)",
+                15 => "Miracast (Wireless Display)",
+                16 => "Indirect Display (USB / Dock)",
+                17 => "Virtual Display",
+                1 => "S-Video",
+                2 => "Composite Video",
+                3 => "Component Video",
+                8 => "D-Terminal",
+                9 => "SDI",
+                12 => "UDI",
+                13 => "Embedded UDI",
+                14 => "SDTV Dongle",
+                0xFFFFFFFF => "External Display",
+                _ => "Standard Display"
+            };
+        }
+
+        public static (bool HdrSupported, bool HdrEnabled, uint BitsPerChannel, string? ConnectionTechnology, string? FriendlyName)? QueryDisplayCcdInfo()
         {
             try
             {
@@ -813,24 +1060,70 @@ namespace ResourceAnalyzer.Helpers
                     err = QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS, ref pathCount, paths, ref modeCount, modes, IntPtr.Zero);
                     if (err == 0)
                     {
-                        for (int i = 0; i < pathCount; i++)
+                        var primaryPath = paths[0];
+                        bool supported = false;
+                        bool enabled = false;
+                        uint bitsPerChannel = 8;
+                        string? friendlyName = null;
+
+                        // 1. Connection technology from active path target
+                        uint tech = primaryPath.targetInfo.outputTechnology;
+                        string connectionTech = FormatOutputTechnology(tech);
+
+                        // 2. Query target device friendly name
+                        try
+                        {
+                            var targetName = new DISPLAYCONFIG_TARGET_DEVICE_NAME();
+                            targetName.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME;
+                            targetName.header.size = (uint)Marshal.SizeOf(typeof(DISPLAYCONFIG_TARGET_DEVICE_NAME));
+                            targetName.header.adapterId = primaryPath.targetInfo.adapterId;
+                            targetName.header.id = primaryPath.targetInfo.id;
+                            if (DisplayConfigGetDeviceInfo(ref targetName) == 0)
+                            {
+                                if (!string.IsNullOrWhiteSpace(targetName.monitorFriendlyDeviceName))
+                                {
+                                    friendlyName = targetName.monitorFriendlyDeviceName.Trim();
+                                }
+                                if (targetName.outputTechnology != 0 && (tech == 0 || tech == 0xFFFFFFFF))
+                                {
+                                    connectionTech = FormatOutputTechnology(targetName.outputTechnology);
+                                }
+                            }
+                        }
+                        catch { }
+
+                        // 3. Query Advanced Color (HDR) status
+                        try
                         {
                             var packet = new DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO();
                             packet.header.type = 9; // DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO
                             packet.header.size = (uint)Marshal.SizeOf(typeof(DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO));
-                            packet.header.adapterId = paths[i].targetInfo.adapterId;
-                            packet.header.id = paths[i].targetInfo.id;
+                            packet.header.adapterId = primaryPath.targetInfo.adapterId;
+                            packet.header.id = primaryPath.targetInfo.id;
                             if (DisplayConfigGetDeviceInfo(ref packet) == 0)
                             {
-                                bool supported = (packet.value & 0x1) != 0;
-                                bool enabled = (packet.value & 0x2) != 0;
-                                return (supported, enabled, packet.bitsPerColorChannel);
+                                supported = (packet.value & 0x1) != 0;
+                                enabled = (packet.value & 0x2) != 0;
+                                bitsPerChannel = packet.bitsPerColorChannel;
                             }
                         }
+                        catch { }
+
+                        return (supported, enabled, bitsPerChannel, connectionTech, friendlyName);
                     }
                 }
             }
             catch { }
+            return null;
+        }
+
+        public static (bool Supported, bool Enabled, uint BitsPerChannel)? QueryDisplayHdrStatus()
+        {
+            var info = QueryDisplayCcdInfo();
+            if (info.HasValue)
+            {
+                return (info.Value.HdrSupported, info.Value.HdrEnabled, info.Value.BitsPerChannel);
+            }
             return null;
         }
 
@@ -843,6 +1136,7 @@ namespace ResourceAnalyzer.Helpers
         public const int TCP_TABLE_OWNER_PID_ALL = 5;
         public const int UDP_TABLE_OWNER_PID = 1;
         public const uint NO_ERROR = 0;
+        public const uint ERROR_INSUFFICIENT_BUFFER = 122;
 
         [DllImport("iphlpapi.dll", SetLastError = true)]
         public static extern uint GetExtendedTcpTable(
@@ -897,7 +1191,7 @@ namespace ResourceAnalyzer.Helpers
         [DllImport("wlanapi.dll", SetLastError = true)]
         public static extern void WlanFreeMemory(IntPtr pMemory);
 
-        public static string? QueryActiveWifiBand()
+        public static (int Channel, string Band)? QueryActiveWifiChannelAndBand()
         {
             try
             {
@@ -922,12 +1216,14 @@ namespace ResourceAnalyzer.Helpers
                                         try
                                         {
                                             int channel = Marshal.ReadInt32(data);
-                                            if (channel is >= 1 and <= 14)
-                                                return "2.4 GHz";
-                                            if (channel is >= 32 and <= 177)
-                                                return "5 GHz";
-                                            if (channel > 177)
-                                                return "6 GHz";
+                                            string band = channel switch
+                                            {
+                                                >= 1 and <= 14 => "2.4 GHz",
+                                                >= 32 and <= 177 => "5 GHz",
+                                                > 177 => "6 GHz",
+                                                _ => "Standard"
+                                            };
+                                            return (channel, band);
                                         }
                                         finally
                                         {
@@ -950,6 +1246,276 @@ namespace ResourceAnalyzer.Helpers
             }
             catch { }
             return null;
+        }
+
+        public static string? QueryActiveWifiBand()
+        {
+            var result = QueryActiveWifiChannelAndBand();
+            return result?.Band;
+        }
+
+        #endregion
+
+        #region Windows Core Audio APIs (WASAPI / MMDeviceAPI)
+
+        public enum EDataFlow
+        {
+            eRender = 0,
+            eCapture = 1,
+            eAll = 2
+        }
+
+        public enum ERole
+        {
+            eConsole = 0,
+            eMultimedia = 1,
+            eCommunications = 2
+        }
+
+        public enum EndpointFormFactor
+        {
+            RemoteNetworkDevice = 0,
+            Speakers = 1,
+            LineLevel = 2,
+            Headphones = 3,
+            Microphone = 4,
+            Headset = 5,
+            Handset = 6,
+            UnknownDigitalPassthrough = 7,
+            SPDIF = 8,
+            DigitalAudioDisplayDevice = 9,
+            UnknownFormFactor = 10
+        }
+
+        [ComImport]
+        [Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")]
+        internal class MMDeviceEnumeratorComObject { }
+
+        [Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        internal interface IMMDeviceEnumerator
+        {
+            int EnumAudioEndpoints(EDataFlow dataFlow, uint dwStateMask, out IntPtr ppDevices);
+            [PreserveSig]
+            int GetDefaultAudioEndpoint(EDataFlow dataFlow, ERole role, out IMMDevice ppEndpoint);
+            int GetDevice([MarshalAs(UnmanagedType.LPWStr)] string pwstrId, out IMMDevice ppDevice);
+            int RegisterEndpointNotificationCallback(IntPtr pClient);
+            int UnregisterEndpointNotificationCallback(IntPtr pClient);
+        }
+
+        [Guid("D666063F-1587-4E43-81F1-B948E807363F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        internal interface IMMDevice
+        {
+            [PreserveSig]
+            int Activate(ref Guid iid, uint dwClsCtx, IntPtr pActivationParams, [MarshalAs(UnmanagedType.IUnknown)] out object ppInterface);
+            [PreserveSig]
+            int OpenPropertyStore(uint stgmAccess, out IPropertyStore ppProperties);
+            [PreserveSig]
+            int GetId([MarshalAs(UnmanagedType.LPWStr)] out string ppstrId);
+            [PreserveSig]
+            int GetState(out uint pdwState);
+        }
+
+        [Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        internal interface IPropertyStore
+        {
+            [PreserveSig]
+            int GetCount(out uint cProps);
+            [PreserveSig]
+            int GetAt(uint iProp, out PROPERTYKEY pkey);
+            [PreserveSig]
+            int GetValue(ref PROPERTYKEY key, out PROPVARIANT pv);
+            [PreserveSig]
+            int SetValue(ref PROPERTYKEY key, ref PROPVARIANT pv);
+            [PreserveSig]
+            int Commit();
+        }
+
+        [Guid("5CDF2C82-841E-4546-9722-0CF74078229A"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        internal interface IAudioEndpointVolume
+        {
+            int RegisterControlChangeNotify(IntPtr pNotify);
+            int UnregisterControlChangeNotify(IntPtr pNotify);
+            int GetChannelCount(out uint pnChannelCount);
+            int SetMasterVolumeLevel(float fLevelDB, ref Guid pguidEventContext);
+            int SetMasterVolumeLevelScalar(float fLevel, ref Guid pguidEventContext);
+            int GetMasterVolumeLevel(out float pfLevelDB);
+            [PreserveSig]
+            int GetMasterVolumeLevelScalar(out float pfLevel);
+            int SetMute(bool bMute, ref Guid pguidEventContext);
+            [PreserveSig]
+            int GetMute(out bool pbMute);
+            int GetVolumeStepInfo(out uint pnStep, out uint pnStepCount);
+            int VolumeStepUp(ref Guid pguidEventContext);
+            int VolumeStepDown(ref Guid pguidEventContext);
+            int QueryHardwareSupport(out uint pdwHardwareSupportMask);
+            int GetVolumeRange(out float pflVolumeMindB, out float pflVolumeMaxdB, out float pflVolumeIncrementdB);
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct PROPERTYKEY
+        {
+            public Guid fmtid;
+            public uint pid;
+
+            public PROPERTYKEY(Guid guid, uint pid)
+            {
+                this.fmtid = guid;
+                this.pid = pid;
+            }
+        }
+
+        [StructLayout(LayoutKind.Explicit)]
+        public struct PROPVARIANT
+        {
+            [FieldOffset(0)] public ushort vt;
+            [FieldOffset(2)] public ushort wReserved1;
+            [FieldOffset(4)] public ushort wReserved2;
+            [FieldOffset(6)] public ushort wReserved3;
+            [FieldOffset(8)] public IntPtr pwszVal;
+            [FieldOffset(8)] public uint uintVal;
+            [FieldOffset(8)] public BLOB blob;
+
+            public void Clear()
+            {
+                PropVariantClear(ref this);
+            }
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct BLOB
+        {
+            public uint cbSize;
+            public IntPtr pBlobData;
+        }
+
+        [DllImport("ole32.dll")]
+        public static extern int PropVariantClear(ref PROPVARIANT pvar);
+
+        [StructLayout(LayoutKind.Sequential, Pack = 2)]
+        public struct WAVEFORMATEX
+        {
+            public ushort wFormatTag;
+            public ushort nChannels;
+            public uint nSamplesPerSec;
+            public uint nAvgBytesPerSec;
+            public ushort nBlockAlign;
+            public ushort wBitsPerSample;
+            public ushort cbSize;
+        }
+
+        public static readonly PROPERTYKEY PKEY_Device_FriendlyName = new(new Guid("A45C254E-DF1C-4EFD-8020-67D146A850E0"), 14);
+        public static readonly PROPERTYKEY PKEY_AudioEndpoint_FormFactor = new(new Guid("1DA5D803-D492-4EDD-8C23-E0C0FFEE7F0E"), 0);
+        public static readonly PROPERTYKEY PKEY_AudioEngine_DeviceFormat = new(new Guid("F19F064D-082C-4E27-BC73-6882A1BB8E4C"), 0);
+
+        public static readonly Guid IID_IAudioEndpointVolume = new("5CDF2C82-841E-4546-9722-0CF74078229A");
+
+        public struct AudioDeviceInfo
+        {
+            public string Name;
+            public float Volume; // 0.0 - 1.0
+            public bool IsMuted;
+            public string FormFactor;
+            public uint SampleRate;
+            public ushort BitsPerSample;
+            public ushort Channels;
+        }
+
+        public static AudioDeviceInfo? GetDefaultAudioDeviceInfo(EDataFlow flow = EDataFlow.eRender)
+        {
+            try
+            {
+                var enumerator = (IMMDeviceEnumerator)new MMDeviceEnumeratorComObject();
+                int hr = enumerator.GetDefaultAudioEndpoint(flow, ERole.eMultimedia, out var device);
+                if (hr != 0 || device == null)
+                {
+                    hr = enumerator.GetDefaultAudioEndpoint(flow, ERole.eConsole, out device);
+                }
+                if (hr != 0 || device == null)
+                {
+                    hr = enumerator.GetDefaultAudioEndpoint(flow, ERole.eCommunications, out device);
+                }
+                if (hr != 0 || device == null) return null;
+
+                var info = new AudioDeviceInfo
+                {
+                    Name = flow == EDataFlow.eCapture ? "Microphone" : "Audio Device",
+                    FormFactor = flow == EDataFlow.eCapture ? "Microphone" : "Speakers",
+                    Volume = 0f,
+                    IsMuted = false
+                };
+
+                if (device.OpenPropertyStore(0 /* STGM_READ */, out var propStore) == 0 && propStore != null)
+                {
+                    var keyName = PKEY_Device_FriendlyName;
+                    if (propStore.GetValue(ref keyName, out var pvName) == 0)
+                    {
+                        if (pvName.vt == 31 /* VT_LPWSTR */ && pvName.pwszVal != IntPtr.Zero)
+                        {
+                            info.Name = Marshal.PtrToStringUni(pvName.pwszVal) ?? info.Name;
+                        }
+                        pvName.Clear();
+                    }
+
+                    var keyForm = PKEY_AudioEndpoint_FormFactor;
+                    if (propStore.GetValue(ref keyForm, out var pvForm) == 0)
+                    {
+                        if (pvForm.vt == 19 /* VT_UI4 */)
+                        {
+                            info.FormFactor = ((EndpointFormFactor)pvForm.uintVal) switch
+                            {
+                                EndpointFormFactor.Speakers => "Speakers",
+                                EndpointFormFactor.Headphones => "Headphones",
+                                EndpointFormFactor.LineLevel => "Line Level",
+                                EndpointFormFactor.Microphone => "Microphone",
+                                EndpointFormFactor.Headset => "Headset",
+                                EndpointFormFactor.Handset => "Handset",
+                                EndpointFormFactor.SPDIF => "SPDIF Digital",
+                                EndpointFormFactor.DigitalAudioDisplayDevice => "HDMI / DisplayPort Audio",
+                                _ => flow == EDataFlow.eCapture ? "Microphone" : "Speakers"
+                            };
+                        }
+                        pvForm.Clear();
+                    }
+
+                    var keyFormat = PKEY_AudioEngine_DeviceFormat;
+                    if (propStore.GetValue(ref keyFormat, out var pvFormat) == 0)
+                    {
+                        if (pvFormat.vt == 65 /* VT_BLOB */ && pvFormat.blob.cbSize >= 18 && pvFormat.blob.pBlobData != IntPtr.Zero)
+                        {
+                            var wfx = Marshal.PtrToStructure<WAVEFORMATEX>(pvFormat.blob.pBlobData);
+                            info.SampleRate = wfx.nSamplesPerSec;
+                            info.BitsPerSample = wfx.wBitsPerSample;
+                            info.Channels = wfx.nChannels;
+                        }
+                        pvFormat.Clear();
+                    }
+
+                    Marshal.ReleaseComObject(propStore);
+                }
+
+                var iidVolume = IID_IAudioEndpointVolume;
+                if (device.Activate(ref iidVolume, 1 /* CLSCTX_INPROC_SERVER */, IntPtr.Zero, out var volObj) == 0 && volObj is IAudioEndpointVolume volumeCtrl)
+                {
+                    if (volumeCtrl.GetMasterVolumeLevelScalar(out float vol) == 0)
+                    {
+                        info.Volume = vol;
+                    }
+                    if (volumeCtrl.GetMute(out bool mute) == 0)
+                    {
+                        info.IsMuted = mute;
+                    }
+                    Marshal.ReleaseComObject(volObj);
+                }
+
+                Marshal.ReleaseComObject(device);
+                Marshal.ReleaseComObject(enumerator);
+
+                return info;
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         #endregion

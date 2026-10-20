@@ -12,11 +12,14 @@ namespace ResourceAnalyzer
     {
         private const string MutexName = "ResourceAnalyzer_SingleInstance_Mutex";
         private const string SignalEventName = "ResourceAnalyzer_ShowSignalEvent";
+        private const string ExitSignalEventName = "ResourceAnalyzer_ExitSignalEvent";
 
         private static Mutex? _mutex;
         private static EventWaitHandle? _signalEvent;
+        private static EventWaitHandle? _exitSignalEvent;
         private static bool _ownsMutex = false;
         private static RegisteredWaitHandle? _registeredWait;
+        private static RegisteredWaitHandle? _registeredExitWait;
 
         protected override void OnStartup(StartupEventArgs e)
         {
@@ -83,6 +86,7 @@ namespace ResourceAnalyzer
                     }
 
                     Shutdown();
+                    Environment.Exit(0);
                     return;
                 }
                 else
@@ -93,7 +97,8 @@ namespace ResourceAnalyzer
 
             try
             {
-                _signalEvent = new EventWaitHandle(false, EventResetMode.AutoReset, SignalEventName);
+                _signalEvent = NativeMethods.CreateCrossIntegrityEvent(SignalEventName, false, false);
+                _exitSignalEvent = NativeMethods.CreateCrossIntegrityEvent(ExitSignalEventName, false, false);
             }
             catch (Exception ex)
             {
@@ -130,6 +135,33 @@ namespace ResourceAnalyzer
                     false);
             }
 
+            // Register wait handle listening for clean exit signal (e.g. from setup or uninstaller)
+            if (_exitSignalEvent != null)
+            {
+                _registeredExitWait = ThreadPool.RegisterWaitForSingleObject(
+                    _exitSignalEvent,
+                    (state, timedOut) =>
+                    {
+                        if (!timedOut)
+                        {
+                            try
+                            {
+                                Dispatcher.Invoke(() =>
+                                {
+                                    mainWindow.ExitApplication();
+                                });
+                            }
+                            catch { }
+
+                            // Immediate process termination guarantee to release file locks on clrjit.dll etc.
+                            _ = System.Threading.Tasks.Task.Delay(300).ContinueWith(_ => Environment.Exit(0));
+                        }
+                    },
+                    null,
+                    -1,
+                    false);
+            }
+
             bool startMinimized = e.Args.Any(a => a.Equals("--minimized", StringComparison.OrdinalIgnoreCase));
             mainWindow.InitializeApp(startMinimized);
         }
@@ -137,7 +169,9 @@ namespace ResourceAnalyzer
         protected override void OnExit(ExitEventArgs e)
         {
             _registeredWait?.Unregister(null);
+            _registeredExitWait?.Unregister(null);
             _signalEvent?.Dispose();
+            _exitSignalEvent?.Dispose();
             if (_ownsMutex)
             {
                 try
@@ -148,6 +182,7 @@ namespace ResourceAnalyzer
             }
             _mutex?.Dispose();
             base.OnExit(e);
+            Environment.Exit(0);
         }
     }
 }

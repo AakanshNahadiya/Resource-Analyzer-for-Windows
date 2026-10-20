@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 
 namespace ResourceAnalyzer.Helpers
 {
@@ -104,6 +104,20 @@ namespace ResourceAnalyzer.Helpers
                 return $"{Math.Round(decTb):F0} TB Hardware";
             }
             return $"{Math.Round(decGb):F0} GB Hardware";
+        }
+
+        /// <summary>
+        /// Returns common resolution standard name if matched (e.g. "(4K Ultra HD)", "(Full HD)"), or empty string.
+        /// </summary>
+        public static string GetResolutionStandard(int width, int height)
+        {
+            if (width == 3840 && height == 2160) return "(4K Ultra HD)";
+            if (width == 2560 && height == 1440) return "(2K QHD)";
+            if (width == 1920 && height == 1080) return "(Full HD)";
+            if (width == 1600 && height == 900) return "(HD+)";
+            if (width == 1366 && height == 768) return "(HD)";
+            if (width == 1280 && height == 720) return "(720p HD)";
+            return string.Empty;
         }
     }
 }

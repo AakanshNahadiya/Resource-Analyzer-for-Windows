@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
+using ResourceAnalyzer.Helpers;
 using ResourceAnalyzer.Models;
 using ResourceAnalyzer.Views;
 
@@ -22,6 +23,7 @@ namespace ResourceAnalyzer
             AddResourceItem("ram", "RAM");
             AddResourceItem("gpu", "GPU");
             AddResourceItem("display", "Display");
+            AddResourceItem("audio", "Audio");
             AddResourceItem("network", "Network");
             AddResourceItem("disk", "Disk 0");
             if (_monitorService.HasBattery) AddResourceItem("battery", "Battery");
@@ -155,7 +157,7 @@ namespace ResourceAnalyzer
             ShowSelectedResourceDetail();
         }
 
-        private async void ShowSelectedResourceDetail()
+        private void ShowSelectedResourceDetail()
         {
             if (_isOpeningResourceDetail) return;
             _isOpeningResourceDetail = true;
@@ -164,13 +166,15 @@ namespace ResourceAnalyzer
             {
                 if (lstResources.SelectedItem is ResourceItem item)
                 {
-                    string details = await _hardwareDetailService.GetHardwareDetailsAsync(item.Id);
-                    var dlg = new ResourceDetailDialog(item.Name, details, _hardwareDetailService, _speechService, item.Id, _settingsService.CurrentSettings.RefreshIntervalSeconds)
+                    string initialDetails = !string.IsNullOrWhiteSpace(item.Details)
+                        ? item.Details
+                        : item.Summary;
+
+                    var dlg = new ResourceDetailDialog(item.Name, initialDetails, _hardwareDetailService, _speechService, item.Id, _settingsService.CurrentSettings.RefreshIntervalSeconds)
                     {
                         Owner = this
                     };
                     dlg.ShowDialog();
-                    TrimProcessMemory();
                 }
             }
             catch (Exception ex)
@@ -180,6 +184,23 @@ namespace ResourceAnalyzer
             finally
             {
                 _isOpeningResourceDetail = false;
+            }
+        }
+
+        private void CtxResourceDetails_Click(object sender, RoutedEventArgs e)
+        {
+            ShowSelectedResourceDetail();
+        }
+
+        private void CtxResourceCopyDetails_Click(object sender, RoutedEventArgs e)
+        {
+            if (lstResources.SelectedItem is ResourceItem resItem)
+            {
+                if (SafeClipboard.TrySetText(resItem.DisplayText))
+                {
+                    _speechService.Speak($"Copied {resItem.Summary} to clipboard.", interrupt: true);
+                    txtAnnouncement.Text = $"Copied {resItem.Summary} to clipboard.";
+                }
             }
         }
     }

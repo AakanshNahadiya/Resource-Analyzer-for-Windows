@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -237,7 +237,7 @@ namespace ResourceAnalyzer
 
             try
             {
-                Clipboard.SetText(item.DisplayText);
+                if (!SafeClipboard.TrySetText(item.DisplayText)) return;
                 _speechService.Speak($"Copied port {item.LocalPort} details to clipboard.", interrupt: true);
                 txtAnnouncement.Text = $"Copied port {item.LocalPort} details to clipboard.";
             }

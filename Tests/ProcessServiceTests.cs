@@ -10,29 +10,13 @@ namespace ResourceAnalyzer.Tests
     public class ProcessServiceTests
     {
         [Fact]
-        public async Task GetProcessesAsync_WhenHideSystemProcesses_HidesSvchostAndKernel()
+        public async Task GetProcessesAsync_IncludesKernelOrServices()
         {
             var service = new ProcessService();
-            var processes = await service.GetProcessesAsync(searchTerm: string.Empty, sortBy: "Memory", hideSystemProcesses: true);
+            var processes = await service.GetProcessesAsync(searchTerm: string.Empty, sortBy: "Memory");
 
             Assert.NotEmpty(processes);
-            Assert.DoesNotContain(processes, p => p.Pid == 0 || p.Pid == 4);
-            Assert.DoesNotContain(processes, p => p.Name.Equals("svchost", System.StringComparison.OrdinalIgnoreCase));
-            Assert.DoesNotContain(processes, p => p.Name.Equals("dwm", System.StringComparison.OrdinalIgnoreCase));
-            Assert.DoesNotContain(processes, p => p.Name.Equals("sihost", System.StringComparison.OrdinalIgnoreCase));
-            Assert.DoesNotContain(processes, p => p.Name.Equals("RuntimeBroker", System.StringComparison.OrdinalIgnoreCase));
-            Assert.DoesNotContain(processes, p => p.Name.Equals("audiodg", System.StringComparison.OrdinalIgnoreCase));
-            Assert.DoesNotContain(processes, p => p.DisplayName.Equals("audiodg.exe", System.StringComparison.OrdinalIgnoreCase));
-        }
-
-        [Fact]
-        public async Task GetProcessesAsync_WhenExposeAllProcesses_IncludesKernelOrServices()
-        {
-            var service = new ProcessService();
-            var processes = await service.GetProcessesAsync(searchTerm: string.Empty, sortBy: "Memory", hideSystemProcesses: false);
-
-            Assert.NotEmpty(processes);
-            // svchost or dwm or System (PID 4) should be present when system processes are exposed
+            // svchost or dwm or System (PID 4) should be present in process list
             Assert.Contains(processes, p => p.Name.Equals("svchost", System.StringComparison.OrdinalIgnoreCase) ||
                                            p.Name.Equals("dwm", System.StringComparison.OrdinalIgnoreCase) ||
                                            p.Pid == 4);
@@ -550,6 +534,53 @@ namespace ResourceAnalyzer.Tests
 
             Assert.Single(actionable);
             Assert.Equal("chrome.exe", actionable[0].Name);
+        }
+
+        [Theory]
+        [InlineData("MsMpEng")]
+        [InlineData("MsMpEng.exe")]
+        [InlineData("SecurityHealthService")]
+        public void CanTerminateProcess_ProtectsAntiMalwarePPL(string processName)
+        {
+            var service = new ProcessService();
+            bool canTerminate = service.CanTerminateProcess(5555, processName, null, out string reason);
+
+            Assert.False(canTerminate);
+            Assert.Contains("protected Windows antimalware process", reason);
+        }
+
+        [Theory]
+        [InlineData("RpcSs")]
+        [InlineData("DcomLaunch")]
+        [InlineData("PlugPlay")]
+        [InlineData("LSM")]
+        [InlineData("SamSs")]
+        [InlineData("BrokerInfrastructure")]
+        public void CanTerminateProcess_ProtectsCriticalSvchostServices(string serviceName)
+        {
+            var service = new ProcessService();
+            string subDetail = $"Remote Procedure Call [{serviceName}]";
+            bool canTerminate = service.CanTerminateProcess(6666, "svchost.exe", subDetail, out string reason);
+
+            Assert.False(canTerminate);
+            Assert.Contains("hosts the critical Windows service", reason);
+        }
+
+        [Fact]
+        public void GetProcessDescription_ResolvesSvchostFriendlyName()
+        {
+            string desc = ProcessService.GetProcessDescription(1234, "svchost");
+            Assert.Equal("Host Process for Windows Services", desc);
+        }
+
+        [Fact]
+        public async Task RestartProcessAsync_FailsGracefullyOnNonExistentPid()
+        {
+            var service = new ProcessService();
+            var (success, msg) = await service.RestartProcessAsync(9999999, "NonExistentApp.exe");
+
+            Assert.False(success);
+            Assert.Contains("executable file path could not be determined", msg);
         }
     }
 }

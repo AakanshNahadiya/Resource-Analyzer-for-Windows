@@ -70,7 +70,6 @@ namespace ResourceAnalyzer
                 cmbHighRamUnit.SelectedIndex = s.HighRamLimitUnit.Equals("GB", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
                 txtHighCpuPercent.Text = s.HighCpuLimitPercent > 0 ? s.HighCpuLimitPercent.ToString("0.##", CultureInfo.InvariantCulture) : string.Empty;
 
-
                 // Auto-refresh combo
                 cmbRefreshInterval.SelectedIndex = s.RefreshIntervalSeconds switch
                 {
@@ -81,6 +80,12 @@ namespace ResourceAnalyzer
                     0 => 4,
                     _ => 1
                 };
+
+                // Live Internet Ping in Network Details combo
+                if (cmbNetworkPing != null)
+                {
+                    cmbNetworkPing.SelectedIndex = s.EnableNetworkPing ? 1 : 0;
+                }
 
                 // Appearance theme combo
                 cmbTheme.SelectedIndex = s.Theme switch
@@ -150,7 +155,6 @@ namespace ResourceAnalyzer
                     ? Visibility.Visible
                     : Visibility.Collapsed;
             }
-
         }
 
         private void ApplySettingsToRuntime()
@@ -177,7 +181,6 @@ namespace ResourceAnalyzer
 
             var s = _settingsService.CurrentSettings;
             s.ConfirmBeforeEndTask = (cmbProcessManager.SelectedIndex == 0);
-            s.HideSystemProcesses = false; // Always expose all processes
 
             SaveSettingsFromUI(silent: true);
             if (tabProcesses.IsSelected)
@@ -236,7 +239,6 @@ namespace ResourceAnalyzer
             SaveSettingsFromUI(silent: true);
         }
 
-
         private void CmbStartupTray_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (_isUpdatingUI) return;
@@ -289,7 +291,6 @@ namespace ResourceAnalyzer
             SaveSettingsFromUI(silent: true);
         }
 
-
         private void CmbRefreshInterval_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (_isUpdatingUI) return;
@@ -308,6 +309,17 @@ namespace ResourceAnalyzer
             _settingsService.CurrentSettings.RefreshIntervalSeconds = seconds;
             ApplySettingsToRuntime();
             _settingsService.Save();
+        }
+
+        private void CmbNetworkPing_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_isUpdatingUI || cmbNetworkPing == null) return;
+            bool enabled = cmbNetworkPing.SelectedIndex == 1;
+            _settingsService.CurrentSettings.EnableNetworkPing = enabled;
+            _settingsService.Save();
+
+            string status = enabled ? "enabled" : "disabled";
+            _speechService?.Speak($"Live Internet Ping in Network Details {status}", interrupt: true);
         }
 
         private void CmbTheme_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -366,12 +378,10 @@ namespace ResourceAnalyzer
         {
             var s = _settingsService.CurrentSettings;
 
-            // Process manager options
             // Process manager options (Prompt before ending task)
             if (cmbProcessManager != null && cmbProcessManager.SelectedIndex >= 0)
             {
                 s.ConfirmBeforeEndTask = (cmbProcessManager.SelectedIndex == 0);
-                s.HideSystemProcesses = false;
             }
 
             // Process format options
@@ -399,7 +409,6 @@ namespace ResourceAnalyzer
             }
 
             UpdateGroupToggleButtonText();
-
 
             // Resource Alerts
             if (cmbAlerts != null && cmbAlerts.SelectedIndex >= 0)
@@ -591,10 +600,12 @@ namespace ResourceAnalyzer
                 txtAnnouncement.Text = "Gathering system diagnostic snapshot...";
 
                 string snapshot = await _hardwareDetailService.GenerateSystemSnapshotAsync();
-                Clipboard.SetText(snapshot);
-
-                _speechService.Speak("System snapshot copied to clipboard.", interrupt: true);
-                txtAnnouncement.Text = "System snapshot copied to clipboard.";
+                if (SafeClipboard.TrySetText(snapshot))
+                {
+                    string confirmMsg = "System snapshot copied to clipboard. Please review sensitive information such as IP addresses before sharing outside.";
+                    _speechService.Speak(confirmMsg, interrupt: true);
+                    txtAnnouncement.Text = "Snapshot copied. Review sensitive information before sharing.";
+                }
             }
             catch (Exception ex)
             {
@@ -738,12 +749,7 @@ namespace ResourceAnalyzer
                     btnDownloadUpdate.Visibility = Visibility.Collapsed;
                     btnViewReleaseNotes.Visibility = Visibility.Visible;
                     btnViewReleaseNotes.Content = $"View Release Notes (v{info.CurrentVersion})";
-
-                    var dlg = new UpdateAvailableDialog(info, _updateService, _speechService)
-                    {
-                        Owner = this
-                    };
-                    dlg.ShowDialog();
+                    // When already up to date, do not show redundant modal dialog. Status announcement is made cleanly above.
                 }
             }
             finally

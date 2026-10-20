@@ -36,17 +36,20 @@ namespace ResourceAnalyzer.Views
                 "Escape (in Search) : Clear search filter and focus list",
                 "Ctrl + M : Sort processes by Memory (RAM) usage",
                 "Ctrl + P : Sort processes by Processor (CPU) usage",
-                "Ctrl + N : Sort alphabetically by Name",
+                "Ctrl + N : Sort alphabetically by Name (Processes tab)",
+                "Ctrl + N : Toggle network filter between Current and All Networks (Data Usage tab)",
+                "Ctrl + N : Sort ports by Application name (Network Ports tab)",
                 "Ctrl + O : Sort network ports by Port number (Network Ports tab)",
                 "Ctrl + S : Sort network ports by State (Network Ports tab)",
                 "Ctrl + C : Copy focused item details to clipboard",
+                "Shift + F10 or Application Key : Open Context Menu on selected item",
                 "Ctrl + G : Toggle grouping multiple process instances into applications",
                 "Right Arrow : Expand grouped application to see sub-processes (Processes tab)",
                 "Left Arrow : Collapse grouped application or return to parent (Processes tab)",
                 "Delete : End selected task (with confirmation prompt)",
                 "Shift + Delete : End entire process tree (force closes app and all child processes)",
                 "Ctrl + Win + T : Global shortcut to show or toggle Resource Analyzer for Windows",
-                "Ctrl + Win + I : Global shortcut to hear network speed anytime from anywhere",
+                "Ctrl + Win + I : Global shortcut (Single-press: live network speed; Double-press: daily data usage)",
                 "Escape : Close this dialog"
             };
 

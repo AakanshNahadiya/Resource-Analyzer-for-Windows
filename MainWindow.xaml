@@ -80,6 +80,7 @@
 
         <Style TargetType="ListBoxItem">
             <Setter Property="Padding" Value="10,8"/>
+            <EventSetter Event="PreviewMouseRightButtonDown" Handler="ListBoxItem_PreviewMouseRightButtonDown"/>
             <Setter Property="Margin" Value="0,2"/>
             <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
@@ -328,7 +329,7 @@
 
             <!-- TAB 1: System Resources -->
             <TabItem x:Name="tabResources" Header="1. Resources" IsSelected="True"
-                     AutomationProperties.Name="System Resources Tab (1 of 5)">
+                     AutomationProperties.Name="Resources">
                 <Grid Margin="10">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -342,9 +343,16 @@
                              Background="{DynamicResource WindowBackgroundBrush}" BorderThickness="0"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                              ScrollViewer.VerticalScrollBarVisibility="Auto"
+                             VirtualizingPanel.ScrollUnit="Pixel"
                              KeyDown="LstResources_KeyDown"
                              MouseDoubleClick="LstResources_MouseDoubleClick"
                              AutomationProperties.Name="System Resources">
+                        <ListBox.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="View Technical Details (Enter)" Click="CtxResourceDetails_Click" InputGestureText="Enter" AutomationProperties.Name="View Technical Hardware Details"/>
+                                <MenuItem Header="Copy Resource Details (Ctrl+C)" Click="CtxResourceCopyDetails_Click" InputGestureText="Ctrl+C" AutomationProperties.Name="Copy Resource Details to Clipboard"/>
+                            </ContextMenu>
+                        </ListBox.ContextMenu>
                         <ListBox.ItemTemplate>
                             <DataTemplate>
                                 <StackPanel Margin="0,2">
@@ -361,7 +369,7 @@
 
             <!-- TAB 2: Process Manager -->
             <TabItem x:Name="tabProcesses" Header="2. Processes"
-                     AutomationProperties.Name="Process Manager Tab (2 of 5)">
+                     AutomationProperties.Name="Process Manager">
                 <Grid Margin="10">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -439,19 +447,21 @@
                              Background="{DynamicResource WindowBackgroundBrush}" BorderThickness="0"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                              ScrollViewer.VerticalScrollBarVisibility="Auto"
+                             ScrollViewer.CanContentScroll="True"
                              VirtualizingPanel.IsVirtualizing="True"
                              VirtualizingPanel.VirtualizationMode="Recycling"
-                             VirtualizingPanel.ScrollUnit="Item"
+                             VirtualizingPanel.ScrollUnit="Pixel"
                              VirtualizingPanel.CacheLength="2"
                              VirtualizingPanel.CacheLengthUnit="Page"
+                             TextSearch.TextPath="DisplayName"
                              KeyDown="LstProcesses_KeyDown"
                              MouseDoubleClick="LstProcesses_MouseDoubleClick"
                              AutomationProperties.Name="Running Processes">
                         <ListBox.ContextMenu>
                             <ContextMenu x:Name="ctxProcessMenu">
-                                <MenuItem Header="End Task (Delete)" Click="CtxEndTask_Click" InputGestureText="Del" AutomationProperties.Name="End Selected Task"/>
-                                <MenuItem Header="End Process Tree (Shift+Delete)" Click="CtxEndProcessTree_Click" InputGestureText="Shift+Del" AutomationProperties.Name="End Entire Process Tree"/>
-                                <MenuItem Header="Restart Task (Ctrl+R)" Click="CtxRestartTask_Click" InputGestureText="Ctrl+R" AutomationProperties.Name="Restart Selected Task"/>
+                                <MenuItem x:Name="ctxEndTask" Header="End Task (Delete)" Click="CtxEndTask_Click" InputGestureText="Del" AutomationProperties.Name="End Selected Task"/>
+                                <MenuItem x:Name="ctxEndProcessTree" Header="End Process Tree (Shift+Delete)" Click="CtxEndProcessTree_Click" InputGestureText="Shift+Del" AutomationProperties.Name="End Entire Process Tree"/>
+                                <MenuItem x:Name="ctxRestartTask" Header="Restart Task (Ctrl+R)" Click="CtxRestartTask_Click" InputGestureText="Ctrl+R" AutomationProperties.Name="Restart Selected Task"/>
                                 <MenuItem Header="Open File Location" Click="CtxOpenFileLocation_Click" AutomationProperties.Name="Open File Location in Explorer"/>
                                 <MenuItem Header="Search on Web" Click="CtxSearchWeb_Click" AutomationProperties.Name="Search Process Online"/>
                                 <Separator Background="{DynamicResource BorderBrush}"/>
@@ -474,7 +484,7 @@
 
             <!-- TAB 3: Data Usage -->
             <TabItem x:Name="tabDataUsage" Header="3. Data Usage"
-                     AutomationProperties.Name="Data Usage Tab (3 of 5)">
+                     AutomationProperties.Name="Data Usage">
                 <Grid Margin="10">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -526,10 +536,19 @@
                              Background="{DynamicResource WindowBackgroundBrush}" BorderThickness="0"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                              ScrollViewer.VerticalScrollBarVisibility="Auto"
-                             VirtualizingStackPanel.IsVirtualizing="True"
-                             VirtualizingStackPanel.VirtualizationMode="Recycling"
+                             ScrollViewer.CanContentScroll="True"
+                             VirtualizingPanel.IsVirtualizing="True"
+                             VirtualizingPanel.VirtualizationMode="Recycling"
+                             VirtualizingPanel.ScrollUnit="Pixel"
+                             VirtualizingPanel.CacheLength="2"
+                             VirtualizingPanel.CacheLengthUnit="Page"
                              KeyDown="LstDataUsage_KeyDown"
                              AutomationProperties.Name="Application Data Usage">
+                        <ListBox.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="Copy Data Usage Details (Ctrl+C)" Click="CtxDataUsageCopyDetails_Click" InputGestureText="Ctrl+C" AutomationProperties.Name="Copy Data Usage Details to Clipboard"/>
+                            </ContextMenu>
+                        </ListBox.ContextMenu>
                         <ListBox.ItemTemplate>
                             <DataTemplate>
                                 <StackPanel Margin="0,2">
@@ -546,7 +565,7 @@
 
             <!-- TAB 4: Network Ports -->
             <TabItem x:Name="tabNetworkPorts" Header="4. Network Ports"
-                     AutomationProperties.Name="Network Ports Tab (4 of 5)">
+                     AutomationProperties.Name="Network Ports">
                 <Grid Margin="10">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -617,8 +636,12 @@
                              Background="{DynamicResource WindowBackgroundBrush}" BorderThickness="0"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                              ScrollViewer.VerticalScrollBarVisibility="Auto"
-                             VirtualizingStackPanel.IsVirtualizing="True"
-                             VirtualizingStackPanel.VirtualizationMode="Recycling"
+                             ScrollViewer.CanContentScroll="True"
+                             VirtualizingPanel.IsVirtualizing="True"
+                             VirtualizingPanel.VirtualizationMode="Recycling"
+                             VirtualizingPanel.ScrollUnit="Pixel"
+                             VirtualizingPanel.CacheLength="2"
+                             VirtualizingPanel.CacheLengthUnit="Page"
                              KeyDown="LstNetworkPorts_KeyDown"
                              MouseDoubleClick="LstNetworkPorts_MouseDoubleClick"
                              AutomationProperties.Name="Network Ports and Connections">
@@ -644,7 +667,7 @@
 
             <!-- TAB 5: Settings -->
             <TabItem x:Name="tabSettings" Header="5. Settings"
-                     AutomationProperties.Name="Settings Tab (5 of 5)">
+                     AutomationProperties.Name="Settings">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel Margin="16" MaxWidth="620" HorizontalAlignment="Left">
                         <!-- Section 1: Process Filtering & Safety -->
@@ -726,6 +749,16 @@
                             <ComboBoxItem Content="3 seconds (Relaxed)"/>
                             <ComboBoxItem Content="5 seconds (Low resource)"/>
                             <ComboBoxItem Content="Paused (Manual refresh with F5 only)"/>
+                        </ComboBox>
+
+                        <TextBlock Text="Live Internet Latency (Ping) in Network Details:" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,14,0,8"/>
+                        <ComboBox x:Name="cmbNetworkPing" Width="460" Height="30" HorizontalAlignment="Left"
+                                  SelectedIndex="0"
+                                  SelectionChanged="CmbNetworkPing_SelectionChanged"
+                                  Background="{DynamicResource InputBackgroundBrush}" Foreground="{DynamicResource InputForegroundBrush}" BorderBrush="{DynamicResource InputBorderBrush}"
+                                  AutomationProperties.Name="Live Internet Ping in Network Details">
+                            <ComboBoxItem Content="Disabled"/>
+                            <ComboBoxItem Content="Enabled"/>
                         </ComboBox>
 
                         <Separator Background="{DynamicResource BorderBrush}" Margin="0,16"/>

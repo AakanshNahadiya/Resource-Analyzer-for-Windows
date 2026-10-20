@@ -1,5 +1,6 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
@@ -66,6 +67,14 @@ namespace ResourceAnalyzer.Views
             {
                 btnFlushMemory.Visibility = Visibility.Visible;
             }
+            else if (string.Equals(resourceId, "battery", StringComparison.OrdinalIgnoreCase))
+            {
+                btnBatterySettings.Visibility = Visibility.Visible;
+            }
+            else if (string.Equals(resourceId, "audio", StringComparison.OrdinalIgnoreCase))
+            {
+                btnSoundSettings.Visibility = Visibility.Visible;
+            }
 
             if (refreshIntervalSeconds > 0 && _hardwareDetailService != null && !string.IsNullOrEmpty(_resourceId))
             {
@@ -86,7 +95,19 @@ namespace ResourceAnalyzer.Views
             }
 
             Closed += (s, e) => _liveTimer?.Stop();
-            Loaded += (s, e) => lstDetails.Focus();
+            Loaded += async (s, e) =>
+            {
+                lstDetails.Focus();
+                if (_hardwareDetailService != null && !string.IsNullOrEmpty(_resourceId))
+                {
+                    try
+                    {
+                        string fresh = await _hardwareDetailService.GetHardwareDetailsAsync(_resourceId);
+                        UpdateDetailsInPlace(fresh);
+                    }
+                    catch { }
+                }
+            };
             KeyDown += (s, e) =>
             {
                 if (e.Key == Key.Escape)
@@ -165,7 +186,53 @@ namespace ResourceAnalyzer.Views
             }
         }
 
+        private void CtxDetailCopyLine_Click(object sender, RoutedEventArgs e)
+        {
+            CopySelectedLine();
+        }
+
+        private void CtxDetailCopyAll_Click(object sender, RoutedEventArgs e)
+        {
+            CopyFullDetails();
+        }
+
+        private void CopySelectedLine()
+        {
+            if (lstDetails.SelectedItem is DetailItem item && !string.IsNullOrWhiteSpace(item.Text))
+            {
+                if (SafeClipboard.TrySetText(item.Text))
+                {
+                    _speechService?.Speak($"Copied {item.Text} to clipboard.", interrupt: true);
+                }
+            }
+            else
+            {
+                CopyFullDetails();
+            }
+        }
+
         private void LstDetails_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.C && (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
+            {
+                e.Handled = true;
+                if ((Keyboard.Modifiers & ModifierKeys.Shift) == ModifierKeys.Shift)
+                {
+                    CopyFullDetails();
+                }
+                else
+                {
+                    CopySelectedLine();
+                }
+            }
+            else if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.None && btnFlushMemory.Visibility == Visibility.Visible && btnFlushMemory.IsEnabled)
+            {
+                e.Handled = true;
+                FlushMemory();
+            }
+        }
+
+        /* obsolete
         {
             if (e.Key == Key.C && (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
             {
@@ -179,6 +246,7 @@ namespace ResourceAnalyzer.Views
             }
         }
 
+        */
         private void BtnFlushMemory_Click(object sender, RoutedEventArgs e)
         {
             FlushMemory();
@@ -225,6 +293,30 @@ namespace ResourceAnalyzer.Views
             }
         }
 
+        private void BtnBatterySettings_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo("ms-settings:batterysaver") { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                _speechService?.Speak($"Could not open Battery settings: {ex.Message}", interrupt: true);
+            }
+        }
+
+        private void BtnSoundSettings_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo("ms-settings:sound") { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                _speechService?.Speak($"Could not open Sound settings: {ex.Message}", interrupt: true);
+            }
+        }
+
         private void BtnCopy_Click(object sender, RoutedEventArgs e)
         {
             CopyFullDetails();
@@ -234,8 +326,11 @@ namespace ResourceAnalyzer.Views
         {
             try
             {
-                Clipboard.SetText(_fullDetailsText);
-                btnCopy.Content = "Copied!";
+                if (SafeClipboard.TrySetText(_fullDetailsText))
+                {
+                    btnCopy.Content = "Copied!";
+                    _speechService?.Speak("Copied hardware details to clipboard.", interrupt: true);
+                }
             }
             catch { }
         }

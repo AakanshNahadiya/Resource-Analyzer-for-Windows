@@ -81,8 +81,18 @@
                  Background="{DynamicResource WindowBackgroundBrush}" BorderThickness="0"
                  ScrollViewer.VerticalScrollBarVisibility="Auto"
                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                 ScrollViewer.CanContentScroll="True"
+                 VirtualizingPanel.IsVirtualizing="True"
+                 VirtualizingPanel.VirtualizationMode="Recycling"
+                 VirtualizingPanel.ScrollUnit="Pixel"
                  KeyDown="LstDetails_KeyDown"
                  AutomationProperties.Name="Technical Specifications List">
+            <ListBox.ContextMenu>
+                <ContextMenu>
+                    <MenuItem Header="Copy Selected Line (Ctrl+C)" Click="CtxDetailCopyLine_Click" InputGestureText="Ctrl+C" AutomationProperties.Name="Copy Selected Line to Clipboard"/>
+                    <MenuItem Header="Copy All Details (Ctrl+Shift+C)" Click="CtxDetailCopyAll_Click" InputGestureText="Ctrl+Shift+C" AutomationProperties.Name="Copy All Hardware Details to Clipboard"/>
+                </ContextMenu>
+            </ListBox.ContextMenu>
             <ListBox.ItemTemplate>
                 <DataTemplate>
                     <TextBlock Text="{Binding Text}" TextWrapping="Wrap" AutomationProperties.Name="{Binding Text}"/>
@@ -96,6 +106,16 @@
                     Background="{DynamicResource AccentBrush}" Foreground="{DynamicResource SelectionForegroundBrush}"
                     BorderBrush="{DynamicResource AccentBrush}" FontWeight="SemiBold"
                     AutomationProperties.Name="Flush Memory Cache"/>
+            <Button x:Name="btnBatterySettings" Content="Battery Settings" Height="32" Padding="12,0" Margin="0,0,10,0"
+                    Visibility="Collapsed" Click="BtnBatterySettings_Click"
+                    Background="{DynamicResource AccentBrush}" Foreground="{DynamicResource SelectionForegroundBrush}"
+                    BorderBrush="{DynamicResource AccentBrush}" FontWeight="SemiBold"
+                    AutomationProperties.Name="Open Windows Battery Settings"/>
+            <Button x:Name="btnSoundSettings" Content="Sound Settings" Height="32" Padding="12,0" Margin="0,0,10,0"
+                    Visibility="Collapsed" Click="BtnSoundSettings_Click"
+                    Background="{DynamicResource AccentBrush}" Foreground="{DynamicResource SelectionForegroundBrush}"
+                    BorderBrush="{DynamicResource AccentBrush}" FontWeight="SemiBold"
+                    AutomationProperties.Name="Open Windows Sound Settings"/>
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                 <Button x:Name="btnCopy" Content="Copy to Clipboard" Width="140" Height="32" Margin="0,0,10,0"
                         Click="BtnCopy_Click"

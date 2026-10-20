@@ -23,6 +23,13 @@ namespace ResourceAnalyzer.Services
 
     public class HardwareDetailService : IHardwareDetailService
     {
+        private readonly ISettingsService? _settingsService;
+
+        public HardwareDetailService(ISettingsService? settingsService = null)
+        {
+            _settingsService = settingsService;
+        }
+
         // Cache static hardware specs so WMI queries run only once on demand
         private static string? _cachedCpuStaticInfo;
         private static string? _cachedRamStaticInfo;
@@ -79,9 +86,9 @@ namespace ResourceAnalyzer.Services
         {
             lock (_diskCounterLock)
             {
+                string instanceName = "_Total";
                 try
                 {
-                    string instanceName = "_Total";
                     if (diskIndex >= 0)
                     {
                         string prefix = $"{diskIndex} ";
@@ -98,11 +105,6 @@ namespace ResourceAnalyzer.Services
                             var found = names.FirstOrDefault(n => n.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
                             if (found != null) instanceName = found;
                         }
-                    }
-
-                    if (_latestDiskSpeeds.TryGetValue(instanceName, out var speed))
-                    {
-                        return speed;
                     }
 
                     if (!_diskCounters.TryGetValue(instanceName, out var counters))
@@ -127,7 +129,13 @@ namespace ResourceAnalyzer.Services
                         return res;
                     }
                 }
-                catch { }
+                catch
+                {
+                    if (_latestDiskSpeeds.TryGetValue(instanceName, out var fallback))
+                    {
+                        return fallback;
+                    }
+                }
 
                 return (0, 0);
             }
@@ -151,6 +159,7 @@ namespace ResourceAnalyzer.Services
                     if (resourceId.Equals("network", StringComparison.OrdinalIgnoreCase)) return BuildNetworkDetails();
                     if (resourceId.Equals("gpu", StringComparison.OrdinalIgnoreCase)) return BuildGpuDetails();
                     if (resourceId.Equals("display", StringComparison.OrdinalIgnoreCase)) return BuildDisplayDetails();
+                    if (resourceId.Equals("audio", StringComparison.OrdinalIgnoreCase)) return BuildAudioDetails();
                     if (resourceId.Equals("battery", StringComparison.OrdinalIgnoreCase)) return BuildBatteryDetails();
                     return "Technical details are not available for this component.";
                 }
@@ -167,7 +176,7 @@ namespace ResourceAnalyzer.Services
         {
             var sb = new StringBuilder();
 
-            // CPU Name from registry
+            // CPU Name from registry (Instant 0.01ms kernel-populated CPUID brand string)
             string cpuName = string.Empty;
             try
             {
@@ -183,17 +192,28 @@ namespace ResourceAnalyzer.Services
 
             sb.AppendLine($"Processor: {cpuName}");
 
-            // System Uptime
+            // System Uptime (64-bit TickCount, no 49.7 day overflow)
             var uptime = TimeSpan.FromMilliseconds(Environment.TickCount64);
             sb.AppendLine($"System Uptime: {FormatUptime(uptime)}");
-            sb.AppendLine($"Architecture: {RuntimeInformation.ProcessArchitecture} (64-bit)");
+
+            // Operating System Architecture
+            string bitness = Environment.Is64BitOperatingSystem ? "64-bit" : "32-bit";
+            sb.AppendLine($"Architecture: {RuntimeInformation.OSArchitecture} ({bitness})");
             sb.AppendLine($"Power Mode: {GetActivePowerPlan()}");
 
-            // Live Frequency Scaling & Thermal Throttling Telemetry (via Processor Information performance counters)
+            // Live Frequency Scaling & Thermal Throttling Telemetry (via native Powrprof + Processor Information)
+            var powerLimits = NativeMethods.GetProcessorPowerLimits();
+            uint freqScalingPct = 0;
+            if (powerLimits.HasValue && powerLimits.Value.MaxMhz > 0)
+            {
+                freqScalingPct = (uint)Math.Clamp((double)powerLimits.Value.CurrentMhz * 100.0 / powerLimits.Value.MaxMhz, 0, 500);
+            }
+
+            uint procPerf = 0;
             try
             {
                 using var perfSearcher = new ManagementObjectSearcher(
-                    "SELECT PercentofMaximumFrequency, PercentProcessorPerformance, PercentProcessorUtility FROM Win32_PerfFormattedData_Counters_ProcessorInformation WHERE Name='_Total'");
+                    "SELECT PercentofMaximumFrequency, PercentProcessorPerformance FROM Win32_PerfFormattedData_Counters_ProcessorInformation WHERE Name='_Total'");
                 using var perfColl = perfSearcher.Get();
                 foreach (ManagementObject obj in perfColl)
                 {
@@ -201,28 +221,11 @@ namespace ResourceAnalyzer.Services
                     {
                         if (obj["PercentofMaximumFrequency"] != null && uint.TryParse(obj["PercentofMaximumFrequency"]?.ToString(), out uint maxFreqPct))
                         {
-                            sb.AppendLine($"Frequency Scaling: {maxFreqPct}% of Maximum Frequency");
+                            freqScalingPct = maxFreqPct;
                         }
-
-                        var powerLimits = NativeMethods.GetProcessorPowerLimits();
-                        if (powerLimits.HasValue && powerLimits.Value.MaxMhz > 0 && powerLimits.Value.MhzLimit < powerLimits.Value.MaxMhz)
+                        if (obj["PercentProcessorPerformance"] != null && uint.TryParse(obj["PercentProcessorPerformance"]?.ToString(), out uint pPerf))
                         {
-                            sb.AppendLine($"Thermal / Power Throttling: Active (Processor frequency restricted to {powerLimits.Value.MhzLimit:N0} MHz of {powerLimits.Value.MaxMhz:N0} MHz)");
-                        }
-                        else
-                        {
-                            sb.AppendLine("Thermal Throttling: Inactive (Normal operating frequency)");
-                        }
-                        if (obj["PercentProcessorPerformance"] != null && uint.TryParse(obj["PercentProcessorPerformance"]?.ToString(), out uint procPerf))
-                        {
-                            if (procPerf > 100)
-                            {
-                                sb.AppendLine($"Turbo Boost: Active ({procPerf}% relative performance)");
-                            }
-                            else
-                            {
-                                sb.AppendLine($"Turbo Boost: Inactive ({procPerf}% relative performance)");
-                            }
+                            procPerf = pPerf;
                         }
                         break;
                     }
@@ -230,7 +233,45 @@ namespace ResourceAnalyzer.Services
             }
             catch { }
 
-            // ACPI Thermal Zone Temperature (if running as Administrator or supported by OEM ACPI)
+            if (freqScalingPct > 0)
+            {
+                sb.AppendLine($"Frequency Scaling: {freqScalingPct}% of Maximum Frequency");
+            }
+
+            if (powerLimits.HasValue && powerLimits.Value.MaxMhz > 0 && powerLimits.Value.MhzLimit < powerLimits.Value.MaxMhz)
+            {
+                sb.AppendLine($"Thermal / Power Throttling: Active (Processor frequency restricted to {powerLimits.Value.MhzLimit:N0} MHz of {powerLimits.Value.MaxMhz:N0} MHz)");
+            }
+            else
+            {
+                sb.AppendLine("Thermal Throttling: Inactive (Normal operating frequency)");
+            }
+
+            if (procPerf > 0)
+            {
+                if (procPerf > 100)
+                {
+                    sb.AppendLine($"Turbo Boost: Active ({procPerf}% relative performance)");
+                }
+                else
+                {
+                    sb.AppendLine($"Turbo Boost: Inactive ({procPerf}% relative performance)");
+                }
+            }
+            else if (powerLimits.HasValue && powerLimits.Value.MaxMhz > 0)
+            {
+                if (powerLimits.Value.CurrentMhz > powerLimits.Value.MaxMhz)
+                {
+                    sb.AppendLine($"Turbo Boost: Active ({(powerLimits.Value.CurrentMhz * 100 / powerLimits.Value.MaxMhz)}% relative performance)");
+                }
+                else
+                {
+                    sb.AppendLine($"Turbo Boost: Inactive ({(powerLimits.Value.CurrentMhz * 100 / powerLimits.Value.MaxMhz)}% relative performance)");
+                }
+            }
+
+            // ACPI Thermal Zone Temperature (if supported by OEM ACPI)
+            bool thermalReported = false;
             try
             {
                 using var thermalSearcher = new ManagementObjectSearcher(@"root\WMI", "SELECT CurrentTemperature, CriticalTripPoint FROM MSAcpi_ThermalZoneTemperature");
@@ -251,6 +292,7 @@ namespace ResourceAnalyzer.Services
                                     if (tripC is > 0 and < 150) tripStr = $" (Critical Limit: {tripC:F0}°C)";
                                 }
                                 sb.AppendLine($"CPU Thermal Zone: {tempC:F1}°C{tripStr}");
+                                thermalReported = true;
                                 break;
                             }
                         }
@@ -259,84 +301,225 @@ namespace ResourceAnalyzer.Services
             }
             catch { }
 
-            // Static CPU & System Info
+            if (!thermalReported && !ElevationHelper.IsRunningAsAdmin())
+            {
+                sb.AppendLine("CPU Temperature: Available when running as Administrator");
+            }
+
+            // Static CPU & System Info (Cached so queries only run once)
             if (_cachedCpuStaticInfo == null)
             {
                 var staticSb = new StringBuilder();
 
-                // Computer Model & Manufacturer
+                // 1. Computer Model & Manufacturer (Instant Registry check, fallback to WMI)
+                string mfg = string.Empty;
+                string model = string.Empty;
                 try
                 {
-                    using var csSearcher = new ManagementObjectSearcher("SELECT Manufacturer, Model FROM Win32_ComputerSystem");
-                    using var csColl = csSearcher.Get();
-                    foreach (ManagementObject cs in csColl)
+                    using var biosKey = Registry.LocalMachine.OpenSubKey(@"HARDWARE\DESCRIPTION\System\BIOS");
+                    if (biosKey != null)
                     {
-                        using (cs)
-                        {
-                            string mfg = cs["Manufacturer"]?.ToString()?.Trim() ?? string.Empty;
-                            string model = cs["Model"]?.ToString()?.Trim() ?? string.Empty;
-                            if (!string.IsNullOrEmpty(model))
-                            {
-                                staticSb.AppendLine($"System Model: {mfg} {model}".Trim());
-                            }
-                            break;
-                        }
+                        mfg = biosKey.GetValue("SystemManufacturer")?.ToString()?.Trim() ?? string.Empty;
+                        model = biosKey.GetValue("SystemProductName")?.ToString()?.Trim() ?? string.Empty;
                     }
                 }
                 catch { }
 
-                // BIOS Version
+                if (string.IsNullOrEmpty(model))
+                {
+                    try
+                    {
+                        using var csSearcher = new ManagementObjectSearcher("SELECT Manufacturer, Model FROM Win32_ComputerSystem");
+                        using var csColl = csSearcher.Get();
+                        foreach (ManagementObject cs in csColl)
+                        {
+                            using (cs)
+                            {
+                                mfg = cs["Manufacturer"]?.ToString()?.Trim() ?? string.Empty;
+                                model = cs["Model"]?.ToString()?.Trim() ?? string.Empty;
+                                break;
+                            }
+                        }
+                    }
+                    catch { }
+                }
+
+                if (!string.IsNullOrEmpty(model))
+                {
+                    staticSb.AppendLine($"System Model: {mfg} {model}".Trim());
+                }
+
+                // 2. BIOS Version (Instant Registry check, fallback to WMI)
+                string biosVer = string.Empty;
+                string biosMfg = string.Empty;
                 try
                 {
-                    using var biosSearcher = new ManagementObjectSearcher("SELECT Manufacturer, SMBIOSBIOSVersion, ReleaseDate FROM Win32_BIOS");
-                    using var biosColl = biosSearcher.Get();
-                    foreach (ManagementObject bios in biosColl)
+                    using var biosKey = Registry.LocalMachine.OpenSubKey(@"HARDWARE\DESCRIPTION\System\BIOS");
+                    if (biosKey != null)
                     {
-                        using (bios)
-                        {
-                            string biosVer = bios["SMBIOSBIOSVersion"]?.ToString()?.Trim() ?? string.Empty;
-                            string biosMfg = bios["Manufacturer"]?.ToString()?.Trim() ?? string.Empty;
-                            if (!string.IsNullOrEmpty(biosVer))
-                            {
-                                staticSb.AppendLine($"BIOS Version: {biosMfg} {biosVer}".Trim());
-                            }
-                            break;
-                        }
+                        biosMfg = biosKey.GetValue("BIOSVendor")?.ToString()?.Trim() ?? string.Empty;
+                        biosVer = biosKey.GetValue("BIOSVersion")?.ToString()?.Trim() ?? string.Empty;
                     }
                 }
                 catch { }
 
-                // Processor Cores, Cache, Virtualization
+                if (string.IsNullOrEmpty(biosVer))
+                {
+                    try
+                    {
+                        using var biosSearcher = new ManagementObjectSearcher("SELECT Manufacturer, SMBIOSBIOSVersion FROM Win32_BIOS");
+                        using var biosColl = biosSearcher.Get();
+                        foreach (ManagementObject bios in biosColl)
+                        {
+                            using (bios)
+                            {
+                                biosVer = bios["SMBIOSBIOSVersion"]?.ToString()?.Trim() ?? string.Empty;
+                                biosMfg = bios["Manufacturer"]?.ToString()?.Trim() ?? string.Empty;
+                                break;
+                            }
+                        }
+                    }
+                    catch { }
+                }
+
+                if (!string.IsNullOrEmpty(biosVer))
+                {
+                    staticSb.AppendLine($"BIOS Version: {biosMfg} {biosVer}".Trim());
+                }
+
+                // 3. Socket Designation
+                string socket = string.Empty;
                 try
                 {
-                    using var searcher = new ManagementObjectSearcher("SELECT NumberOfCores, NumberOfLogicalProcessors, MaxClockSpeed, L2CacheSize, L3CacheSize, VirtualizationFirmwareEnabled, SocketDesignation FROM Win32_Processor");
+                    using var searcher = new ManagementObjectSearcher("SELECT SocketDesignation FROM Win32_Processor");
                     using var procColl = searcher.Get();
                     foreach (ManagementObject obj in procColl)
                     {
                         using (obj)
                         {
-                            if (obj["SocketDesignation"] != null && !string.IsNullOrWhiteSpace(obj["SocketDesignation"]?.ToString()))
-                                staticSb.AppendLine($"Socket: {obj["SocketDesignation"]}");
-                            if (obj["NumberOfCores"] != null)
-                                staticSb.AppendLine($"Physical Cores: {obj["NumberOfCores"]}");
-                            if (obj["NumberOfLogicalProcessors"] != null)
-                                staticSb.AppendLine($"Logical Processors: {obj["NumberOfLogicalProcessors"]}");
-                            if (obj["MaxClockSpeed"] != null && uint.TryParse(obj["MaxClockSpeed"]?.ToString(), out uint clockMhz))
-                                staticSb.AppendLine($"Base Clock Speed: {clockMhz / 1000.0:F2} GHz ({clockMhz} MHz)");
-                            if (obj["L2CacheSize"] != null && uint.TryParse(obj["L2CacheSize"]?.ToString(), out uint l2Kb) && l2Kb > 0)
-                                staticSb.AppendLine($"L2 Cache: {FormatHelper.FormatBytes((long)l2Kb * 1024)} ({l2Kb:N0} KB)");
-                            if (obj["L3CacheSize"] != null && uint.TryParse(obj["L3CacheSize"]?.ToString(), out uint l3Kb) && l3Kb > 0)
-                                staticSb.AppendLine($"L3 Cache: {FormatHelper.FormatBytes((long)l3Kb * 1024)} ({l3Kb:N0} KB)");
-                            if (obj["VirtualizationFirmwareEnabled"] != null)
-                            {
-                                bool virt = Convert.ToBoolean(obj["VirtualizationFirmwareEnabled"]);
-                                staticSb.AppendLine($"Virtualization: {(virt ? "Enabled in Firmware (VT-x / AMD-V)" : "Disabled")}");
-                            }
+                            socket = obj["SocketDesignation"]?.ToString()?.Trim() ?? string.Empty;
                             break;
                         }
                     }
                 }
                 catch { }
+
+                if (!string.IsNullOrEmpty(socket))
+                {
+                    staticSb.AppendLine($"Socket: {socket}");
+                }
+
+                // 4. Modern CPU Topology & Cache via Win32 GetLogicalProcessorInformationEx (< 0.05ms)
+                var topo = NativeMethods.GetCpuTopology();
+                if (topo.HasValue)
+                {
+                    if (topo.Value.PerformanceCores > 0 && topo.Value.EfficiencyCores > 0)
+                    {
+                        staticSb.AppendLine($"Physical Cores: {topo.Value.PhysicalCores} ({topo.Value.PerformanceCores} P-Cores, {topo.Value.EfficiencyCores} E-Cores)");
+                    }
+                    else
+                    {
+                        staticSb.AppendLine($"Physical Cores: {topo.Value.PhysicalCores}");
+                    }
+
+                    staticSb.AppendLine($"Logical Processors: {Environment.ProcessorCount}");
+
+                    // Base Clock Speed from registry CentralProcessor\0\~MHz
+                    uint baseClockMhz = 0;
+                    try
+                    {
+                        using var key = Registry.LocalMachine.OpenSubKey(@"HARDWARE\DESCRIPTION\System\CentralProcessor\0");
+                        if (key?.GetValue("~MHz") is int mhz && mhz > 0)
+                        {
+                            baseClockMhz = (uint)mhz;
+                        }
+                    }
+                    catch { }
+
+                    if (baseClockMhz > 0)
+                    {
+                        staticSb.AppendLine($"Base Clock Speed: {baseClockMhz / 1000.0:F2} GHz ({baseClockMhz} MHz)");
+                    }
+
+                    // Cache hierarchy (L1 Data + Instruction, L2, L3)
+                    if (topo.Value.L1DataCacheBytes > 0 || topo.Value.L1InstructionCacheBytes > 0)
+                    {
+                        long l1Total = topo.Value.L1DataCacheBytes + topo.Value.L1InstructionCacheBytes;
+                        staticSb.AppendLine($"L1 Cache: {FormatHelper.FormatBytes(l1Total)} (Data: {FormatHelper.FormatBytes(topo.Value.L1DataCacheBytes)}, Instruction: {FormatHelper.FormatBytes(topo.Value.L1InstructionCacheBytes)})");
+                    }
+                    if (topo.Value.L2CacheBytes > 0)
+                    {
+                        staticSb.AppendLine($"L2 Cache: {FormatHelper.FormatBytes(topo.Value.L2CacheBytes)}");
+                    }
+                    if (topo.Value.L3CacheBytes > 0)
+                    {
+                        staticSb.AppendLine($"L3 Cache: {FormatHelper.FormatBytes(topo.Value.L3CacheBytes)}");
+                    }
+                }
+                else
+                {
+                    // Fallback to WMI Win32_Processor if GetLogicalProcessorInformationEx failed
+                    try
+                    {
+                        using var searcher = new ManagementObjectSearcher("SELECT NumberOfCores, NumberOfLogicalProcessors, MaxClockSpeed, L2CacheSize, L3CacheSize FROM Win32_Processor");
+                        using var procColl = searcher.Get();
+                        foreach (ManagementObject obj in procColl)
+                        {
+                            using (obj)
+                            {
+                                if (obj["NumberOfCores"] != null)
+                                    staticSb.AppendLine($"Physical Cores: {obj["NumberOfCores"]}");
+                                if (obj["NumberOfLogicalProcessors"] != null)
+                                    staticSb.AppendLine($"Logical Processors: {obj["NumberOfLogicalProcessors"]}");
+                                if (obj["MaxClockSpeed"] != null && uint.TryParse(obj["MaxClockSpeed"]?.ToString(), out uint clockMhz))
+                                    staticSb.AppendLine($"Base Clock Speed: {clockMhz / 1000.0:F2} GHz ({clockMhz} MHz)");
+                                if (obj["L2CacheSize"] != null && uint.TryParse(obj["L2CacheSize"]?.ToString(), out uint l2Kb) && l2Kb > 0)
+                                    staticSb.AppendLine($"L2 Cache: {FormatHelper.FormatBytes((long)l2Kb * 1024)}");
+                                if (obj["L3CacheSize"] != null && uint.TryParse(obj["L3CacheSize"]?.ToString(), out uint l3Kb) && l3Kb > 0)
+                                    staticSb.AppendLine($"L3 Cache: {FormatHelper.FormatBytes((long)l3Kb * 1024)}");
+                                break;
+                            }
+                        }
+                    }
+                    catch { }
+                }
+
+                // 5. Virtualization (Win32 IsProcessorFeaturePresent + WMI verification)
+                bool virtEnabled = NativeMethods.IsProcessorFeaturePresent(NativeMethods.PF_VIRT_FIRMWARE_ENABLED);
+                if (virtEnabled)
+                {
+                    staticSb.AppendLine("Virtualization: Enabled in Firmware (VT-x / AMD-V)");
+                }
+                else
+                {
+                    bool? wmiVirt = null;
+                    try
+                    {
+                        using var vSearcher = new ManagementObjectSearcher("SELECT VirtualizationFirmwareEnabled FROM Win32_Processor");
+                        using var vColl = vSearcher.Get();
+                        foreach (ManagementObject vObj in vColl)
+                        {
+                            using (vObj)
+                            {
+                                if (vObj["VirtualizationFirmwareEnabled"] != null)
+                                {
+                                    wmiVirt = Convert.ToBoolean(vObj["VirtualizationFirmwareEnabled"]);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    catch { }
+
+                    if (wmiVirt == true)
+                    {
+                        staticSb.AppendLine("Virtualization: Enabled in Firmware (VT-x / AMD-V)");
+                    }
+                    else
+                    {
+                        staticSb.AppendLine("Virtualization: Disabled");
+                    }
+                }
 
                 if (staticSb.Length == 0)
                 {
@@ -418,7 +601,8 @@ namespace ResourceAnalyzer.Services
                             {
                                 if (parts[0].StartsWith("?:", StringComparison.OrdinalIgnoreCase))
                                 {
-                                    pageFileLocation = $"{sysDrive}{parts[0].Substring(1)} (System Managed)";
+                                    string relPath = parts[0].Substring(2).TrimStart('\\', '/');
+                                    pageFileLocation = $"{sysDrive}\\{relPath} (System Managed)";
                                 }
                                 else
                                 {
@@ -565,7 +749,7 @@ namespace ResourceAnalyzer.Services
                         staticSb.AppendLine("Installed Memory Modules:");
                         foreach (var mod in modules)
                         {
-                            staticSb.AppendLine($"• {mod}");
+                            staticSb.AppendLine(mod);
                         }
                     }
                 }
@@ -799,7 +983,16 @@ namespace ResourceAnalyzer.Services
                     return cached;
                 }
 
-                if (!_isDiskMetadataPopulating)
+                string fallbackStyle = QueryLivePartitionStyle(diskIndex);
+                if (string.IsNullOrEmpty(fallbackStyle))
+                {
+                    fallbackStyle = "Standard Partition";
+                }
+
+                var diskProp = NativeMethods.QueryDiskStorageProperty(diskIndex);
+                bool? seekPenalty = NativeMethods.QueryDiskSeekPenalty(diskIndex);
+
+                if (!diskProp.HasValue && !_isDiskMetadataPopulating)
                 {
                     _isDiskMetadataPopulating = true;
                     Task.Run(() =>
@@ -814,15 +1007,6 @@ namespace ResourceAnalyzer.Services
                         }
                     });
                 }
-
-                string fallbackStyle = QueryLivePartitionStyle(diskIndex);
-                if (string.IsNullOrEmpty(fallbackStyle))
-                {
-                    fallbackStyle = "Standard Partition";
-                }
-
-                var diskProp = NativeMethods.QueryDiskStorageProperty(diskIndex);
-                bool? seekPenalty = NativeMethods.QueryDiskSeekPenalty(diskIndex);
 
                 bool isUsb = (diskProp.HasValue && (diskProp.Value.BusType == 7 || diskProp.Value.Removable)) || usbLetter != null;
                 bool isInternal = !isUsb;
@@ -1142,12 +1326,32 @@ namespace ResourceAnalyzer.Services
             {
                 try
                 {
+                    // Detect Wi-Fi Standard from controller description or link speed
+                    string desc = primary.Description;
+                    string wifiStandard = string.Empty;
+                    if (desc.Contains("802.11be", StringComparison.OrdinalIgnoreCase) || desc.Contains("Wi-Fi 7", StringComparison.OrdinalIgnoreCase))
+                        wifiStandard = "Wi-Fi 7 (802.11be)";
+                    else if (desc.Contains("802.11ax", StringComparison.OrdinalIgnoreCase) || desc.Contains("Wi-Fi 6", StringComparison.OrdinalIgnoreCase))
+                        wifiStandard = "Wi-Fi 6 (802.11ax)";
+                    else if (desc.Contains("802.11ac", StringComparison.OrdinalIgnoreCase) || desc.Contains("Wi-Fi 5", StringComparison.OrdinalIgnoreCase))
+                        wifiStandard = "Wi-Fi 5 (802.11ac)";
+                    else if (desc.Contains("802.11n", StringComparison.OrdinalIgnoreCase) || desc.Contains("Wi-Fi 4", StringComparison.OrdinalIgnoreCase))
+                        wifiStandard = "Wi-Fi 4 (802.11n)";
+                    else if (desc.Contains("802.11g", StringComparison.OrdinalIgnoreCase))
+                        wifiStandard = "802.11g";
+                    else if (primary.Speed >= 2_000_000_000)
+                        wifiStandard = "Wi-Fi 6 / 6E (802.11ax)";
+                    else if (primary.Speed > 600_000_000)
+                        wifiStandard = "Wi-Fi 5 (802.11ac)";
+
                     var wifiInfo = QueryWifiTelemetry();
                     if (wifiInfo.Count > 0)
                     {
                         if (wifiInfo.TryGetValue("SSID", out var ssid) && !string.IsNullOrEmpty(ssid))
                             sb.AppendLine($"Wi-Fi Network (SSID): {ssid}");
-                        if (wifiInfo.TryGetValue("Radio type", out var radio) && !string.IsNullOrEmpty(radio))
+                        if (!string.IsNullOrEmpty(wifiStandard))
+                            sb.AppendLine($"Wi-Fi Standard: {wifiStandard}");
+                        else if (wifiInfo.TryGetValue("Radio type", out var radio) && !string.IsNullOrEmpty(radio))
                             sb.AppendLine($"Wi-Fi Standard: {radio}");
                         if (wifiInfo.TryGetValue("Band", out var band) && !string.IsNullOrEmpty(band))
                             sb.AppendLine($"Radio Band: {band}");
@@ -1180,16 +1384,32 @@ namespace ResourceAnalyzer.Services
                 sb.AppendLine($"IPv6 Address: {ipv6.Address}");
             }
 
-            var gateway = ipProps.GatewayAddresses.FirstOrDefault();
-            if (gateway != null)
+            // Default Gateway (prefer IPv4 router address first)
+            var ipv4Gateway = ipProps.GatewayAddresses.FirstOrDefault(g => g.Address.AddressFamily == AddressFamily.InterNetwork);
+            var ipv6Gateway = ipProps.GatewayAddresses.FirstOrDefault(g => g.Address.AddressFamily == AddressFamily.InterNetworkV6);
+
+            if (ipv4Gateway != null)
             {
-                sb.AppendLine($"Default Gateway: {gateway.Address}");
+                sb.AppendLine($"Default Gateway: {ipv4Gateway.Address}");
+                if (ipv6Gateway != null)
+                {
+                    sb.AppendLine($"Default Gateway (IPv6): {ipv6Gateway.Address}");
+                }
+            }
+            else if (ipv6Gateway != null)
+            {
+                sb.AppendLine($"Default Gateway: {ipv6Gateway.Address}");
             }
 
             var dnsList = ipProps.DnsAddresses.Where(d => d.AddressFamily == AddressFamily.InterNetwork).ToList();
             if (dnsList.Count > 0)
             {
                 sb.AppendLine($"DNS Servers: {string.Join(", ", dnsList)}");
+            }
+            var dns6List = ipProps.DnsAddresses.Where(d => d.AddressFamily == AddressFamily.InterNetworkV6 && !d.IsIPv6LinkLocal).ToList();
+            if (dns6List.Count > 0)
+            {
+                sb.AppendLine($"DNS Servers (IPv6): {string.Join(", ", dns6List)}");
             }
 
             // DHCP Server
@@ -1225,6 +1445,35 @@ namespace ResourceAnalyzer.Services
             }
             catch { }
 
+            // Opt-in Live Internet Latency (ICMP Echo)
+            if (_settingsService?.CurrentSettings.EnableNetworkPing == true)
+            {
+                try
+                {
+                    using var ping = new Ping();
+                    var reply = ping.Send("1.1.1.1", 400);
+                    if (reply.Status == IPStatus.Success)
+                    {
+                        string quality = reply.RoundtripTime switch
+                        {
+                            < 35 => "Fast / Low Latency",
+                            < 80 => "Good",
+                            < 150 => "Moderate",
+                            _ => "High Latency"
+                        };
+                        sb.AppendLine($"Internet Latency (Ping): {reply.RoundtripTime} ms ({quality})");
+                    }
+                    else
+                    {
+                        sb.AppendLine("Internet Latency (Ping): Request Timed Out");
+                    }
+                }
+                catch
+                {
+                    sb.AppendLine("Internet Latency (Ping): Unable to reach test server");
+                }
+            }
+
             return sb.ToString().TrimEnd();
         }
 
@@ -1247,10 +1496,11 @@ namespace ResourceAnalyzer.Services
                     {
                         dict["Signal"] = $"{bars.Value * 20}% ({bars.Value} of 5 bars)";
                     }
-                    string? wlanBand = NativeMethods.QueryActiveWifiBand();
-                    if (!string.IsNullOrEmpty(wlanBand))
+                    var wifiChannelBand = NativeMethods.QueryActiveWifiChannelAndBand();
+                    if (wifiChannelBand.HasValue)
                     {
-                        dict["Band"] = wlanBand;
+                        dict["Band"] = wifiChannelBand.Value.Band;
+                        dict["Channel"] = wifiChannelBand.Value.Channel.ToString();
                     }
                     else
                     {
@@ -1301,6 +1551,16 @@ namespace ResourceAnalyzer.Services
 
         #region GPU Details
 
+        private class GpuAdapterInfo
+        {
+            public string Name { get; set; } = string.Empty;
+            public string DriverVersion { get; set; } = string.Empty;
+            public string DriverDate { get; set; } = string.Empty;
+            public string Provider { get; set; } = string.Empty;
+            public long DedicatedVramBytes { get; set; }
+            public string VideoProcessor { get; set; } = string.Empty;
+        }
+
         private string BuildGpuDetails()
         {
             var sb = new StringBuilder();
@@ -1308,97 +1568,155 @@ namespace ResourceAnalyzer.Services
             if (_cachedGpuStaticInfo == null)
             {
                 var staticSb = new StringBuilder();
+                var gpus = new List<GpuAdapterInfo>();
+
+                // 1. Fast Windows Registry Video Class discovery (< 1 ms, 64-bit VRAM accurate)
                 try
                 {
-                    using var gpuSearcher = new ManagementObjectSearcher("SELECT Name, DriverVersion, DriverDate, AdapterRAM, VideoProcessor, VideoModeDescription FROM Win32_VideoController");
-                    using var gpuColl = gpuSearcher.Get();
-                    var rawList = gpuColl.Cast<ManagementObject>().ToList();
-                    try
+                    for (int i = 0; i <= 9; i++)
                     {
-                        var validGpus = rawList.Where(g => !string.IsNullOrWhiteSpace(g["Name"]?.ToString())).ToList();
-
-                        staticSb.AppendLine($"GPUs Detected: {validGpus.Count}");
-                        staticSb.AppendLine();
-
-                        int gpuIndex = 0;
-                        foreach (ManagementObject gpu in validGpus)
+                        string subKey = $@"SYSTEM\CurrentControlSet\Control\Class\{{4d36e968-e325-11ce-bfc1-08002be10318}}\{i:D4}";
+                        using var key = Registry.LocalMachine.OpenSubKey(subKey);
+                        if (key != null)
                         {
-                            gpuIndex++;
-                            string name = gpu["Name"]?.ToString()?.Trim() ?? string.Empty;
-                            string driverVer = gpu["DriverVersion"]?.ToString()?.Trim() ?? string.Empty;
-                            string vramStr = string.Empty;
-                            long vramBytes = 0;
-
-                            if (gpu["AdapterRAM"] != null && long.TryParse(gpu["AdapterRAM"]?.ToString(), out vramBytes) && vramBytes > 0)
+                            string desc = key.GetValue("DriverDesc")?.ToString()?.Trim() ?? string.Empty;
+                            if (!string.IsNullOrEmpty(desc) && !gpus.Any(g => g.Name.Equals(desc, StringComparison.OrdinalIgnoreCase)))
                             {
-                                vramStr = FormatHelper.FormatBytes(vramBytes);
-                            }
+                                var gpu = new GpuAdapterInfo { Name = desc };
+                                gpu.DriverVersion = key.GetValue("DriverVersion")?.ToString()?.Trim() ?? string.Empty;
+                                gpu.DriverDate = key.GetValue("DriverDate")?.ToString()?.Trim() ?? string.Empty;
+                                gpu.Provider = key.GetValue("ProviderName")?.ToString()?.Trim() ?? string.Empty;
 
-                            string videoProc = gpu["VideoProcessor"]?.ToString()?.Trim() ?? string.Empty;
-                            string driverDate = string.Empty;
-                            if (gpu["DriverDate"] != null)
-                            {
-                                string rawDate = gpu["DriverDate"]?.ToString() ?? string.Empty;
-                                if (rawDate.Length >= 8)
+                                // 64-bit and 32-bit VRAM parsing
+                                object? qwMem = key.GetValue("HardwareInformation.qwMemorySize");
+                                if (qwMem is long lVal && lVal > 0)
                                 {
-                                    string y = rawDate.Substring(0, 4);
-                                    string m = rawDate.Substring(4, 2);
-                                    string d = rawDate.Substring(6, 2);
-                                    driverDate = $"{d}-{m}-{y}";
+                                    gpu.DedicatedVramBytes = lVal;
                                 }
+                                else if (qwMem is byte[] qwBytes && qwBytes.Length >= 8)
+                                {
+                                    gpu.DedicatedVramBytes = BitConverter.ToInt64(qwBytes, 0);
+                                }
+                                else
+                                {
+                                    object? memObj = key.GetValue("HardwareInformation.MemorySize");
+                                    if (memObj is byte[] mBytes)
+                                    {
+                                        if (mBytes.Length >= 8)
+                                            gpu.DedicatedVramBytes = BitConverter.ToInt64(mBytes, 0);
+                                        else if (mBytes.Length >= 4)
+                                            gpu.DedicatedVramBytes = BitConverter.ToUInt32(mBytes, 0);
+                                    }
+                                    else if (memObj is int iVal && iVal > 0)
+                                    {
+                                        gpu.DedicatedVramBytes = iVal;
+                                    }
+                                    else if (memObj is long lVal2 && lVal2 > 0)
+                                    {
+                                        gpu.DedicatedVramBytes = lVal2;
+                                    }
+                                }
+
+                                gpus.Add(gpu);
                             }
-
-                            bool isIntegrated = name.Contains("Iris", StringComparison.OrdinalIgnoreCase) ||
-                                                name.Contains("UHD", StringComparison.OrdinalIgnoreCase) ||
-                                                name.Contains("HD Graphics", StringComparison.OrdinalIgnoreCase) ||
-                                                name.Contains("Intel(R) Graphics", StringComparison.OrdinalIgnoreCase) ||
-                                                (name.Contains("Radeon", StringComparison.OrdinalIgnoreCase) && !name.Contains("Radeon RX", StringComparison.OrdinalIgnoreCase) && !name.Contains("Radeon Pro", StringComparison.OrdinalIgnoreCase)) ||
-                                                name.Contains("Integrated", StringComparison.OrdinalIgnoreCase);
-
-                            bool isDedicated = !isIntegrated && (
-                                                name.Contains("NVIDIA", StringComparison.OrdinalIgnoreCase) ||
-                                                name.Contains("GeForce", StringComparison.OrdinalIgnoreCase) ||
-                                                name.Contains("RTX", StringComparison.OrdinalIgnoreCase) ||
-                                                name.Contains("GTX", StringComparison.OrdinalIgnoreCase) ||
-                                                name.Contains("Quadro", StringComparison.OrdinalIgnoreCase) ||
-                                                name.Contains("Radeon RX", StringComparison.OrdinalIgnoreCase) ||
-                                                name.Contains("Radeon Pro", StringComparison.OrdinalIgnoreCase) ||
-                                                name.Contains("Arc A", StringComparison.OrdinalIgnoreCase));
-
-                            string role = isDedicated ? "Dedicated GPU" : "Integrated GPU";
-
-                            if (gpuIndex > 1)
-                            {
-                                staticSb.AppendLine();
-                                staticSb.AppendLine($"Graphics Adapter {gpuIndex} ({role}): {name}");
-                            }
-                            else
-                            {
-                                string prefix = validGpus.Count > 1 ? $"Graphics Adapter 1 ({role}): " : $"Graphics Adapter ({role}): ";
-                                staticSb.AppendLine($"{prefix}{name}");
-                            }
-
-                            if (!string.IsNullOrEmpty(driverVer))
-                                staticSb.AppendLine($"Driver Version: {driverVer}");
-                            if (!string.IsNullOrEmpty(driverDate))
-                                staticSb.AppendLine($"Driver Date: {driverDate}");
-                            if (!string.IsNullOrEmpty(vramStr))
-                                staticSb.AppendLine($"Dedicated Video Memory: {vramStr}");
-                            if (!string.IsNullOrEmpty(videoProc) && !videoProc.Equals(name, StringComparison.OrdinalIgnoreCase))
-                                staticSb.AppendLine($"Video Processor: {videoProc}");
-                        }
-                    }
-                    finally
-                    {
-                        foreach (var g in rawList)
-                        {
-                            try { g.Dispose(); } catch { }
                         }
                     }
                 }
                 catch { }
 
-                if (staticSb.Length == 0)
+                // 2. WMI Fallback if registry video class yielded no adapters
+                if (gpus.Count == 0)
+                {
+                    try
+                    {
+                        using var gpuSearcher = new ManagementObjectSearcher("SELECT Name, DriverVersion, DriverDate, AdapterRAM, VideoProcessor FROM Win32_VideoController");
+                        using var gpuColl = gpuSearcher.Get();
+                        foreach (ManagementObject gpu in gpuColl)
+                        {
+                            using (gpu)
+                            {
+                                string name = gpu["Name"]?.ToString()?.Trim() ?? string.Empty;
+                                if (!string.IsNullOrWhiteSpace(name) && !gpus.Any(g => g.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
+                                {
+                                    var info = new GpuAdapterInfo { Name = name };
+                                    info.DriverVersion = gpu["DriverVersion"]?.ToString()?.Trim() ?? string.Empty;
+                                    if (gpu["AdapterRAM"] != null && long.TryParse(gpu["AdapterRAM"]?.ToString(), out long vram) && vram > 0)
+                                    {
+                                        info.DedicatedVramBytes = vram;
+                                    }
+                                    info.VideoProcessor = gpu["VideoProcessor"]?.ToString()?.Trim() ?? string.Empty;
+                                    if (gpu["DriverDate"] != null)
+                                    {
+                                        string rawDate = gpu["DriverDate"]?.ToString() ?? string.Empty;
+                                        if (rawDate.Length >= 8)
+                                        {
+                                            string y = rawDate.Substring(0, 4);
+                                            string m = rawDate.Substring(4, 2);
+                                            string d = rawDate.Substring(6, 2);
+                                            info.DriverDate = $"{d}-{m}-{y}";
+                                        }
+                                    }
+                                    gpus.Add(info);
+                                }
+                            }
+                        }
+                    }
+                    catch { }
+                }
+
+                if (gpus.Count > 0)
+                {
+                    staticSb.AppendLine($"GPUs Detected: {gpus.Count}");
+                    staticSb.AppendLine();
+
+                    int gpuIndex = 0;
+                    foreach (var gpu in gpus)
+                    {
+                        gpuIndex++;
+                        bool isIntegrated = gpu.Name.Contains("Iris", StringComparison.OrdinalIgnoreCase) ||
+                                            gpu.Name.Contains("UHD", StringComparison.OrdinalIgnoreCase) ||
+                                            gpu.Name.Contains("HD Graphics", StringComparison.OrdinalIgnoreCase) ||
+                                            gpu.Name.Contains("Intel(R) Graphics", StringComparison.OrdinalIgnoreCase) ||
+                                            (gpu.Name.Contains("Radeon", StringComparison.OrdinalIgnoreCase) && !gpu.Name.Contains("Radeon RX", StringComparison.OrdinalIgnoreCase) && !gpu.Name.Contains("Radeon Pro", StringComparison.OrdinalIgnoreCase)) ||
+                                            gpu.Name.Contains("Integrated", StringComparison.OrdinalIgnoreCase);
+
+                        bool isDedicated = !isIntegrated && (
+                                            gpu.Provider.Contains("NVIDIA", StringComparison.OrdinalIgnoreCase) ||
+                                            gpu.Name.Contains("NVIDIA", StringComparison.OrdinalIgnoreCase) ||
+                                            gpu.Name.Contains("GeForce", StringComparison.OrdinalIgnoreCase) ||
+                                            gpu.Name.Contains("RTX", StringComparison.OrdinalIgnoreCase) ||
+                                            gpu.Name.Contains("GTX", StringComparison.OrdinalIgnoreCase) ||
+                                            gpu.Name.Contains("Quadro", StringComparison.OrdinalIgnoreCase) ||
+                                            gpu.Name.Contains("Radeon RX", StringComparison.OrdinalIgnoreCase) ||
+                                            gpu.Name.Contains("Radeon Pro", StringComparison.OrdinalIgnoreCase) ||
+                                            gpu.Name.Contains("Arc A", StringComparison.OrdinalIgnoreCase));
+
+                        string role = isDedicated ? "Dedicated GPU" : "Integrated GPU";
+
+                        if (gpuIndex > 1)
+                        {
+                            staticSb.AppendLine();
+                            staticSb.AppendLine($"Graphics Adapter {gpuIndex} ({role}): {gpu.Name}");
+                        }
+                        else
+                        {
+                            string prefix = gpus.Count > 1 ? $"Graphics Adapter 1 ({role}): " : $"Graphics Adapter ({role}): ";
+                            staticSb.AppendLine($"{prefix}{gpu.Name}");
+                        }
+
+                        if (!string.IsNullOrEmpty(gpu.Provider))
+                            staticSb.AppendLine($"Manufacturer: {gpu.Provider}");
+                        if (!string.IsNullOrEmpty(gpu.DriverVersion))
+                            staticSb.AppendLine($"Driver Version: {gpu.DriverVersion}");
+                        if (!string.IsNullOrEmpty(gpu.DriverDate))
+                            staticSb.AppendLine($"Driver Date: {gpu.DriverDate}");
+                        if (gpu.DedicatedVramBytes > 0)
+                            staticSb.AppendLine($"Dedicated Video Memory: {FormatHelper.FormatBytes(gpu.DedicatedVramBytes)}");
+                        if (!string.IsNullOrEmpty(gpu.VideoProcessor) && !gpu.VideoProcessor.Equals(gpu.Name, StringComparison.OrdinalIgnoreCase))
+                            staticSb.AppendLine($"Video Processor: {gpu.VideoProcessor}");
+                    }
+                }
+                else
                 {
                     staticSb.AppendLine("Graphics Device: Standard Display Adapter");
                     staticSb.AppendLine("Driver Version: Available via Windows Device Manager");
@@ -1644,41 +1962,65 @@ namespace ResourceAnalyzer.Services
             return (0, 0, 0, string.Empty, string.Empty);
         }
 
+        private static (long DesignMwh, long FullMwh, int CycleCount, string Mfg, string Serial)? _cachedBatteryHealth;
+        private static DateTime _batteryHealthCacheTime = DateTime.MinValue;
+        private static readonly object _batteryHealthLock = new();
+
         private static (long DesignMwh, long FullMwh, int CycleCount, string Mfg, string Serial) GetBatteryHealthData()
         {
-            string tempFile = Path.Combine(Path.GetTempPath(), $"ra_batth_{Guid.NewGuid():N}.xml");
-            try
+            lock (_batteryHealthLock)
             {
-                var psi = new ProcessStartInfo
+                if (_cachedBatteryHealth.HasValue && (DateTime.UtcNow - _batteryHealthCacheTime).TotalSeconds < 60)
                 {
-                    FileName = "powercfg.exe",
-                    Arguments = $"/batteryreport /xml /output \"{tempFile}\"",
-                    CreateNoWindow = true,
-                    UseShellExecute = false,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true
-                };
-                using var proc = Process.Start(psi);
-                if (proc != null)
-                {
-                    proc.WaitForExit(3000);
-                    if (File.Exists(tempFile))
-                    {
-                        string xml = File.ReadAllText(tempFile);
-                        return ParseBatteryHealthXml(xml);
-                    }
+                    return _cachedBatteryHealth.Value;
                 }
-            }
-            catch { }
-            finally
-            {
+
+                string tempFile = Path.Combine(Path.GetTempPath(), $"ra_batth_{Guid.NewGuid():N}.xml");
                 try
                 {
-                    if (File.Exists(tempFile)) File.Delete(tempFile);
+                    var psi = new ProcessStartInfo
+                    {
+                        FileName = "powercfg.exe",
+                        Arguments = $"/batteryreport /xml /output \"{tempFile}\"",
+                        CreateNoWindow = true,
+                        UseShellExecute = false,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true
+                    };
+                    using var proc = Process.Start(psi);
+                    if (proc != null)
+                    {
+                        proc.WaitForExit(3000);
+                        if (File.Exists(tempFile))
+                        {
+                            string xml = File.ReadAllText(tempFile);
+                            var result = ParseBatteryHealthXml(xml);
+                            if (result.DesignMwh > 0 || result.FullMwh > 0)
+                            {
+                                _cachedBatteryHealth = result;
+                                _batteryHealthCacheTime = DateTime.UtcNow;
+                            }
+                            return result;
+                        }
+                    }
                 }
                 catch { }
+                finally
+                {
+                    try
+                    {
+                        if (File.Exists(tempFile)) File.Delete(tempFile);
+                    }
+                    catch { }
+                }
+
+                if (_cachedBatteryHealth.HasValue)
+                {
+                    return _cachedBatteryHealth.Value;
+                }
+
+                return (0, 0, 0, string.Empty, string.Empty);
             }
-            return (0, 0, 0, string.Empty, string.Empty);
         }
 
         internal static int? QueryWmiCycleCount()
@@ -1899,11 +2241,22 @@ namespace ResourceAnalyzer.Services
                     }
                     catch { }
 
+                    var ccdInfo = NativeMethods.QueryDisplayCcdInfo();
+                    if (ccdInfo.HasValue && !string.IsNullOrWhiteSpace(ccdInfo.Value.FriendlyName))
+                    {
+                        monitorName = ccdInfo.Value.FriendlyName;
+                    }
+
                     staticSb.AppendLine($"Monitor: {monitorName}");
+
+                    if (ccdInfo.HasValue && !string.IsNullOrWhiteSpace(ccdInfo.Value.ConnectionTechnology))
+                    {
+                        staticSb.AppendLine($"Connection: {ccdInfo.Value.ConnectionTechnology}");
+                    }
 
                     if (width > 0 && height > 0)
                     {
-                        string standard = GetResolutionStandard(width, height);
+                        string standard = FormatHelper.GetResolutionStandard(width, height);
                         string resStr = string.IsNullOrEmpty(standard) ? $"{width} x {height}" : $"{width} x {height} {standard}";
                         staticSb.AppendLine($"Active Resolution: {resStr}");
                     }
@@ -1937,15 +2290,14 @@ namespace ResourceAnalyzer.Services
                     staticSb.AppendLine($"Connected Displays: {countStr}");
 
                     // HDR Status (via Windows CCD Advanced Color API)
-                    var hdrStatus = NativeMethods.QueryDisplayHdrStatus();
-                    if (hdrStatus.HasValue)
+                    if (ccdInfo.HasValue)
                     {
-                        if (hdrStatus.Value.Enabled)
+                        if (ccdInfo.Value.HdrEnabled)
                         {
-                            uint hdrBits = hdrStatus.Value.BitsPerChannel > 0 ? hdrStatus.Value.BitsPerChannel : 10;
+                            uint hdrBits = ccdInfo.Value.BitsPerChannel > 0 ? ccdInfo.Value.BitsPerChannel : 10;
                             staticSb.AppendLine($"HDR (High Dynamic Range): HDR Enabled ({hdrBits}-bit Advanced Color)");
                         }
-                        else if (hdrStatus.Value.Supported)
+                        else if (ccdInfo.Value.HdrSupported)
                         {
                             staticSb.AppendLine("HDR (High Dynamic Range): Supported (Currently Disabled in Windows Settings)");
                         }
@@ -1971,15 +2323,123 @@ namespace ResourceAnalyzer.Services
             return sb.ToString().TrimEnd();
         }
 
-        private static string GetResolutionStandard(int width, int height)
+        #endregion
+
+        #region Audio Details
+
+        private string BuildAudioDetails()
         {
-            if (width == 3840 && height == 2160) return "(4K Ultra HD)";
-            if (width == 2560 && height == 1440) return "(2K QHD)";
-            if (width == 1920 && height == 1080) return "(Full HD)";
-            if (width == 1600 && height == 900) return "(HD+)";
-            if (width == 1366 && height == 768) return "(HD)";
-            if (width == 1280 && height == 720) return "(720p HD)";
-            return string.Empty;
+            var sb = new StringBuilder();
+
+            // 1. Playback Endpoint (Render)
+            var playback = NativeMethods.GetDefaultAudioDeviceInfo(NativeMethods.EDataFlow.eRender);
+            if (playback.HasValue)
+            {
+                var p = playback.Value;
+                sb.AppendLine($"Default Output: {p.Name}");
+                sb.AppendLine($"Output Type: {p.FormFactor}");
+
+                int volPct = (int)Math.Round(p.Volume * 100.0);
+                string muteStr = p.IsMuted ? " (Muted)" : string.Empty;
+                sb.AppendLine($"Master Volume: {volPct}%{muteStr}");
+
+                if (p.SampleRate > 0)
+                {
+                    string qualityDesc = p.SampleRate switch
+                    {
+                        >= 192000 => "Studio Quality (192 kHz)",
+                        >= 96000 => "Studio Quality (96 kHz)",
+                        >= 48000 => "DVD / Studio Quality (48 kHz)",
+                        >= 44100 => "CD Quality (44.1 kHz)",
+                        _ => $"{p.SampleRate:N0} Hz"
+                    };
+                    sb.AppendLine($"Sample Rate: {p.SampleRate:N0} Hz ({qualityDesc})");
+                }
+
+                if (p.BitsPerSample > 0)
+                {
+                    sb.AppendLine($"Bit Depth: {p.BitsPerSample}-bit");
+                }
+
+                if (p.Channels > 0)
+                {
+                    string chDesc = p.Channels switch
+                    {
+                        1 => "Mono (1 Channel)",
+                        2 => "Stereo (2 Channels)",
+                        4 => "Quadraphonic (4 Channels)",
+                        6 => "5.1 Surround (6 Channels)",
+                        8 => "7.1 Surround (8 Channels)",
+                        _ => $"{p.Channels} Channels"
+                    };
+                    sb.AppendLine($"Channels: {chDesc}");
+                }
+            }
+            else
+            {
+                sb.AppendLine("Default Output: No active audio output endpoint found");
+            }
+
+            // 2. Recording Endpoint (Capture / Microphone)
+            var capture = NativeMethods.GetDefaultAudioDeviceInfo(NativeMethods.EDataFlow.eCapture);
+            if (capture.HasValue)
+            {
+                var c = capture.Value;
+                sb.AppendLine($"Default Input (Mic): {c.Name}");
+                sb.AppendLine($"Input Type: {c.FormFactor}");
+
+                int capVolPct = (int)Math.Round(c.Volume * 100.0);
+                string capMuteStr = c.IsMuted ? " (Muted)" : string.Empty;
+                sb.AppendLine($"Input Volume: {capVolPct}%{capMuteStr}");
+
+                if (c.SampleRate > 0)
+                {
+                    sb.AppendLine($"Input Sample Rate: {c.SampleRate:N0} Hz ({c.BitsPerSample}-bit, {c.Channels} ch)");
+                }
+            }
+            else
+            {
+                sb.AppendLine("Default Input (Mic): Not connected or disabled");
+            }
+
+            // 3. Audio Hardware Controllers & Chipsets (Win32_SoundDevice)
+            try
+            {
+                using var searcher = new ManagementObjectSearcher("SELECT Name, Manufacturer, Status FROM Win32_SoundDevice");
+                using var coll = searcher.Get();
+                var soundDevices = new List<string>();
+                foreach (ManagementObject obj in coll)
+                {
+                    using (obj)
+                    {
+                        string name = obj["Name"]?.ToString()?.Trim() ?? string.Empty;
+                        string mfg = obj["Manufacturer"]?.ToString()?.Trim() ?? string.Empty;
+                        string status = obj["Status"]?.ToString()?.Trim() ?? "OK";
+                        if (!string.IsNullOrWhiteSpace(name))
+                        {
+                            string entry = !string.IsNullOrWhiteSpace(mfg) && !name.Contains(mfg, StringComparison.OrdinalIgnoreCase)
+                                ? $"{name} ({mfg}) - Status: {status}"
+                                : $"{name} - Status: {status}";
+                            if (!soundDevices.Contains(entry))
+                            {
+                                soundDevices.Add(entry);
+                            }
+                        }
+                    }
+                }
+
+                if (soundDevices.Count > 0)
+                {
+                    sb.AppendLine($"Installed Controllers: {soundDevices.Count}");
+                    for (int i = 0; i < soundDevices.Count; i++)
+                    {
+                        sb.AppendLine($"Controller {i + 1}: {soundDevices[i]}");
+                    }
+                }
+            }
+            catch { }
+
+            return sb.ToString().TrimEnd();
         }
 
         #endregion
@@ -2042,6 +2502,15 @@ namespace ResourceAnalyzer.Services
                 sb.AppendLine("[Display & Monitors]");
                 string dispDetails = BuildDisplayDetails();
                 foreach (var line in dispDetails.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.RemoveEmptyEntries))
+                {
+                    sb.AppendLine(line);
+                }
+                sb.AppendLine();
+
+                // 4c. Audio & Sound Devices
+                sb.AppendLine("[Audio & Sound Devices]");
+                string audioDetails = BuildAudioDetails();
+                foreach (var line in audioDetails.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.RemoveEmptyEntries))
                 {
                     sb.AppendLine(line);
                 }

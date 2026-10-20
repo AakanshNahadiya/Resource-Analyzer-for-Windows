@@ -92,50 +92,57 @@ namespace ResourceAnalyzer.Services
         {
             int size = 0;
             uint ret = NativeMethods.GetExtendedTcpTable(IntPtr.Zero, ref size, true, NativeMethods.AF_INET, NativeMethods.TCP_TABLE_OWNER_PID_ALL, 0);
-            if (size == 0) return;
 
-            IntPtr buffer = Marshal.AllocHGlobal(size);
-            try
+            for (int attempt = 0; attempt < 5 && size > 0; attempt++)
             {
-                ret = NativeMethods.GetExtendedTcpTable(buffer, ref size, true, NativeMethods.AF_INET, NativeMethods.TCP_TABLE_OWNER_PID_ALL, 0);
-                if (ret != NativeMethods.NO_ERROR) return;
-
-                int entries = Marshal.ReadInt32(buffer);
-                IntPtr rowPtr = IntPtr.Add(buffer, 4);
-
-                for (int i = 0; i < entries; i++)
+                IntPtr buffer = Marshal.AllocHGlobal(size);
+                try
                 {
-                    int stateNum = Marshal.ReadInt32(rowPtr, 0);
-                    uint localAddr = (uint)Marshal.ReadInt32(rowPtr, 4);
-                    uint localPort = (uint)Marshal.ReadInt32(rowPtr, 8);
-                    uint remoteAddr = (uint)Marshal.ReadInt32(rowPtr, 12);
-                    uint remotePort = (uint)Marshal.ReadInt32(rowPtr, 16);
-                    int pid = Marshal.ReadInt32(rowPtr, 20);
-
-                    string stateStr = MapTcpState(stateNum);
-                    ushort lPort = SwapPort(localPort);
-                    ushort rPort = SwapPort(remotePort);
-
-                    string localIpStr = new IPAddress(localAddr).ToString();
-                    string remoteIpStr = new IPAddress(remoteAddr).ToString();
-
-                    list.Add(new NetworkPortItem
+                    ret = NativeMethods.GetExtendedTcpTable(buffer, ref size, true, NativeMethods.AF_INET, NativeMethods.TCP_TABLE_OWNER_PID_ALL, 0);
+                    if (ret == NativeMethods.ERROR_INSUFFICIENT_BUFFER)
                     {
-                        Protocol = "TCP",
-                        LocalAddress = localIpStr,
-                        LocalPort = lPort,
-                        RemoteAddress = remoteIpStr,
-                        RemotePort = rPort,
-                        State = stateStr,
-                        ProcessId = pid
-                    });
+                        continue;
+                    }
+                    if (ret != NativeMethods.NO_ERROR) return;
 
-                    rowPtr = IntPtr.Add(rowPtr, 24);
+                    int entries = Marshal.ReadInt32(buffer);
+                    IntPtr rowPtr = IntPtr.Add(buffer, 4);
+
+                    for (int i = 0; i < entries; i++)
+                    {
+                        int stateNum = Marshal.ReadInt32(rowPtr, 0);
+                        uint localAddr = (uint)Marshal.ReadInt32(rowPtr, 4);
+                        uint localPort = (uint)Marshal.ReadInt32(rowPtr, 8);
+                        uint remoteAddr = (uint)Marshal.ReadInt32(rowPtr, 12);
+                        uint remotePort = (uint)Marshal.ReadInt32(rowPtr, 16);
+                        int pid = Marshal.ReadInt32(rowPtr, 20);
+
+                        string stateStr = MapTcpState(stateNum);
+                        ushort lPort = SwapPort(localPort);
+                        ushort rPort = SwapPort(remotePort);
+
+                        string localIpStr = new IPAddress(localAddr).ToString();
+                        string remoteIpStr = new IPAddress(remoteAddr).ToString();
+
+                        list.Add(new NetworkPortItem
+                        {
+                            Protocol = "TCP",
+                            LocalAddress = localIpStr,
+                            LocalPort = lPort,
+                            RemoteAddress = remoteIpStr,
+                            RemotePort = rPort,
+                            State = stateStr,
+                            ProcessId = pid
+                        });
+
+                        rowPtr = IntPtr.Add(rowPtr, 24);
+                    }
+                    return;
                 }
-            }
-            finally
-            {
-                Marshal.FreeHGlobal(buffer);
+                finally
+                {
+                    Marshal.FreeHGlobal(buffer);
+                }
             }
         }
 
@@ -143,56 +150,61 @@ namespace ResourceAnalyzer.Services
         {
             int size = 0;
             uint ret = NativeMethods.GetExtendedTcpTable(IntPtr.Zero, ref size, true, NativeMethods.AF_INET6, NativeMethods.TCP_TABLE_OWNER_PID_ALL, 0);
-            if (size == 0) return;
 
-            IntPtr buffer = Marshal.AllocHGlobal(size);
-            try
+            for (int attempt = 0; attempt < 5 && size > 0; attempt++)
             {
-                ret = NativeMethods.GetExtendedTcpTable(buffer, ref size, true, NativeMethods.AF_INET6, NativeMethods.TCP_TABLE_OWNER_PID_ALL, 0);
-                if (ret != NativeMethods.NO_ERROR) return;
-
-                int entries = Marshal.ReadInt32(buffer);
-                IntPtr rowPtr = IntPtr.Add(buffer, 4);
-                byte[] localAddrBytes = new byte[16];
-                byte[] remoteAddrBytes = new byte[16];
-
-                for (int i = 0; i < entries; i++)
+                IntPtr buffer = Marshal.AllocHGlobal(size);
+                try
                 {
-                    Marshal.Copy(rowPtr, localAddrBytes, 0, 16);
-                    // uint localScope = (uint)Marshal.ReadInt32(rowPtr, 16);
-                    uint localPort = (uint)Marshal.ReadInt32(rowPtr, 20);
-
-                    Marshal.Copy(IntPtr.Add(rowPtr, 24), remoteAddrBytes, 0, 16);
-                    // uint remoteScope = (uint)Marshal.ReadInt32(rowPtr, 40);
-                    uint remotePort = (uint)Marshal.ReadInt32(rowPtr, 44);
-
-                    int stateNum = Marshal.ReadInt32(rowPtr, 48);
-                    int pid = Marshal.ReadInt32(rowPtr, 52);
-
-                    string stateStr = MapTcpState(stateNum);
-                    ushort lPort = SwapPort(localPort);
-                    ushort rPort = SwapPort(remotePort);
-
-                    string localIpStr = new IPAddress(localAddrBytes).ToString();
-                    string remoteIpStr = new IPAddress(remoteAddrBytes).ToString();
-
-                    list.Add(new NetworkPortItem
+                    ret = NativeMethods.GetExtendedTcpTable(buffer, ref size, true, NativeMethods.AF_INET6, NativeMethods.TCP_TABLE_OWNER_PID_ALL, 0);
+                    if (ret == NativeMethods.ERROR_INSUFFICIENT_BUFFER)
                     {
-                        Protocol = "TCP",
-                        LocalAddress = localIpStr,
-                        LocalPort = lPort,
-                        RemoteAddress = remoteIpStr,
-                        RemotePort = rPort,
-                        State = stateStr,
-                        ProcessId = pid
-                    });
+                        continue;
+                    }
+                    if (ret != NativeMethods.NO_ERROR) return;
 
-                    rowPtr = IntPtr.Add(rowPtr, 56);
+                    int entries = Marshal.ReadInt32(buffer);
+                    IntPtr rowPtr = IntPtr.Add(buffer, 4);
+                    byte[] localAddrBytes = new byte[16];
+                    byte[] remoteAddrBytes = new byte[16];
+
+                    for (int i = 0; i < entries; i++)
+                    {
+                        Marshal.Copy(rowPtr, localAddrBytes, 0, 16);
+                        uint localPort = (uint)Marshal.ReadInt32(rowPtr, 20);
+
+                        Marshal.Copy(IntPtr.Add(rowPtr, 24), remoteAddrBytes, 0, 16);
+                        uint remotePort = (uint)Marshal.ReadInt32(rowPtr, 44);
+
+                        int stateNum = Marshal.ReadInt32(rowPtr, 48);
+                        int pid = Marshal.ReadInt32(rowPtr, 52);
+
+                        string stateStr = MapTcpState(stateNum);
+                        ushort lPort = SwapPort(localPort);
+                        ushort rPort = SwapPort(remotePort);
+
+                        string localIpStr = new IPAddress(localAddrBytes).ToString();
+                        string remoteIpStr = new IPAddress(remoteAddrBytes).ToString();
+
+                        list.Add(new NetworkPortItem
+                        {
+                            Protocol = "TCP",
+                            LocalAddress = localIpStr,
+                            LocalPort = lPort,
+                            RemoteAddress = remoteIpStr,
+                            RemotePort = rPort,
+                            State = stateStr,
+                            ProcessId = pid
+                        });
+
+                        rowPtr = IntPtr.Add(rowPtr, 56);
+                    }
+                    return;
                 }
-            }
-            finally
-            {
-                Marshal.FreeHGlobal(buffer);
+                finally
+                {
+                    Marshal.FreeHGlobal(buffer);
+                }
             }
         }
 
@@ -200,43 +212,50 @@ namespace ResourceAnalyzer.Services
         {
             int size = 0;
             uint ret = NativeMethods.GetExtendedUdpTable(IntPtr.Zero, ref size, true, NativeMethods.AF_INET, NativeMethods.UDP_TABLE_OWNER_PID, 0);
-            if (size == 0) return;
 
-            IntPtr buffer = Marshal.AllocHGlobal(size);
-            try
+            for (int attempt = 0; attempt < 5 && size > 0; attempt++)
             {
-                ret = NativeMethods.GetExtendedUdpTable(buffer, ref size, true, NativeMethods.AF_INET, NativeMethods.UDP_TABLE_OWNER_PID, 0);
-                if (ret != NativeMethods.NO_ERROR) return;
-
-                int entries = Marshal.ReadInt32(buffer);
-                IntPtr rowPtr = IntPtr.Add(buffer, 4);
-
-                for (int i = 0; i < entries; i++)
+                IntPtr buffer = Marshal.AllocHGlobal(size);
+                try
                 {
-                    uint localAddr = (uint)Marshal.ReadInt32(rowPtr, 0);
-                    uint localPort = (uint)Marshal.ReadInt32(rowPtr, 4);
-                    int pid = Marshal.ReadInt32(rowPtr, 8);
-
-                    ushort lPort = SwapPort(localPort);
-                    string localIpStr = new IPAddress(localAddr).ToString();
-
-                    list.Add(new NetworkPortItem
+                    ret = NativeMethods.GetExtendedUdpTable(buffer, ref size, true, NativeMethods.AF_INET, NativeMethods.UDP_TABLE_OWNER_PID, 0);
+                    if (ret == NativeMethods.ERROR_INSUFFICIENT_BUFFER)
                     {
-                        Protocol = "UDP",
-                        LocalAddress = localIpStr,
-                        LocalPort = lPort,
-                        RemoteAddress = "*",
-                        RemotePort = 0,
-                        State = "Listening",
-                        ProcessId = pid
-                    });
+                        continue;
+                    }
+                    if (ret != NativeMethods.NO_ERROR) return;
 
-                    rowPtr = IntPtr.Add(rowPtr, 12);
+                    int entries = Marshal.ReadInt32(buffer);
+                    IntPtr rowPtr = IntPtr.Add(buffer, 4);
+
+                    for (int i = 0; i < entries; i++)
+                    {
+                        uint localAddr = (uint)Marshal.ReadInt32(rowPtr, 0);
+                        uint localPort = (uint)Marshal.ReadInt32(rowPtr, 4);
+                        int pid = Marshal.ReadInt32(rowPtr, 8);
+
+                        ushort lPort = SwapPort(localPort);
+                        string localIpStr = new IPAddress(localAddr).ToString();
+
+                        list.Add(new NetworkPortItem
+                        {
+                            Protocol = "UDP",
+                            LocalAddress = localIpStr,
+                            LocalPort = lPort,
+                            RemoteAddress = "*",
+                            RemotePort = 0,
+                            State = "Listening",
+                            ProcessId = pid
+                        });
+
+                        rowPtr = IntPtr.Add(rowPtr, 12);
+                    }
+                    return;
                 }
-            }
-            finally
-            {
-                Marshal.FreeHGlobal(buffer);
+                finally
+                {
+                    Marshal.FreeHGlobal(buffer);
+                }
             }
         }
 
@@ -244,45 +263,51 @@ namespace ResourceAnalyzer.Services
         {
             int size = 0;
             uint ret = NativeMethods.GetExtendedUdpTable(IntPtr.Zero, ref size, true, NativeMethods.AF_INET6, NativeMethods.UDP_TABLE_OWNER_PID, 0);
-            if (size == 0) return;
 
-            IntPtr buffer = Marshal.AllocHGlobal(size);
-            try
+            for (int attempt = 0; attempt < 5 && size > 0; attempt++)
             {
-                ret = NativeMethods.GetExtendedUdpTable(buffer, ref size, true, NativeMethods.AF_INET6, NativeMethods.UDP_TABLE_OWNER_PID, 0);
-                if (ret != NativeMethods.NO_ERROR) return;
-
-                int entries = Marshal.ReadInt32(buffer);
-                IntPtr rowPtr = IntPtr.Add(buffer, 4);
-                byte[] localAddrBytes = new byte[16];
-
-                for (int i = 0; i < entries; i++)
+                IntPtr buffer = Marshal.AllocHGlobal(size);
+                try
                 {
-                    Marshal.Copy(rowPtr, localAddrBytes, 0, 16);
-                    // uint localScope = (uint)Marshal.ReadInt32(rowPtr, 16);
-                    uint localPort = (uint)Marshal.ReadInt32(rowPtr, 20);
-                    int pid = Marshal.ReadInt32(rowPtr, 24);
-
-                    ushort lPort = SwapPort(localPort);
-                    string localIpStr = new IPAddress(localAddrBytes).ToString();
-
-                    list.Add(new NetworkPortItem
+                    ret = NativeMethods.GetExtendedUdpTable(buffer, ref size, true, NativeMethods.AF_INET6, NativeMethods.UDP_TABLE_OWNER_PID, 0);
+                    if (ret == NativeMethods.ERROR_INSUFFICIENT_BUFFER)
                     {
-                        Protocol = "UDP",
-                        LocalAddress = localIpStr,
-                        LocalPort = lPort,
-                        RemoteAddress = "*",
-                        RemotePort = 0,
-                        State = "Listening",
-                        ProcessId = pid
-                    });
+                        continue;
+                    }
+                    if (ret != NativeMethods.NO_ERROR) return;
 
-                    rowPtr = IntPtr.Add(rowPtr, 28);
+                    int entries = Marshal.ReadInt32(buffer);
+                    IntPtr rowPtr = IntPtr.Add(buffer, 4);
+                    byte[] localAddrBytes = new byte[16];
+
+                    for (int i = 0; i < entries; i++)
+                    {
+                        Marshal.Copy(rowPtr, localAddrBytes, 0, 16);
+                        uint localPort = (uint)Marshal.ReadInt32(rowPtr, 20);
+                        int pid = Marshal.ReadInt32(rowPtr, 24);
+
+                        ushort lPort = SwapPort(localPort);
+                        string localIpStr = new IPAddress(localAddrBytes).ToString();
+
+                        list.Add(new NetworkPortItem
+                        {
+                            Protocol = "UDP",
+                            LocalAddress = localIpStr,
+                            LocalPort = lPort,
+                            RemoteAddress = "*",
+                            RemotePort = 0,
+                            State = "Listening",
+                            ProcessId = pid
+                        });
+
+                        rowPtr = IntPtr.Add(rowPtr, 28);
+                    }
+                    return;
                 }
-            }
-            finally
-            {
-                Marshal.FreeHGlobal(buffer);
+                finally
+                {
+                    Marshal.FreeHGlobal(buffer);
+                }
             }
         }
 
@@ -308,10 +333,22 @@ namespace ResourceAnalyzer.Services
                 pName = p.ProcessName + ".exe";
                 fName = p.ProcessName;
 
-                try
+                // Native Win32 QueryFullProcessImageNameW (Works across 32/64 bit and un-elevated rights)
+                pPath = ProcessService.GetProcessExecutablePath(pid) ?? "";
+
+                // Fallback to managed MainModule if QueryFullProcessImageName returned empty
+                if (string.IsNullOrEmpty(pPath))
                 {
-                    pPath = p.MainModule?.FileName ?? "";
-                    if (!string.IsNullOrEmpty(pPath))
+                    try
+                    {
+                        pPath = p.MainModule?.FileName ?? "";
+                    }
+                    catch { }
+                }
+
+                if (!string.IsNullOrEmpty(pPath))
+                {
+                    try
                     {
                         var vi = FileVersionInfo.GetVersionInfo(pPath);
                         if (!string.IsNullOrWhiteSpace(vi.FileDescription))
@@ -319,16 +356,30 @@ namespace ResourceAnalyzer.Services
                             fName = vi.FileDescription.Trim();
                         }
                     }
-                }
-                catch
-                {
-                    // MainModule can fail for protected system processes or un-elevated rights; process name still works
+                    catch { }
                 }
             }
             catch
             {
-                pName = $"Unknown ({pid})";
-                fName = pName;
+                pPath = ProcessService.GetProcessExecutablePath(pid) ?? "";
+                if (!string.IsNullOrEmpty(pPath))
+                {
+                    pName = System.IO.Path.GetFileName(pPath);
+                    try
+                    {
+                        var vi = FileVersionInfo.GetVersionInfo(pPath);
+                        fName = !string.IsNullOrWhiteSpace(vi.FileDescription) ? vi.FileDescription.Trim() : pName;
+                    }
+                    catch
+                    {
+                        fName = pName;
+                    }
+                }
+                else
+                {
+                    pName = $"Unknown ({pid})";
+                    fName = pName;
+                }
             }
 
             var entry = (pName, fName, pPath, DateTime.Now);

@@ -9,7 +9,7 @@ Stop-Process -Name ResourceAnalyzer -Force -ErrorAction SilentlyContinue
 if (Test-Path "./publish") {
     Remove-Item -Path "./publish/*" -Recurse -Force -ErrorAction SilentlyContinue
 }
-dotnet publish -c Release -r win-x64 --self-contained -p:PublishReadyToRun=false -o ./publish
+dotnet publish -c Release -r win-x64 --self-contained -p:PublishReadyToRun=true -o ./publish
 if ($LASTEXITCODE -ne 0) {
     Write-Error "dotnet publish failed."
     exit $LASTEXITCODE
@@ -28,12 +28,13 @@ Get-ChildItem -Path "./publish" -Directory | Where-Object { $_.Name -match '^[a-
 
 # Remove unused Windows Desktop runtime assemblies to optimize installer size (~12 MB savings)
 # CRITICAL: NEVER remove System.Windows.Controls.Ribbon.dll as WPF AncestorType XAML resolution strictly requires it!
+# CRITICAL: NEVER remove System.Configuration.ConfigurationManager.dll as WPF BaseCompatibilityPreferences strictly requires it!
 $unusedAssemblies = @(
     "System.Windows.Forms.Design*.dll",
     "mscordbi.dll",
     "mscordaccore*.dll",
     "Microsoft.DiaSymReader.Native.amd64.dll",
-    "System.Reflection.Metadata.dll",
+    # CRITICAL: NEVER remove System.Reflection.Metadata.dll as system snapshot reflection strictly requires it!
     "ReachFramework.dll",
     "PresentationUI.dll",
     "System.Printing.dll",
@@ -73,8 +74,29 @@ if (Test-Path $isccPath) {
         Write-Host " Setup Installer: ./Installer/Output/$($setupFile.Name)" -ForegroundColor Green
         $targetDir = "C:\Users\Aakansh\Music\Output"
         if (Test-Path $targetDir) {
+            $destFile = Join-Path $targetDir $setupFile.Name
             Copy-Item $setupFile.FullName -Destination $targetDir -Force
-            Write-Host " Output Folder: $targetDir\$($setupFile.Name)" -ForegroundColor Green
+            Write-Host " Output Folder: $destFile" -ForegroundColor Green
+
+            # Compute SHA-256 and update WinGet Manifest automatically
+            Write-Host "`nComputing SHA-256 hash..." -ForegroundColor Yellow
+            $hashResult = Get-FileHash -Path $destFile -Algorithm SHA256
+            $sha256 = $hashResult.Hash.ToUpper()
+            Write-Host " SHA-256: $sha256" -ForegroundColor Green
+
+            $hashFile = "$destFile.sha256"
+            Set-Content -Path $hashFile -Value "$sha256  $($setupFile.Name)"
+            Write-Host " Saved Hash File: $hashFile" -ForegroundColor Cyan
+
+            $manifestPath = "./winget-manifest/AccessibleTools.ResourceAnalyzer.installer.yaml"
+            if (Test-Path $manifestPath) {
+                $today = Get-Date -Format "yyyy-MM-dd"
+                $content = Get-Content -Path $manifestPath -Raw
+                $content = [System.Text.RegularExpressions.Regex]::Replace($content, "ReleaseDate:\s*\d{4}-\d{2}-\d{2}", "ReleaseDate: $today")
+                $content = [System.Text.RegularExpressions.Regex]::Replace($content, "InstallerSha256:\s*[A-Fa-f0-9]{64}", "InstallerSha256: $sha256")
+                Set-Content -Path $manifestPath -Value $content -NoNewline
+                Write-Host " WinGet Manifest Updated: ReleaseDate=$today, InstallerSha256=$sha256" -ForegroundColor Green
+            }
         }
         Write-Host "==========================================" -ForegroundColor Green
     }

@@ -2,7 +2,9 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Threading.Tasks;
 using System.Windows.Interop;
+using Microsoft.Win32;
 
 namespace ResourceAnalyzer.Helpers
 {
@@ -46,6 +48,10 @@ namespace ResourceAnalyzer.Helpers
         private const uint NIM_ADD = 0x00000000;
         private const uint NIM_MODIFY = 0x00000001;
         private const uint NIM_DELETE = 0x00000002;
+        private const uint NIM_SETFOCUS = 0x00000003;
+        private const uint NIM_SETVERSION = 0x00000004;
+
+        private const uint NOTIFYICON_VERSION_4 = 4;
 
         private const uint NIF_MESSAGE = 0x00000001;
         private const uint NIF_ICON = 0x00000002;
@@ -56,23 +62,39 @@ namespace ResourceAnalyzer.Helpers
 
         private const int WM_USER = 0x0400;
         public const int WM_TRAYICON = WM_USER + 101;
+        public const string TrayTooltipText = "Resource Analyzer for Windows (Ctrl+Win+I for Network Speed)";
 
         private const int WM_LBUTTONUP = 0x0202;
         private const int WM_LBUTTONDBLCLK = 0x0203;
         private const int WM_RBUTTONUP = 0x0205;
         private const int WM_CONTEXTMENU = 0x007B;
 
+        // Modern Shell V4 notifications for accessible keyboard / screen-reader activation
+        private const int NIN_SELECT = WM_USER + 0;
+        private const int NIN_KEYSELECT = WM_USER + 1;
+
         private const uint MF_STRING = 0x00000000;
         private const uint MF_SEPARATOR = 0x00000800;
         private const uint TPM_LEFTALIGN = 0x0000;
+        private const uint TPM_RIGHTBUTTON = 0x0002;
         private const uint TPM_BOTTOMALIGN = 0x0020;
         private const uint TPM_RETURNCMD = 0x0100;
+
+        private const uint WS_EX_TOOLWINDOW = 0x00000080;
+        private const uint WS_POPUP = 0x80000000;
+        private const int SW_SHOW = 5;
 
         private const uint IMAGE_ICON = 1;
         private const uint LR_LOADFROMFILE = 0x0010;
 
-        [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+        private const int SM_CXSMICON = 49;
+        private const int SM_CYSMICON = 50;
+
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         private static extern bool Shell_NotifyIcon(uint dwMessage, ref NOTIFYICONDATA lpData);
+
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+        private static extern uint ExtractIconEx(string szFileName, int nIconIndex, out IntPtr phiconLarge, out IntPtr phiconSmall, uint nIcons);
 
         [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
         private static extern IntPtr LoadImage(IntPtr hInst, string name, uint type, int cx, int cy, uint fuLoad);
@@ -101,13 +123,40 @@ namespace ResourceAnalyzer.Helpers
         [DllImport("user32.dll")]
         private static extern bool SetForegroundWindow(IntPtr hWnd);
 
+        [DllImport("user32.dll")]
+        private static extern bool PostMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+
+        [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        private static extern IntPtr CreateWindowEx(
+            uint dwExStyle, string lpClassName, string lpWindowName, uint dwStyle,
+            int x, int y, int nWidth, int nHeight,
+            IntPtr hWndParent, IntPtr hMenu, IntPtr hInstance, IntPtr lpParam);
+
+        [DllImport("user32.dll")]
+        private static extern bool DestroyWindow(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+        [DllImport("user32.dll")]
+        private static extern int GetSystemMetrics(int nIndex);
+
+        [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        private static extern uint RegisterWindowMessage(string lpString);
+
+        private static readonly uint WM_TASKBARCREATED = RegisterWindowMessage("TaskbarCreated");
+
         private readonly IntPtr _hwnd;
         private IntPtr _hIcon = IntPtr.Zero;
         private bool _isCreated = false;
+        private bool _isMenuOpen = false;
         private readonly Action _onRestore;
         private readonly Action _onSpeakSpeed;
         private readonly Action _onExit;
         private HwndSource? _hwndSource;
+
+        public bool IsCreated => _isCreated;
+        public IntPtr HIcon => _hIcon;
 
         public NativeTrayIcon(IntPtr hwnd, Action onRestore, Action onSpeakSpeed, Action onExit)
         {
@@ -122,34 +171,151 @@ namespace ResourceAnalyzer.Helpers
             InitIcon();
         }
 
+        public void EnsureCreated()
+        {
+            if (!_isCreated)
+            {
+                InitIcon();
+            }
+            else
+            {
+                EnsureHiddenInNotificationArea();
+            }
+        }
+
         private void InitIcon()
         {
             try
             {
-                string iconPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Resources", "app.ico");
-                if (File.Exists(iconPath))
-                {
-                    _hIcon = LoadImage(IntPtr.Zero, iconPath, IMAGE_ICON, 16, 16, LR_LOADFROMFILE);
-                }
-                if (_hIcon == IntPtr.Zero)
-                {
-                    _hIcon = LoadIcon(IntPtr.Zero, (IntPtr)32512); // IDI_APPLICATION
-                }
+                EnsureIconLoaded();
 
-                var nid = new NOTIFYICONDATA();
-                nid.cbSize = (uint)Marshal.SizeOf<NOTIFYICONDATA>();
-                nid.hWnd = _hwnd;
-                nid.uID = 1001;
+                var nid = CreateNotifyIconData();
                 nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
                 nid.uCallbackMessage = (uint)WM_TRAYICON;
                 nid.hIcon = _hIcon;
-                nid.szTip = "Resource Analyzer for Windows (Ctrl+Win+I for Network)";
+                nid.szTip = TrayTooltipText;
 
+                // Attempt NIM_ADD first
                 _isCreated = Shell_NotifyIcon(NIM_ADD, ref nid);
+
+                // If adding failed (e.g. icon already registered from prior instance or taskbar reload), try NIM_MODIFY
+                if (!_isCreated)
+                {
+                    _isCreated = Shell_NotifyIcon(NIM_MODIFY, ref nid);
+                }
+
+                if (_isCreated)
+                {
+                    // Promote to modern V4 shell behavior (accurate keyboard & mouse events)
+                    var verNid = CreateNotifyIconData();
+                    verNid.uVersionOrTimeout = NOTIFYICON_VERSION_4;
+                    Shell_NotifyIcon(NIM_SETVERSION, ref verNid);
+
+                    // Ensure icon resides in "Show hidden icons" chevron as standard apps do
+                    EnsureHiddenInNotificationArea();
+                    _ = Task.Delay(1500).ContinueWith(_ => EnsureHiddenInNotificationArea(), TaskScheduler.Default);
+                }
+                else
+                {
+                    // Retry once after 500ms in case Windows Shell/Explorer was temporarily busy during startup
+                    _ = Task.Delay(500).ContinueWith(_ =>
+                    {
+                        try
+                        {
+                            var retryNid = CreateNotifyIconData();
+                            retryNid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
+                            retryNid.uCallbackMessage = (uint)WM_TRAYICON;
+                            retryNid.hIcon = _hIcon;
+                            retryNid.szTip = TrayTooltipText;
+                            if (Shell_NotifyIcon(NIM_ADD, ref retryNid) || Shell_NotifyIcon(NIM_MODIFY, ref retryNid))
+                            {
+                                _isCreated = true;
+                                var retryVerNid = CreateNotifyIconData();
+                                retryVerNid.uVersionOrTimeout = NOTIFYICON_VERSION_4;
+                                Shell_NotifyIcon(NIM_SETVERSION, ref retryVerNid);
+                                EnsureHiddenInNotificationArea();
+                            }
+                        }
+                        catch { }
+                    }, TaskScheduler.Default);
+                }
             }
             catch (Exception ex)
             {
                 Debug.WriteLine($"NativeTrayIcon init failed: {ex.Message}");
+            }
+        }
+
+        private void EnsureIconLoaded()
+        {
+            if (_hIcon != IntPtr.Zero) return;
+
+            try
+            {
+                int cx = GetSystemMetrics(SM_CXSMICON);
+                int cy = GetSystemMetrics(SM_CYSMICON);
+                if (cx <= 0) cx = 16;
+                if (cy <= 0) cy = 16;
+
+                string iconPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Resources", "app.ico");
+                if (File.Exists(iconPath))
+                {
+                    _hIcon = LoadImage(IntPtr.Zero, iconPath, IMAGE_ICON, cx, cy, LR_LOADFROMFILE);
+                }
+
+                if (_hIcon == IntPtr.Zero)
+                {
+                    string? exePath = Process.GetCurrentProcess().MainModule?.FileName;
+                    if (!string.IsNullOrEmpty(exePath))
+                    {
+                        ExtractIconEx(exePath, 0, out _, out _hIcon, 1);
+                    }
+                }
+
+                if (_hIcon == IntPtr.Zero)
+                {
+                    _hIcon = LoadIcon(IntPtr.Zero, (IntPtr)32512); // IDI_APPLICATION
+                }
+            }
+            catch { }
+        }
+
+        private NOTIFYICONDATA CreateNotifyIconData()
+        {
+            var nid = new NOTIFYICONDATA();
+            nid.cbSize = (uint)Marshal.SizeOf<NOTIFYICONDATA>();
+            nid.hWnd = _hwnd;
+            nid.uID = 1001;
+            return nid;
+        }
+
+        public static void EnsureHiddenInNotificationArea()
+        {
+            try
+            {
+                string? exePath = Process.GetCurrentProcess().MainModule?.FileName;
+                if (string.IsNullOrEmpty(exePath)) return;
+
+                using var rootKey = Registry.CurrentUser.OpenSubKey(@"Control Panel\NotifyIconSettings", writable: true);
+                if (rootKey == null) return;
+
+                foreach (string subKeyName in rootKey.GetSubKeyNames())
+                {
+                    using var subKey = rootKey.OpenSubKey(subKeyName, writable: true);
+                    if (subKey != null)
+                    {
+                        object? val = subKey.GetValue("ExecutablePath");
+                        if (val is string regPath && string.Equals(regPath, exePath, StringComparison.OrdinalIgnoreCase))
+                        {
+                            subKey.SetValue("IsPromoted", 0, RegistryValueKind.DWord);
+                            break;
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // Non-critical; fallback to standard Windows placement
             }
         }
 
@@ -158,10 +324,7 @@ namespace ResourceAnalyzer.Helpers
             if (!_isCreated || _hwnd == IntPtr.Zero) return;
             try
             {
-                var nid = new NOTIFYICONDATA();
-                nid.cbSize = (uint)Marshal.SizeOf<NOTIFYICONDATA>();
-                nid.hWnd = _hwnd;
-                nid.uID = 1001;
+                var nid = CreateNotifyIconData();
                 nid.uFlags = NIF_INFO;
                 nid.szInfoTitle = title.Length > 63 ? title.Substring(0, 63) : title;
                 nid.szInfo = message.Length > 255 ? message.Substring(0, 255) : message;
@@ -179,49 +342,112 @@ namespace ResourceAnalyzer.Helpers
         {
             if (msg == WM_TRAYICON)
             {
-                int eventType = (int)lParam;
-                if (eventType == WM_LBUTTONDBLCLK || eventType == WM_LBUTTONUP)
+                // In Shell V4 (uVersion = 4), LOWORD(lParam) contains the notification event code
+                // and HIWORD(lParam) contains the icon ID (uID). In legacy mode, lParam is the event code.
+                // Masking with 0xFFFF extracts the event code across both modes and architectures.
+                int eventType = (int)(lParam.ToInt64() & 0xFFFF);
+                if (eventType == WM_LBUTTONDBLCLK || eventType == WM_LBUTTONUP ||
+                    eventType == NIN_SELECT || eventType == NIN_KEYSELECT)
                 {
                     _onRestore();
                     handled = true;
                 }
-                else if (eventType == WM_RBUTTONUP || eventType == WM_CONTEXTMENU)
+                else if (eventType == WM_CONTEXTMENU)
                 {
-                    ShowContextMenu();
+                    ShowContextMenu(wParam);
                     handled = true;
                 }
+            }
+            else if (WM_TASKBARCREATED != 0 && (uint)msg == WM_TASKBARCREATED)
+            {
+                InitIcon();
+                handled = true;
             }
             return IntPtr.Zero;
         }
 
-        private void ShowContextMenu()
+        private void ShowContextMenu(IntPtr wParam)
         {
-            IntPtr hMenu = CreatePopupMenu();
-            if (hMenu == IntPtr.Zero) return;
+            if (_isMenuOpen) return;
+            _isMenuOpen = true;
 
-            AppendMenu(hMenu, MF_STRING, 1, "Show Resource Analyzer for Windows");
-            AppendMenu(hMenu, MF_STRING, 2, "Announce Network Speed");
-            AppendMenu(hMenu, MF_SEPARATOR, 0, string.Empty);
-            AppendMenu(hMenu, MF_STRING, 3, "Exit");
+            try
+            {
+                IntPtr hMenu = CreatePopupMenu();
+                if (hMenu == IntPtr.Zero) return;
 
-            GetCursorPos(out POINT pt);
-            SetForegroundWindow(_hwnd);
-            uint cmd = TrackPopupMenuEx(hMenu, TPM_LEFTALIGN | TPM_BOTTOMALIGN | TPM_RETURNCMD, pt.X, pt.Y, _hwnd, IntPtr.Zero);
-            DestroyMenu(hMenu);
+                AppendMenu(hMenu, MF_STRING, 1, "Quit");
 
-            if (cmd == 1) _onRestore();
-            else if (cmd == 2) _onSpeakSpeed?.Invoke();
-            else if (cmd == 3) _onExit();
+                int x = 0;
+                int y = 0;
+
+                // In Shell V4, wParam contains cursor coordinates: LOWORD = X, HIWORD = Y
+                short wx = unchecked((short)(long)wParam);
+                short wy = unchecked((short)((long)wParam >> 16));
+
+                if (wx != 0 && wy != 0 && wx != -1 && wy != -1)
+                {
+                    x = wx;
+                    y = wy;
+                }
+                else
+                {
+                    GetCursorPos(out POINT pt);
+                    x = pt.X;
+                    y = pt.Y;
+                }
+
+                // When MainWindow is hidden/minimized to the tray, calling SetForegroundWindow(_hwnd)
+                // fails or is restricted by Windows because _hwnd is not visible. This leaves Windows
+                // Explorer's notification area holding foreground focus, causing screen readers (NVDA/JAWS)
+                // to repeat the tray icon button announcement instead of shifting focus to the popup menu.
+                // Creating a transient 0x0 tool window allows reliable foreground elevation and clean focus transfer.
+                IntPtr hHelper = CreateWindowEx(WS_EX_TOOLWINDOW, "Static", string.Empty, WS_POPUP, 0, 0, 0, 0, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+                IntPtr menuOwner = _hwnd;
+
+                if (hHelper != IntPtr.Zero)
+                {
+                    ShowWindow(hHelper, SW_SHOW);
+                    SetForegroundWindow(hHelper);
+                    menuOwner = hHelper;
+                }
+                else
+                {
+                    SetForegroundWindow(_hwnd);
+                }
+
+                uint cmd = TrackPopupMenuEx(hMenu, TPM_LEFTALIGN | TPM_BOTTOMALIGN | TPM_RIGHTBUTTON | TPM_RETURNCMD, x, y, menuOwner, IntPtr.Zero);
+                DestroyMenu(hMenu);
+                PostMessage(menuOwner, 0, IntPtr.Zero, IntPtr.Zero);
+
+                if (hHelper != IntPtr.Zero)
+                {
+                    DestroyWindow(hHelper);
+                }
+
+                if (cmd == 1)
+                {
+                    _onExit();
+                }
+                else
+                {
+                    // Under Shell V4, when a shortcut menu is cancelled by pressing ESC
+                    // or clicking outside, the shell requires NIM_SETFOCUS so the notification area regains focus.
+                    var nid = CreateNotifyIconData();
+                    Shell_NotifyIcon(NIM_SETFOCUS, ref nid);
+                }
+            }
+            finally
+            {
+                _isMenuOpen = false;
+            }
         }
 
         public void Dispose()
         {
             if (_isCreated && _hwnd != IntPtr.Zero)
             {
-                var nid = new NOTIFYICONDATA();
-                nid.cbSize = (uint)Marshal.SizeOf<NOTIFYICONDATA>();
-                nid.hWnd = _hwnd;
-                nid.uID = 1001;
+                var nid = CreateNotifyIconData();
                 Shell_NotifyIcon(NIM_DELETE, ref nid);
                 _isCreated = false;
             }

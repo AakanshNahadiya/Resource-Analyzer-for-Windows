@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 using System.Threading.Tasks;
 using ResourceAnalyzer.Models;
@@ -149,6 +149,37 @@ namespace ResourceAnalyzer.Tests
                 Assert.False(string.IsNullOrWhiteSpace(p.Protocol), "Protocol must not be empty");
                 Assert.False(string.IsNullOrWhiteSpace(p.DisplayText), "DisplayText must not be empty");
             }
+        }
+
+        [Fact]
+        public void NetworkPortItem_PropertyChanges_UpdateDisplayText()
+        {
+            var item = new NetworkPortItem
+            {
+                Protocol = "TCP",
+                LocalAddress = "127.0.0.1",
+                LocalPort = 80,
+                State = "Listening",
+                ProcessId = 1000,
+                ProcessName = "app.exe"
+            };
+
+            Assert.Contains("Listening", item.DisplayText);
+            Assert.Contains("Port 80", item.DisplayText);
+
+            item.State = "Established";
+            item.RemoteAddress = "1.2.3.4";
+            item.RemotePort = 443;
+
+            Assert.Contains("Established", item.DisplayText);
+            Assert.True(item.IsEstablished);
+            Assert.False(item.IsListening);
+        }
+
+        [Fact]
+        public void NativeMethods_ErrorInsufficientBufferConstant_MatchesWin32()
+        {
+            Assert.Equal(122u, Helpers.NativeMethods.ERROR_INSUFFICIENT_BUFFER);
         }
     }
 }

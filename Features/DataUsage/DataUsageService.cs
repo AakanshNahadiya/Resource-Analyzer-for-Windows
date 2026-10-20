@@ -25,9 +25,9 @@ namespace ResourceAnalyzer.Services
             {
                 var now = DateTimeOffset.Now;
                 var startOfDay = new DateTimeOffset(DateTime.Today);
-                if (startOfDay > now)
+                if (startOfDay >= now)
                 {
-                    startOfDay = now;
+                    startOfDay = now.AddSeconds(-1);
                 }
 
                 var states = new NetworkUsageStates
@@ -88,9 +88,9 @@ namespace ResourceAnalyzer.Services
             {
                 var now = DateTimeOffset.Now;
                 var startOfDay = new DateTimeOffset(DateTime.Today);
-                if (startOfDay > now)
+                if (startOfDay >= now)
                 {
-                    startOfDay = now;
+                    startOfDay = now.AddSeconds(-1);
                 }
 
                 DateTimeOffset startTime = timeRange switch
@@ -102,7 +102,11 @@ namespace ResourceAnalyzer.Services
                     _ => now.AddYears(-1) // "Full"
                 };
 
-                var states = new NetworkUsageStates();
+                var states = new NetworkUsageStates
+                {
+                    Roaming = TriStates.DoNotCare,
+                    Shared = TriStates.DoNotCare
+                };
                 var profilesToQuery = new List<ConnectionProfile>();
 
                 try
@@ -113,6 +117,20 @@ namespace ResourceAnalyzer.Services
                         if (primary != null)
                         {
                             profilesToQuery.Add(primary);
+                        }
+                        else
+                        {
+                            // Fallback: If no profile has direct internet routing, check for active local/constrained profiles
+                            var all = NetworkInformation.GetConnectionProfiles();
+                            if (all != null)
+                            {
+                                var active = all.FirstOrDefault(p => p.GetNetworkConnectivityLevel() != NetworkConnectivityLevel.None)
+                                             ?? all.FirstOrDefault();
+                                if (active != null)
+                                {
+                                    profilesToQuery.Add(active);
+                                }
+                            }
                         }
                     }
                     else
@@ -144,7 +162,9 @@ namespace ResourceAnalyzer.Services
                                 long bytesOut = (long)u.BytesSent;
                                 if (bytesIn == 0 && bytesOut == 0) continue;
 
-                                string cleanName = AppDataUsageItem.CleanAppName(u.AttributionId);
+                                string cleanName = !string.IsNullOrWhiteSpace(u.AttributionName)
+                                    ? u.AttributionName.Trim()
+                                    : AppDataUsageItem.CleanAppName(u.AttributionId);
 
                                 if (appMap.TryGetValue(cleanName, out var existing))
                                 {

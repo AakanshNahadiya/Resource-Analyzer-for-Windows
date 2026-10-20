@@ -21,6 +21,7 @@ namespace ResourceAnalyzer.Services
         public string ReleaseNotes { get; set; } = "";
         public string HtmlUrl { get; set; } = "";
         public string? DownloadUrl { get; set; }
+        public string? ExpectedSha256 { get; set; }
         public string Message { get; set; } = "";
 
         public string GetEffectiveReleaseUrl()
@@ -30,7 +31,7 @@ namespace ResourceAnalyzer.Services
                 return HtmlUrl;
             }
             string ver = HasUpdate ? LatestVersion : CurrentVersion;
-            return $"https://github.com/AakanshNahadiya/Resource-Analyzer-for-Windows/releases/tag/v{ver}";
+            return $"https://github.com/AccessibleTools/Resource-Analyzer-for-Windows/releases/tag/v{ver}";
         }
     }
 
@@ -39,8 +40,10 @@ namespace ResourceAnalyzer.Services
         Task<UpdateInfo> CheckForUpdatesAsync(string channel = "Beta");
         string GetCurrentVersion();
         void OpenUrl(string url);
-        Task<string?> DownloadInstallerAsync(string downloadUrl, IProgress<int>? progress = null, CancellationToken cancellationToken = default);
+        Task<string?> DownloadInstallerAsync(string downloadUrl, string? expectedSha256 = null, IProgress<int>? progress = null, CancellationToken cancellationToken = default);
+        bool VerifyFileHash(string filePath, string expectedSha256);
         bool LaunchInstaller(string installerPath);
+        void CleanupTempInstallers();
         bool ShouldPerformDailyCheck(ResourceAnalyzer.Models.AppSettings settings);
         void RecordCheckPerformed(ResourceAnalyzer.Models.AppSettings settings);
     }
@@ -195,6 +198,14 @@ namespace ResourceAnalyzer.Services
                             if (assetName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
                             {
                                 result.DownloadUrl = dlElem.GetString();
+                                if (asset.TryGetProperty("digest", out var digestElem))
+                                {
+                                    string? digest = digestElem.GetString();
+                                    if (!string.IsNullOrWhiteSpace(digest) && digest.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        result.ExpectedSha256 = digest["sha256:".Length..].Trim();
+                                    }
+                                }
                                 break;
                             }
                         }
@@ -246,7 +257,26 @@ namespace ResourceAnalyzer.Services
             }
         }
 
-        public async Task<string?> DownloadInstallerAsync(string downloadUrl, IProgress<int>? progress = null, CancellationToken cancellationToken = default)
+        public bool VerifyFileHash(string filePath, string expectedSha256)
+        {
+            if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath) || string.IsNullOrWhiteSpace(expectedSha256))
+                return false;
+
+            try
+            {
+                using var sha256 = System.Security.Cryptography.SHA256.Create();
+                using var stream = File.OpenRead(filePath);
+                byte[] hash = sha256.ComputeHash(stream);
+                string computed = Convert.ToHexString(hash);
+                return computed.Equals(expectedSha256, StringComparison.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        public async Task<string?> DownloadInstallerAsync(string downloadUrl, string? expectedSha256 = null, IProgress<int>? progress = null, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(downloadUrl)) return null;
 
@@ -256,6 +286,7 @@ namespace ResourceAnalyzer.Services
                 return null;
             }
 
+            string? tempFilePath = null;
             try
             {
                 string tempDir = Path.GetTempPath();
@@ -264,35 +295,55 @@ namespace ResourceAnalyzer.Services
                     ? rawFileName
                     : "ResourceAnalyzer_Update.exe";
 
-                string tempFilePath = Path.Combine(tempDir, fileName);
+                tempFilePath = Path.Combine(tempDir, fileName);
 
-                using var response = await _httpClient.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-                response.EnsureSuccessStatusCode();
-
-                long? totalBytes = response.Content.Headers.ContentLength;
-                using var contentStream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-                using var fileStream = new FileStream(tempFilePath, FileMode.Create, FileAccess.Write, FileShare.None, 8192, true);
-
-                byte[] buffer = new byte[8192];
-                long totalRead = 0;
-                int bytesRead;
-
-                while ((bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length, cancellationToken).ConfigureAwait(false)) > 0)
+                using (var response = await _httpClient.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false))
                 {
-                    await fileStream.WriteAsync(buffer, 0, bytesRead, cancellationToken).ConfigureAwait(false);
-                    totalRead += bytesRead;
+                    response.EnsureSuccessStatusCode();
 
-                    if (totalBytes.HasValue && totalBytes.Value > 0)
+                    long? totalBytes = response.Content.Headers.ContentLength;
+                    using var contentStream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+                    using var fileStream = new FileStream(tempFilePath, FileMode.Create, FileAccess.Write, FileShare.None, 8192, true);
+
+                    byte[] buffer = new byte[8192];
+                    long totalRead = 0;
+                    int bytesRead;
+
+                    while ((bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length, cancellationToken).ConfigureAwait(false)) > 0)
                     {
-                        int progressPercent = (int)((totalRead * 100) / totalBytes.Value);
-                        progress?.Report(progressPercent);
+                        await fileStream.WriteAsync(buffer, 0, bytesRead, cancellationToken).ConfigureAwait(false);
+                        totalRead += bytesRead;
+
+                        if (totalBytes.HasValue && totalBytes.Value > 0)
+                        {
+                            int progressPercent = (int)((totalRead * 100) / totalBytes.Value);
+                            progress?.Report(progressPercent);
+                        }
+                    }
+                }
+
+                // Verify SHA-256 integrity if checksum is provided by GitHub
+                if (!string.IsNullOrWhiteSpace(expectedSha256))
+                {
+                    if (!VerifyFileHash(tempFilePath, expectedSha256))
+                    {
+                        try { File.Delete(tempFilePath); } catch { }
+                        throw new System.Security.SecurityException("Downloaded installer failed SHA-256 checksum verification and was deleted for security.");
                     }
                 }
 
                 return tempFilePath;
             }
+            catch (System.Security.SecurityException)
+            {
+                throw;
+            }
             catch (Exception ex)
             {
+                if (!string.IsNullOrEmpty(tempFilePath) && File.Exists(tempFilePath))
+                {
+                    try { File.Delete(tempFilePath); } catch { }
+                }
                 Debug.WriteLine($"Failed to download installer: {ex.Message}");
                 return null;
             }
@@ -322,5 +373,32 @@ namespace ResourceAnalyzer.Services
                 return false;
             }
         }
+
+        public static void CleanupTempInstallers()
+        {
+            try
+            {
+                string tempDir = Path.GetTempPath();
+                if (Directory.Exists(tempDir))
+                {
+                    var files = Directory.GetFiles(tempDir, "ResourceAnalyzer_*.exe", SearchOption.TopDirectoryOnly);
+                    foreach (var file in files)
+                    {
+                        try
+                        {
+                            File.Delete(file);
+                        }
+                        catch
+                        {
+                            // File may be locked by an active installer or another process; safely ignore
+                        }
+                    }
+                }
+            }
+            catch { }
+        }
+
+        public void CleanupTempInstallersInstance() => CleanupTempInstallers();
+        void IUpdateService.CleanupTempInstallers() => CleanupTempInstallers();
     }
 }

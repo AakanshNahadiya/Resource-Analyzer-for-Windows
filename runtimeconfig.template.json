@@ -1,7 +1,7 @@
 {
   "configProperties": {
-    "System.GC.ConserveMemory": 9,
     "System.GC.Server": false,
-    "System.GC.Concurrent": false
+    "System.GC.Concurrent": true,
+    "System.GC.DynamicAdaptationMode": 1
   }
 }

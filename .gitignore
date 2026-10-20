@@ -28,3 +28,9 @@ ResourceAnalyzer_crash.log
 Thumbs.db
 ehthumbs.db
 desktop.ini
+
+## Local helper scripts and hashes
+update_winget.*
+update-winget.*
+update.bat
+*.sha256

@@ -110,7 +110,6 @@ namespace ResourceAnalyzer.Tests
         {
             var s = new AppSettings();
 
-            Assert.False(s.HideSystemProcesses);
             Assert.True(s.ShowProcessExtension);
             Assert.False(s.ShowProcessPid);
             Assert.True(s.ConfirmBeforeEndTask);
@@ -130,7 +129,6 @@ namespace ResourceAnalyzer.Tests
             {
                 Theme = "Dark",
                 RefreshIntervalSeconds = 5,
-                HideSystemProcesses = false,
                 ShowProcessExtension = false,
                 ShowProcessPid = true,
                 ConfirmBeforeEndTask = false,
@@ -150,7 +148,6 @@ namespace ResourceAnalyzer.Tests
             Assert.NotNull(deserialized);
             Assert.Equal("Dark", deserialized.Theme);
             Assert.Equal(5, deserialized.RefreshIntervalSeconds);
-            Assert.False(deserialized.HideSystemProcesses);
             Assert.False(deserialized.ShowProcessExtension);
             Assert.True(deserialized.ShowProcessPid);
             Assert.False(deserialized.ConfirmBeforeEndTask);

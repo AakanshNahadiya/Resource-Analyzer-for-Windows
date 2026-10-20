@@ -55,8 +55,6 @@ namespace ResourceAnalyzer.Services
                     if (loaded != null)
                     {
                         CurrentSettings = loaded;
-                        // Always expose all processes
-                        CurrentSettings.HideSystemProcesses = false;
                     }
                 }
             }
@@ -101,7 +99,11 @@ namespace ResourceAnalyzer.Services
             {
                 var options = new JsonSerializerOptions { WriteIndented = true };
                 string json = JsonSerializer.Serialize(CurrentSettings, options);
-                File.WriteAllText(_settingsFilePath, json);
+
+                // Atomic save pattern: Write to temp file first, then atomically replace target file
+                string tempFile = _settingsFilePath + ".tmp";
+                File.WriteAllText(tempFile, json);
+                File.Move(tempFile, _settingsFilePath, overwrite: true);
             }
             catch { }
 
@@ -118,6 +120,18 @@ namespace ResourceAnalyzer.Services
                     try { exePath = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName; } catch { }
                 }
 
+                // Guard: Never register automated test host processes in Windows Run registry
+                if (!string.IsNullOrEmpty(exePath))
+                {
+                    string fileName = Path.GetFileName(exePath);
+                    if (fileName.Equals("dotnet.exe", StringComparison.OrdinalIgnoreCase) ||
+                        fileName.Contains("testhost", StringComparison.OrdinalIgnoreCase) ||
+                        fileName.Contains("vstest", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return;
+                    }
+                }
+
                 using var runKey = Registry.CurrentUser.CreateSubKey(RunRegistryKey, true);
                 using var approvedKey = Registry.CurrentUser.CreateSubKey(StartupApprovedKey, true);
 
@@ -128,7 +142,6 @@ namespace ResourceAnalyzer.Services
                         runKey?.SetValue(AppName, $"\"{exePath}\" --minimized");
                         byte[] enabledBytes = new byte[] { 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
                         approvedKey?.SetValue(AppName, enabledBytes, RegistryValueKind.Binary);
-
                     }
                 }
                 else
@@ -154,7 +167,6 @@ namespace ResourceAnalyzer.Models
     {
         public bool ConfirmBeforeEndTask { get; set; } = true;
 
-        public bool HideSystemProcesses { get; set; } = false;
         public bool ShowProcessExtension { get; set; } = true;
         public bool ShowProcessPid { get; set; } = false;
         public bool GroupProcesses { get; set; } = true;
@@ -183,11 +195,14 @@ namespace ResourceAnalyzer.Models
         public string DataUsageNetworkFilter { get; set; } = "Current"; // "Current" or "All"
         public string DataUsageTimeFilter { get; set; } = "Full"; // "Full", "Last Month", "Last Week", "Last 24 Hours", "Today"
 
+        // Network diagnostic options
+        public bool EnableNetworkPing { get; set; } = false;
+
         // Theme setting
         public string Theme { get; set; } = "System Default"; // "System Default", "Dark", "Light", "High Contrast Black"
 
         // Application updates
-        public bool AutoCheckUpdatesDaily { get; set; } = true;
+        public bool AutoCheckUpdatesDaily { get; set; } = false;
         public string? LastUpdateCheckUtc { get; set; }
         public string? LastNotifiedVersion { get; set; }
     }

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -24,6 +24,7 @@ namespace ResourceAnalyzer.Helpers
         {
             TItem? currentSelected = listBox?.SelectedItem is TItem sel ? sel : default;
             TKey? selectedKey = currentSelected != null ? keySelector(currentSelected) : default;
+            int prevSelectedIndex = listBox?.SelectedIndex ?? -1;
 
             if (collection.Count == 0 || isFullReset)
             {
@@ -34,9 +35,20 @@ namespace ResourceAnalyzer.Helpers
                     collection.Add(item);
                     map[keySelector(item)] = item;
                 }
-                if (listBox != null && collection.Count > 0 && listBox.SelectedIndex < 0)
+                if (listBox != null && collection.Count > 0)
                 {
-                    listBox.SelectedIndex = 0;
+                    if (selectedKey != null && map.TryGetValue(selectedKey, out var match))
+                    {
+                        listBox.SelectedItem = match;
+                    }
+                    else if (prevSelectedIndex >= 0)
+                    {
+                        listBox.SelectedIndex = Math.Clamp(prevSelectedIndex, 0, collection.Count - 1);
+                    }
+                    else if (listBox.SelectedIndex < 0)
+                    {
+                        listBox.SelectedIndex = 0;
+                    }
                 }
                 return;
             }
@@ -77,13 +89,22 @@ namespace ResourceAnalyzer.Helpers
             }
 
             // Restore selection
-            if (listBox != null && selectedKey != null && map.TryGetValue(selectedKey, out var matched))
+            if (listBox != null)
             {
-                listBox.SelectedItem = matched;
-            }
-            else if (listBox != null && collection.Count > 0 && listBox.SelectedIndex < 0)
-            {
-                listBox.SelectedIndex = 0;
+                if (selectedKey != null && map.TryGetValue(selectedKey, out var matched))
+                {
+                    listBox.SelectedItem = matched;
+                }
+                else if (collection.Count > 0 && prevSelectedIndex >= 0)
+                {
+                    int targetIdx = Math.Clamp(prevSelectedIndex, 0, collection.Count - 1);
+                    listBox.SelectedIndex = targetIdx;
+                    listBox.ScrollIntoView(collection[targetIdx]);
+                }
+                else if (collection.Count > 0 && listBox.SelectedIndex < 0)
+                {
+                    listBox.SelectedIndex = 0;
+                }
             }
         }
     }
