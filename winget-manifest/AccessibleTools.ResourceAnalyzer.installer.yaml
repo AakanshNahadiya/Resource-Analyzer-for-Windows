@@ -7,12 +7,12 @@ InstallModes:
   - silent
   - silentWithProgress
 Scope: user
-ReleaseDate: 2026-10-20
+ReleaseDate: 2026-10-21
 AppsAndFeaturesEntries:
   - ProductCode: '{E7A23C84-4845-4DC3-8DC2-A7210FD2A882}_is1'
 Installers:
   - Architecture: x64
     InstallerUrl: https://github.com/AccessibleTools/Resource-Analyzer-for-Windows/releases/download/v2.0.0/ResourceAnalyzer_Setup_v2.0.0.exe
-    InstallerSha256: C3E9CA714BCF53B61FAD4E759AFA79F1A1DBDF57B502E2BFC75540EFC3D373DE
+    InstallerSha256: 722CFD7C1FA9ABA4D5428A963876B99D27D98037F46D53FB9D40037553DEE8EA
 ManifestType: installer
 ManifestVersion: 1.9.0
